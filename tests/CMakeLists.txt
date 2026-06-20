@@ -56,13 +56,11 @@ target_link_libraries(test_auth_login PRIVATE
     GTest::gtest_main
     OpenSSL::Crypto
     spdlog::spdlog
+    nlohmann_json::nlohmann_json
 )
-set(NLOHMANN_JSON_INCLUDE_AUTH
-    "${CMAKE_CURRENT_SOURCE_DIR}/../../../thirdparty/grpc/third_party/opentelemetry-cpp/third_party/nlohmann-json/single_include")
 target_include_directories(test_auth_login PRIVATE
     "${CMAKE_CURRENT_SOURCE_DIR}/../src"
     "${CMAKE_CURRENT_SOURCE_DIR}/../src/identity/../jwt-cpp/include"
-    "${NLOHMANN_JSON_INCLUDE_AUTH}"
 )
 add_test(NAME test_auth_login COMMAND test_auth_login)
 
@@ -79,6 +77,7 @@ target_link_libraries(test_s3_client PRIVATE
     OpenSSL::Crypto
     OpenSSL::SSL
     spdlog::spdlog
+    nlohmann_json::nlohmann_json
 )
 target_include_directories(test_s3_client PRIVATE
     "${CMAKE_CURRENT_SOURCE_DIR}/../src"
@@ -86,8 +85,6 @@ target_include_directories(test_s3_client PRIVATE
 add_test(NAME test_s3_client COMMAND test_s3_client)
 
 # StreamingWorker tests
-set(NLOHMANN_JSON_INCLUDE_TEST
-    "${CMAKE_CURRENT_SOURCE_DIR}/../../../thirdparty/grpc/third_party/opentelemetry-cpp/third_party/nlohmann-json/single_include")
 add_executable(test_streaming_worker
     test_streaming_worker.cpp
     "${CMAKE_CURRENT_SOURCE_DIR}/../src/archive/S3Client.cpp"
@@ -101,10 +98,10 @@ target_link_libraries(test_streaming_worker PRIVATE
     OpenSSL::Crypto
     OpenSSL::SSL
     spdlog::spdlog
+    nlohmann_json::nlohmann_json
 )
 target_include_directories(test_streaming_worker PRIVATE
     "${CMAKE_CURRENT_SOURCE_DIR}/../src"
-    "${NLOHMANN_JSON_INCLUDE_TEST}"
 )
 add_test(NAME test_streaming_worker COMMAND test_streaming_worker)
 
@@ -122,16 +119,14 @@ target_link_libraries(test_archive_handlers PRIVATE
     OpenSSL::Crypto
     OpenSSL::SSL
     spdlog::spdlog
+    nlohmann_json::nlohmann_json
 )
 target_include_directories(test_archive_handlers PRIVATE
     "${CMAKE_CURRENT_SOURCE_DIR}/../src"
-    "${NLOHMANN_JSON_INCLUDE_TEST}"
 )
 add_test(NAME test_archive_handlers COMMAND test_archive_handlers)
 
 # Tunnel setup wizard handler integration tests
-set(NLOHMANN_JSON_INCLUDE_TUNNEL
-    "${CMAKE_CURRENT_SOURCE_DIR}/../../../thirdparty/grpc/third_party/opentelemetry-cpp/third_party/nlohmann-json/single_include")
 add_executable(test_tunnel_setup
     test_tunnel_setup.cpp
     "${CMAKE_CURRENT_SOURCE_DIR}/../src/tunnel/SubprocessManager.cpp"
@@ -148,9 +143,9 @@ target_link_libraries(test_tunnel_setup PRIVATE
     OpenSSL::Crypto
     OpenSSL::SSL
     spdlog::spdlog
+    nlohmann_json::nlohmann_json
 )
 target_include_directories(test_tunnel_setup PRIVATE
     "${CMAKE_CURRENT_SOURCE_DIR}/../src"
-    "${NLOHMANN_JSON_INCLUDE_TUNNEL}"
 )
 add_test(NAME test_tunnel_setup COMMAND test_tunnel_setup)
