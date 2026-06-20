@@ -11,6 +11,7 @@
 
 #include <chrono>
 #include <sstream>
+#include <thread>
 
 #include <boost/process.hpp>
 
@@ -130,8 +131,14 @@ void SubprocessManager::Stop() noexcept
         }
 
         // Wait up to kStopTimeoutSeconds for the process to exit
-        bool exited = m_child->process.wait_for(
-            std::chrono::seconds(kStopTimeoutSeconds));
+        auto deadline = std::chrono::steady_clock::now()
+                        + std::chrono::seconds(kStopTimeoutSeconds);
+        while (m_child->process.running()
+               && std::chrono::steady_clock::now() < deadline)
+        {
+            std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        }
+        bool exited = !m_child->process.running();
 
         if (!exited)
         {
