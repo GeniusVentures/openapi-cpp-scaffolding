@@ -10,16 +10,17 @@
 * Do not edit the class manually.
 */
 /*
- * OrderStatusUpdateRequest.h
+ * OrderDiscount.h
  *
  * 
  */
 
-#ifndef OrderStatusUpdateRequest_H_
-#define OrderStatusUpdateRequest_H_
+#ifndef OrderDiscount_H_
+#define OrderDiscount_H_
 
 
 #include <string>
+#include "Money.h"
 #include <nlohmann/json.hpp>
 
 namespace org::openapitools::server::model
@@ -28,11 +29,11 @@ namespace org::openapitools::server::model
 /// <summary>
 /// 
 /// </summary>
-class  OrderStatusUpdateRequest
+class  OrderDiscount
 {
 public:
-    OrderStatusUpdateRequest();
-    virtual ~OrderStatusUpdateRequest();
+    OrderDiscount();
+    virtual ~OrderDiscount();
 
 
     /// <summary>
@@ -52,17 +53,17 @@ public:
     /// </summary>
     bool validate(std::stringstream& msg, const std::string& pathPrefix) const;
 
-    bool operator==(const OrderStatusUpdateRequest& rhs) const;
-    bool operator!=(const OrderStatusUpdateRequest& rhs) const;
+    bool operator==(const OrderDiscount& rhs) const;
+    bool operator!=(const OrderDiscount& rhs) const;
 
     /////////////////////////////////////////////
-    /// OrderStatusUpdateRequest members
+    /// OrderDiscount members
 
     /// <summary>
     /// 
     /// </summary>
-    std::string getStatus() const;
-    void setStatus(std::string const& value);
+    std::string getName() const;
+    void setName(std::string const& value);
     /// <summary>
     /// 
     /// </summary>
@@ -73,32 +74,21 @@ public:
     /// <summary>
     /// 
     /// </summary>
-    std::string getReasonCode() const;
-    void setReasonCode(std::string const& value);
-    bool reasonCodeIsSet() const;
-    void unsetReason_code();
-    /// <summary>
-    /// 
-    /// </summary>
-    bool isNotifyCustomer() const;
-    void setNotifyCustomer(bool const value);
-    bool notifyCustomerIsSet() const;
-    void unsetNotify_customer();
+    org::openapitools::server::model::Money getAmount() const;
+    void setAmount(org::openapitools::server::model::Money const& value);
 
-    friend  void to_json(nlohmann::json& j, const OrderStatusUpdateRequest& o);
-    friend  void from_json(const nlohmann::json& j, OrderStatusUpdateRequest& o);
+    friend  void to_json(nlohmann::json& j, const OrderDiscount& o);
+    friend  void from_json(const nlohmann::json& j, OrderDiscount& o);
 protected:
-    std::string m_Status;
+    std::string m_Name;
 
     std::string m_Reason;
     bool m_ReasonIsSet;
-    std::string m_Reason_code;
-    bool m_Reason_codeIsSet;
-    bool m_Notify_customer;
-    bool m_Notify_customerIsSet;
+    org::openapitools::server::model::Money m_Amount;
+
     
 };
 
 } // namespace org::openapitools::server::model
 
-#endif /* OrderStatusUpdateRequest_H_ */
+#endif /* OrderDiscount_H_ */

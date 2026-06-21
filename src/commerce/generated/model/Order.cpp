@@ -43,6 +43,16 @@ Order::Order()
     m_Discount_totalIsSet = false;
     m_Tip_totalIsSet = false;
     m_LinesIsSet = false;
+    m_Table_id = "";
+    m_Table_idIsSet = false;
+    m_Server_id = "";
+    m_Server_idIsSet = false;
+    m_Guest_count = 0;
+    m_Guest_countIsSet = false;
+    m_Payment_status = "";
+    m_Payment_statusIsSet = false;
+    m_DiscountsIsSet = false;
+    m_Service_chargesIsSet = false;
     
 }
 
@@ -86,6 +96,48 @@ bool Order::validate(std::stringstream& msg, const std::string& pathPrefix) cons
                 const std::string currentValuePath = oldValuePath + "[" + std::to_string(i) + "]";
                         
         success = value.validate(msg, currentValuePath + ".lines") && success;
+ 
+                i++;
+            }
+        }
+
+    }
+                         
+    if (discountsIsSet())
+    {
+        const std::vector<org::openapitools::server::model::OrderDiscount>& value = m_Discounts;
+        const std::string currentValuePath = _pathPrefix + ".discounts";
+                
+        
+        { // Recursive validation of array elements
+            const std::string oldValuePath = currentValuePath;
+            int i = 0;
+            for (const org::openapitools::server::model::OrderDiscount& value : value)
+            { 
+                const std::string currentValuePath = oldValuePath + "[" + std::to_string(i) + "]";
+                        
+        success = value.validate(msg, currentValuePath + ".discounts") && success;
+ 
+                i++;
+            }
+        }
+
+    }
+         
+    if (serviceChargesIsSet())
+    {
+        const std::vector<org::openapitools::server::model::ServiceCharge>& value = m_Service_charges;
+        const std::string currentValuePath = _pathPrefix + ".serviceCharges";
+                
+        
+        { // Recursive validation of array elements
+            const std::string oldValuePath = currentValuePath;
+            int i = 0;
+            for (const org::openapitools::server::model::ServiceCharge& value : value)
+            { 
+                const std::string currentValuePath = oldValuePath + "[" + std::to_string(i) + "]";
+                        
+        success = value.validate(msg, currentValuePath + ".serviceCharges") && success;
  
                 i++;
             }
@@ -156,7 +208,25 @@ bool Order::operator==(const Order& rhs) const
      &&
     
     
-    ((!linesIsSet() && !rhs.linesIsSet()) || (linesIsSet() && rhs.linesIsSet() && getLines() == rhs.getLines()))
+    ((!linesIsSet() && !rhs.linesIsSet()) || (linesIsSet() && rhs.linesIsSet() && getLines() == rhs.getLines())) &&
+    
+    
+    ((!tableIdIsSet() && !rhs.tableIdIsSet()) || (tableIdIsSet() && rhs.tableIdIsSet() && getTableId() == rhs.getTableId())) &&
+    
+    
+    ((!serverIdIsSet() && !rhs.serverIdIsSet()) || (serverIdIsSet() && rhs.serverIdIsSet() && getServerId() == rhs.getServerId())) &&
+    
+    
+    ((!guestCountIsSet() && !rhs.guestCountIsSet()) || (guestCountIsSet() && rhs.guestCountIsSet() && getGuestCount() == rhs.getGuestCount())) &&
+    
+    
+    ((!paymentStatusIsSet() && !rhs.paymentStatusIsSet()) || (paymentStatusIsSet() && rhs.paymentStatusIsSet() && getPaymentStatus() == rhs.getPaymentStatus())) &&
+    
+    
+    ((!discountsIsSet() && !rhs.discountsIsSet()) || (discountsIsSet() && rhs.discountsIsSet() && getDiscounts() == rhs.getDiscounts())) &&
+    
+    
+    ((!serviceChargesIsSet() && !rhs.serviceChargesIsSet()) || (serviceChargesIsSet() && rhs.serviceChargesIsSet() && getServiceCharges() == rhs.getServiceCharges()))
     
     ;
 }
@@ -198,6 +268,18 @@ void to_json(nlohmann::json& j, const Order& o)
     j["total"] = o.m_Total;
     if(o.linesIsSet() || !o.m_Lines.empty())
         j["lines"] = o.m_Lines;
+    if(o.tableIdIsSet())
+        j["table_id"] = o.m_Table_id;
+    if(o.serverIdIsSet())
+        j["server_id"] = o.m_Server_id;
+    if(o.guestCountIsSet())
+        j["guest_count"] = o.m_Guest_count;
+    if(o.paymentStatusIsSet())
+        j["payment_status"] = o.m_Payment_status;
+    if(o.discountsIsSet() || !o.m_Discounts.empty())
+        j["discounts"] = o.m_Discounts;
+    if(o.serviceChargesIsSet() || !o.m_Service_charges.empty())
+        j["service_charges"] = o.m_Service_charges;
     
 }
 
@@ -261,6 +343,36 @@ void from_json(const nlohmann::json& j, Order& o)
     {
         j.at("lines").get_to(o.m_Lines);
         o.m_LinesIsSet = true;
+    } 
+    if(j.find("table_id") != j.end())
+    {
+        j.at("table_id").get_to(o.m_Table_id);
+        o.m_Table_idIsSet = true;
+    } 
+    if(j.find("server_id") != j.end())
+    {
+        j.at("server_id").get_to(o.m_Server_id);
+        o.m_Server_idIsSet = true;
+    } 
+    if(j.find("guest_count") != j.end())
+    {
+        j.at("guest_count").get_to(o.m_Guest_count);
+        o.m_Guest_countIsSet = true;
+    } 
+    if(j.find("payment_status") != j.end())
+    {
+        j.at("payment_status").get_to(o.m_Payment_status);
+        o.m_Payment_statusIsSet = true;
+    } 
+    if(j.find("discounts") != j.end())
+    {
+        j.at("discounts").get_to(o.m_Discounts);
+        o.m_DiscountsIsSet = true;
+    } 
+    if(j.find("service_charges") != j.end())
+    {
+        j.at("service_charges").get_to(o.m_Service_charges);
+        o.m_Service_chargesIsSet = true;
     } 
     
 }
@@ -506,6 +618,108 @@ bool Order::linesIsSet() const
 void Order::unsetLines()
 {
     m_LinesIsSet = false;
+}
+std::string Order::getTableId() const
+{
+    return m_Table_id;
+}
+void Order::setTableId(std::string const& value)
+{
+    m_Table_id = value;
+    m_Table_idIsSet = true;
+}
+bool Order::tableIdIsSet() const
+{
+    return m_Table_idIsSet;
+}
+void Order::unsetTable_id()
+{
+    m_Table_idIsSet = false;
+}
+std::string Order::getServerId() const
+{
+    return m_Server_id;
+}
+void Order::setServerId(std::string const& value)
+{
+    m_Server_id = value;
+    m_Server_idIsSet = true;
+}
+bool Order::serverIdIsSet() const
+{
+    return m_Server_idIsSet;
+}
+void Order::unsetServer_id()
+{
+    m_Server_idIsSet = false;
+}
+int32_t Order::getGuestCount() const
+{
+    return m_Guest_count;
+}
+void Order::setGuestCount(int32_t const value)
+{
+    m_Guest_count = value;
+    m_Guest_countIsSet = true;
+}
+bool Order::guestCountIsSet() const
+{
+    return m_Guest_countIsSet;
+}
+void Order::unsetGuest_count()
+{
+    m_Guest_countIsSet = false;
+}
+std::string Order::getPaymentStatus() const
+{
+    return m_Payment_status;
+}
+void Order::setPaymentStatus(std::string const& value)
+{
+    m_Payment_status = value;
+    m_Payment_statusIsSet = true;
+}
+bool Order::paymentStatusIsSet() const
+{
+    return m_Payment_statusIsSet;
+}
+void Order::unsetPayment_status()
+{
+    m_Payment_statusIsSet = false;
+}
+std::vector<org::openapitools::server::model::OrderDiscount> Order::getDiscounts() const
+{
+    return m_Discounts;
+}
+void Order::setDiscounts(std::vector<org::openapitools::server::model::OrderDiscount> const& value)
+{
+    m_Discounts = value;
+    m_DiscountsIsSet = true;
+}
+bool Order::discountsIsSet() const
+{
+    return m_DiscountsIsSet;
+}
+void Order::unsetDiscounts()
+{
+    m_DiscountsIsSet = false;
+}
+std::vector<org::openapitools::server::model::ServiceCharge> Order::getServiceCharges() const
+{
+    return m_Service_charges;
+}
+void Order::setServiceCharges(std::vector<org::openapitools::server::model::ServiceCharge> const& value)
+{
+    m_Service_charges = value;
+    m_Service_chargesIsSet = true;
+}
+bool Order::serviceChargesIsSet() const
+{
+    return m_Service_chargesIsSet;
+}
+void Order::unsetService_charges()
+{
+    m_Service_chargesIsSet = false;
 }
 
 

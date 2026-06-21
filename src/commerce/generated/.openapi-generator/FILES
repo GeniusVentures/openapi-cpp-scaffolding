@@ -27,6 +27,8 @@ model/Order.cpp
 model/Order.h
 model/OrderCreate.cpp
 model/OrderCreate.h
+model/OrderDiscount.cpp
+model/OrderDiscount.h
 model/OrderLine.cpp
 model/OrderLine.h
 model/OrderPage.cpp
@@ -49,3 +51,5 @@ model/PaymentPage.cpp
 model/PaymentPage.h
 model/PaymentUpdate.cpp
 model/PaymentUpdate.h
+model/ServiceCharge.cpp
+model/ServiceCharge.h

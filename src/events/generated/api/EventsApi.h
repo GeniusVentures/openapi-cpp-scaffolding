@@ -28,6 +28,9 @@
 #include <optional>
 #include <utility>
 
+#include "AuditEvent.h"
+#include "AuditEventCreate.h"
+#include "AuditEventPage.h"
 #include "ErrorResponse.h"
 #include "Event.h"
 #include "EventCreate.h"
@@ -49,9 +52,12 @@ public:
 private:
     void setupRoutes();
 
+    void create_audit_event_handler(const Pistache::Rest::Request &request, Pistache::Http::ResponseWriter response);
     void create_event_handler(const Pistache::Rest::Request &request, Pistache::Http::ResponseWriter response);
     void delete_event_handler(const Pistache::Rest::Request &request, Pistache::Http::ResponseWriter response);
+    void get_audit_event_handler(const Pistache::Rest::Request &request, Pistache::Http::ResponseWriter response);
     void get_event_handler(const Pistache::Rest::Request &request, Pistache::Http::ResponseWriter response);
+    void list_audit_events_handler(const Pistache::Rest::Request &request, Pistache::Http::ResponseWriter response);
     void list_events_handler(const Pistache::Rest::Request &request, Pistache::Http::ResponseWriter response);
     void update_event_handler(const Pistache::Rest::Request &request, Pistache::Http::ResponseWriter response);
     void events_api_default_handler(const Pistache::Rest::Request &request, Pistache::Http::ResponseWriter response);
@@ -85,6 +91,18 @@ private:
     virtual std::pair<Pistache::Http::Code, std::string> handleOperationException(const std::exception& ex) const noexcept;
 
     /// <summary>
+    /// Create audit event
+    /// </summary>
+    /// <remarks>
+    /// Records an auditable action for compliance and security tracking.
+    /// </remarks>
+    /// <param name="auditEventCreate"></param>
+    /// <param name="xTenantId">Tenant context for multi-tenant deployments. (optional, default to &quot;&quot;)</param>
+    /// <param name="xOrganizationId">Organization context. (optional, default to &quot;&quot;)</param>
+    /// <param name="xLocationId">Location context. (optional, default to &quot;&quot;)</param>
+    /// <param name="idempotencyKey">Idempotency key for safe retries. (optional, default to &quot;&quot;)</param>
+    virtual void create_audit_event(const HttpBearerToken &accessToken,  const org::openapitools::server::model::AuditEventCreate &auditEventCreate, const std::optional<Pistache::Http::Header::Raw> &xTenantId, const std::optional<Pistache::Http::Header::Raw> &xOrganizationId, const std::optional<Pistache::Http::Header::Raw> &xLocationId, const std::optional<Pistache::Http::Header::Raw> &idempotencyKey, Pistache::Http::ResponseWriter &response) = 0;
+    /// <summary>
     /// Create Event
     /// </summary>
     /// <remarks>
@@ -109,6 +127,17 @@ private:
     /// <param name="xLocationId">Location context. (optional, default to &quot;&quot;)</param>
     virtual void delete_event(const HttpBearerToken &accessToken,  const std::string &eventId, const std::optional<Pistache::Http::Header::Raw> &idempotencyKey, const std::optional<Pistache::Http::Header::Raw> &xTenantId, const std::optional<Pistache::Http::Header::Raw> &xOrganizationId, const std::optional<Pistache::Http::Header::Raw> &xLocationId, Pistache::Http::ResponseWriter &response) = 0;
     /// <summary>
+    /// Get audit event by ID
+    /// </summary>
+    /// <remarks>
+    /// Retrieve a single audit event record.
+    /// </remarks>
+    /// <param name="auditEventId"></param>
+    /// <param name="xTenantId">Tenant context for multi-tenant deployments. (optional, default to &quot;&quot;)</param>
+    /// <param name="xOrganizationId">Organization context. (optional, default to &quot;&quot;)</param>
+    /// <param name="xLocationId">Location context. (optional, default to &quot;&quot;)</param>
+    virtual void get_audit_event(const HttpBearerToken &accessToken,  const std::string &auditEventId, const std::optional<Pistache::Http::Header::Raw> &xTenantId, const std::optional<Pistache::Http::Header::Raw> &xOrganizationId, const std::optional<Pistache::Http::Header::Raw> &xLocationId, Pistache::Http::ResponseWriter &response) = 0;
+    /// <summary>
     /// Get Event
     /// </summary>
     /// <remarks>
@@ -119,6 +148,23 @@ private:
     /// <param name="xOrganizationId">Organization context. (optional, default to &quot;&quot;)</param>
     /// <param name="xLocationId">Location context. (optional, default to &quot;&quot;)</param>
     virtual void get_event(const HttpBearerToken &accessToken,  const std::string &eventId, const std::optional<Pistache::Http::Header::Raw> &xTenantId, const std::optional<Pistache::Http::Header::Raw> &xOrganizationId, const std::optional<Pistache::Http::Header::Raw> &xLocationId, Pistache::Http::ResponseWriter &response) = 0;
+    /// <summary>
+    /// List audit events
+    /// </summary>
+    /// <remarks>
+    /// Returns a filtered, paginated list of audit events. Supports filtering by actor, action, object type, and date range.
+    /// </remarks>
+    /// <param name="xTenantId">Tenant context for multi-tenant deployments. (optional, default to &quot;&quot;)</param>
+    /// <param name="xOrganizationId">Organization context. (optional, default to &quot;&quot;)</param>
+    /// <param name="xLocationId">Location context. (optional, default to &quot;&quot;)</param>
+    /// <param name="actorUserId"> (optional, default to &quot;&quot;)</param>
+    /// <param name="action"> (optional, default to &quot;&quot;)</param>
+    /// <param name="objectType"> (optional, default to &quot;&quot;)</param>
+    /// <param name="from"> (optional, default to &quot;&quot;)</param>
+    /// <param name="to"> (optional, default to &quot;&quot;)</param>
+    /// <param name="limit"> (optional, default to 50)</param>
+    /// <param name="cursor"> (optional, default to &quot;&quot;)</param>
+    virtual void list_audit_events(const HttpBearerToken &accessToken,  const std::optional<Pistache::Http::Header::Raw> &xTenantId, const std::optional<Pistache::Http::Header::Raw> &xOrganizationId, const std::optional<Pistache::Http::Header::Raw> &xLocationId, const std::optional<std::string> &actorUserId, const std::optional<std::string> &action, const std::optional<std::string> &objectType, const std::optional<std::string> &from, const std::optional<std::string> &to, const std::optional<int32_t> &limit, const std::optional<std::string> &cursor, Pistache::Http::ResponseWriter &response) = 0;
     /// <summary>
     /// List events
     /// </summary>

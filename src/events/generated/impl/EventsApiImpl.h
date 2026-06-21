@@ -29,6 +29,9 @@
 #include <EventsApi.h>
 
 
+#include "AuditEvent.h"
+#include "AuditEventCreate.h"
+#include "AuditEventPage.h"
 #include "ErrorResponse.h"
 #include "Event.h"
 #include "EventCreate.h"
@@ -46,9 +49,12 @@ public:
     explicit EventsApiImpl(const std::shared_ptr<Pistache::Rest::Router>& rtr);
     ~EventsApiImpl() override = default;
 
+    void create_audit_event(const HttpBearerToken &bearerToken, const AuditEventCreate &auditEventCreate, const std::optional<Pistache::Http::Header::Raw> &xTenantId, const std::optional<Pistache::Http::Header::Raw> &xOrganizationId, const std::optional<Pistache::Http::Header::Raw> &xLocationId, const std::optional<Pistache::Http::Header::Raw> &idempotencyKey, Pistache::Http::ResponseWriter &response);
     void create_event(const HttpBearerToken &bearerToken, const EventCreate &eventCreate, const std::optional<Pistache::Http::Header::Raw> &idempotencyKey, const std::optional<Pistache::Http::Header::Raw> &xTenantId, const std::optional<Pistache::Http::Header::Raw> &xOrganizationId, const std::optional<Pistache::Http::Header::Raw> &xLocationId, Pistache::Http::ResponseWriter &response);
     void delete_event(const HttpBearerToken &bearerToken, const std::string &eventId, const std::optional<Pistache::Http::Header::Raw> &idempotencyKey, const std::optional<Pistache::Http::Header::Raw> &xTenantId, const std::optional<Pistache::Http::Header::Raw> &xOrganizationId, const std::optional<Pistache::Http::Header::Raw> &xLocationId, Pistache::Http::ResponseWriter &response);
+    void get_audit_event(const HttpBearerToken &bearerToken, const std::string &auditEventId, const std::optional<Pistache::Http::Header::Raw> &xTenantId, const std::optional<Pistache::Http::Header::Raw> &xOrganizationId, const std::optional<Pistache::Http::Header::Raw> &xLocationId, Pistache::Http::ResponseWriter &response);
     void get_event(const HttpBearerToken &bearerToken, const std::string &eventId, const std::optional<Pistache::Http::Header::Raw> &xTenantId, const std::optional<Pistache::Http::Header::Raw> &xOrganizationId, const std::optional<Pistache::Http::Header::Raw> &xLocationId, Pistache::Http::ResponseWriter &response);
+    void list_audit_events(const HttpBearerToken &bearerToken, const std::optional<Pistache::Http::Header::Raw> &xTenantId, const std::optional<Pistache::Http::Header::Raw> &xOrganizationId, const std::optional<Pistache::Http::Header::Raw> &xLocationId, const std::optional<std::string> &actorUserId, const std::optional<std::string> &action, const std::optional<std::string> &objectType, const std::optional<std::string> &from, const std::optional<std::string> &to, const std::optional<int32_t> &limit, const std::optional<std::string> &cursor, Pistache::Http::ResponseWriter &response);
     void list_events(const HttpBearerToken &bearerToken, const std::optional<Pistache::Http::Header::Raw> &xTenantId, const std::optional<Pistache::Http::Header::Raw> &xOrganizationId, const std::optional<Pistache::Http::Header::Raw> &xLocationId, const std::optional<int32_t> &limit, const std::optional<std::string> &cursor, const std::optional<std::string> &q, const std::optional<std::string> &sort, const std::optional<std::string> &locationId, Pistache::Http::ResponseWriter &response);
     void update_event(const HttpBearerToken &bearerToken, const std::string &eventId, const EventUpdate &eventUpdate, const std::optional<Pistache::Http::Header::Raw> &idempotencyKey, const std::optional<Pistache::Http::Header::Raw> &xTenantId, const std::optional<Pistache::Http::Header::Raw> &xOrganizationId, const std::optional<Pistache::Http::Header::Raw> &xLocationId, Pistache::Http::ResponseWriter &response);
 

@@ -30,6 +30,8 @@ OrderLine::OrderLine()
     m_Discount_totalIsSet = false;
     m_Tax_totalIsSet = false;
     m_ModifiersIsSet = false;
+    m_Seat = 0;
+    m_SeatIsSet = false;
     
 }
 
@@ -83,7 +85,7 @@ bool OrderLine::validate(std::stringstream& msg, const std::string& pathPrefix) 
         }
 
     }
-    
+        
     return success;
 }
 
@@ -117,7 +119,10 @@ bool OrderLine::operator==(const OrderLine& rhs) const
      &&
     
     
-    ((!modifiersIsSet() && !rhs.modifiersIsSet()) || (modifiersIsSet() && rhs.modifiersIsSet() && getModifiers() == rhs.getModifiers()))
+    ((!modifiersIsSet() && !rhs.modifiersIsSet()) || (modifiersIsSet() && rhs.modifiersIsSet() && getModifiers() == rhs.getModifiers())) &&
+    
+    
+    ((!seatIsSet() && !rhs.seatIsSet()) || (seatIsSet() && rhs.seatIsSet() && getSeat() == rhs.getSeat()))
     
     ;
 }
@@ -144,6 +149,8 @@ void to_json(nlohmann::json& j, const OrderLine& o)
     j["line_total"] = o.m_Line_total;
     if(o.modifiersIsSet() || !o.m_Modifiers.empty())
         j["modifiers"] = o.m_Modifiers;
+    if(o.seatIsSet())
+        j["seat"] = o.m_Seat;
     
 }
 
@@ -177,6 +184,11 @@ void from_json(const nlohmann::json& j, OrderLine& o)
     {
         j.at("modifiers").get_to(o.m_Modifiers);
         o.m_ModifiersIsSet = true;
+    } 
+    if(j.find("seat") != j.end())
+    {
+        j.at("seat").get_to(o.m_Seat);
+        o.m_SeatIsSet = true;
     } 
     
 }
@@ -297,6 +309,23 @@ bool OrderLine::modifiersIsSet() const
 void OrderLine::unsetModifiers()
 {
     m_ModifiersIsSet = false;
+}
+int32_t OrderLine::getSeat() const
+{
+    return m_Seat;
+}
+void OrderLine::setSeat(int32_t const value)
+{
+    m_Seat = value;
+    m_SeatIsSet = true;
+}
+bool OrderLine::seatIsSet() const
+{
+    return m_SeatIsSet;
+}
+void OrderLine::unsetSeat()
+{
+    m_SeatIsSet = false;
 }
 
 

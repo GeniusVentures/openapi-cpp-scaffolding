@@ -40,6 +40,10 @@ Payment::Payment()
     m_Status = "";
     m_Provider_reference = "";
     m_Provider_referenceIsSet = false;
+    m_Tip_amountIsSet = false;
+    m_Refund_amountIsSet = false;
+    m_Refund_reason = "";
+    m_Refund_reasonIsSet = false;
     
 }
 
@@ -68,7 +72,7 @@ bool Payment::validate(std::stringstream& msg, const std::string& pathPrefix) co
     if (!m_Amount.validate(msg, _pathPrefix + ".amount")) {
         msg << _pathPrefix << ": Amount is invalid;";
         success = false;
-    }    
+    }                
     return success;
 }
 
@@ -120,7 +124,16 @@ bool Payment::operator==(const Payment& rhs) const
      &&
     
     
-    ((!providerReferenceIsSet() && !rhs.providerReferenceIsSet()) || (providerReferenceIsSet() && rhs.providerReferenceIsSet() && getProviderReference() == rhs.getProviderReference()))
+    ((!providerReferenceIsSet() && !rhs.providerReferenceIsSet()) || (providerReferenceIsSet() && rhs.providerReferenceIsSet() && getProviderReference() == rhs.getProviderReference())) &&
+    
+    
+    ((!tipAmountIsSet() && !rhs.tipAmountIsSet()) || (tipAmountIsSet() && rhs.tipAmountIsSet() && getTipAmount() == rhs.getTipAmount())) &&
+    
+    
+    ((!refundAmountIsSet() && !rhs.refundAmountIsSet()) || (refundAmountIsSet() && rhs.refundAmountIsSet() && getRefundAmount() == rhs.getRefundAmount())) &&
+    
+    
+    ((!refundReasonIsSet() && !rhs.refundReasonIsSet()) || (refundReasonIsSet() && rhs.refundReasonIsSet() && getRefundReason() == rhs.getRefundReason()))
     
     ;
 }
@@ -154,6 +167,12 @@ void to_json(nlohmann::json& j, const Payment& o)
     j["amount"] = o.m_Amount;
     if(o.providerReferenceIsSet())
         j["provider_reference"] = o.m_Provider_reference;
+    if(o.tipAmountIsSet())
+        j["tip_amount"] = o.m_Tip_amount;
+    if(o.refundAmountIsSet())
+        j["refund_amount"] = o.m_Refund_amount;
+    if(o.refundReasonIsSet())
+        j["refund_reason"] = o.m_Refund_reason;
     
 }
 
@@ -197,6 +216,21 @@ void from_json(const nlohmann::json& j, Payment& o)
     {
         j.at("provider_reference").get_to(o.m_Provider_reference);
         o.m_Provider_referenceIsSet = true;
+    } 
+    if(j.find("tip_amount") != j.end())
+    {
+        j.at("tip_amount").get_to(o.m_Tip_amount);
+        o.m_Tip_amountIsSet = true;
+    } 
+    if(j.find("refund_amount") != j.end())
+    {
+        j.at("refund_amount").get_to(o.m_Refund_amount);
+        o.m_Refund_amountIsSet = true;
+    } 
+    if(j.find("refund_reason") != j.end())
+    {
+        j.at("refund_reason").get_to(o.m_Refund_reason);
+        o.m_Refund_reasonIsSet = true;
     } 
     
 }
@@ -374,6 +408,57 @@ bool Payment::providerReferenceIsSet() const
 void Payment::unsetProvider_reference()
 {
     m_Provider_referenceIsSet = false;
+}
+org::openapitools::server::model::Money Payment::getTipAmount() const
+{
+    return m_Tip_amount;
+}
+void Payment::setTipAmount(org::openapitools::server::model::Money const& value)
+{
+    m_Tip_amount = value;
+    m_Tip_amountIsSet = true;
+}
+bool Payment::tipAmountIsSet() const
+{
+    return m_Tip_amountIsSet;
+}
+void Payment::unsetTip_amount()
+{
+    m_Tip_amountIsSet = false;
+}
+org::openapitools::server::model::Money Payment::getRefundAmount() const
+{
+    return m_Refund_amount;
+}
+void Payment::setRefundAmount(org::openapitools::server::model::Money const& value)
+{
+    m_Refund_amount = value;
+    m_Refund_amountIsSet = true;
+}
+bool Payment::refundAmountIsSet() const
+{
+    return m_Refund_amountIsSet;
+}
+void Payment::unsetRefund_amount()
+{
+    m_Refund_amountIsSet = false;
+}
+std::string Payment::getRefundReason() const
+{
+    return m_Refund_reason;
+}
+void Payment::setRefundReason(std::string const& value)
+{
+    m_Refund_reason = value;
+    m_Refund_reasonIsSet = true;
+}
+bool Payment::refundReasonIsSet() const
+{
+    return m_Refund_reasonIsSet;
+}
+void Payment::unsetRefund_reason()
+{
+    m_Refund_reasonIsSet = false;
 }
 
 

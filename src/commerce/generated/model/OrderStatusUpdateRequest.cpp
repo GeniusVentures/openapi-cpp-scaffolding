@@ -24,6 +24,8 @@ OrderStatusUpdateRequest::OrderStatusUpdateRequest()
     m_Status = "";
     m_Reason = "";
     m_ReasonIsSet = false;
+    m_Reason_code = "";
+    m_Reason_codeIsSet = false;
     m_Notify_customer = true;
     m_Notify_customerIsSet = false;
     
@@ -50,7 +52,7 @@ bool OrderStatusUpdateRequest::validate(std::stringstream& msg, const std::strin
     bool success = true;
     const std::string _pathPrefix = pathPrefix.empty() ? "OrderStatusUpdateRequest" : pathPrefix;
 
-                
+                    
     return success;
 }
 
@@ -64,6 +66,9 @@ bool OrderStatusUpdateRequest::operator==(const OrderStatusUpdateRequest& rhs) c
     
     
     ((!reasonIsSet() && !rhs.reasonIsSet()) || (reasonIsSet() && rhs.reasonIsSet() && getReason() == rhs.getReason())) &&
+    
+    
+    ((!reasonCodeIsSet() && !rhs.reasonCodeIsSet()) || (reasonCodeIsSet() && rhs.reasonCodeIsSet() && getReasonCode() == rhs.getReasonCode())) &&
     
     
     ((!notifyCustomerIsSet() && !rhs.notifyCustomerIsSet()) || (notifyCustomerIsSet() && rhs.notifyCustomerIsSet() && isNotifyCustomer() == rhs.isNotifyCustomer()))
@@ -82,6 +87,8 @@ void to_json(nlohmann::json& j, const OrderStatusUpdateRequest& o)
     j["status"] = o.m_Status;
     if(o.reasonIsSet())
         j["reason"] = o.m_Reason;
+    if(o.reasonCodeIsSet())
+        j["reason_code"] = o.m_Reason_code;
     if(o.notifyCustomerIsSet())
         j["notify_customer"] = o.m_Notify_customer;
     
@@ -94,6 +101,11 @@ void from_json(const nlohmann::json& j, OrderStatusUpdateRequest& o)
     {
         j.at("reason").get_to(o.m_Reason);
         o.m_ReasonIsSet = true;
+    } 
+    if(j.find("reason_code") != j.end())
+    {
+        j.at("reason_code").get_to(o.m_Reason_code);
+        o.m_Reason_codeIsSet = true;
     } 
     if(j.find("notify_customer") != j.end())
     {
@@ -127,6 +139,23 @@ bool OrderStatusUpdateRequest::reasonIsSet() const
 void OrderStatusUpdateRequest::unsetReason()
 {
     m_ReasonIsSet = false;
+}
+std::string OrderStatusUpdateRequest::getReasonCode() const
+{
+    return m_Reason_code;
+}
+void OrderStatusUpdateRequest::setReasonCode(std::string const& value)
+{
+    m_Reason_code = value;
+    m_Reason_codeIsSet = true;
+}
+bool OrderStatusUpdateRequest::reasonCodeIsSet() const
+{
+    return m_Reason_codeIsSet;
+}
+void OrderStatusUpdateRequest::unsetReason_code()
+{
+    m_Reason_codeIsSet = false;
 }
 bool OrderStatusUpdateRequest::isNotifyCustomer() const
 {

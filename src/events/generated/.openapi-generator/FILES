@@ -7,6 +7,12 @@ api/EventsApi.h
 impl/EventsApiImpl.cpp
 impl/EventsApiImpl.h
 main-api-server.cpp
+model/AuditEvent.cpp
+model/AuditEvent.h
+model/AuditEventCreate.cpp
+model/AuditEventCreate.h
+model/AuditEventPage.cpp
+model/AuditEventPage.h
 model/ErrorResponse.cpp
 model/ErrorResponse.h
 model/ErrorResponse_error.cpp

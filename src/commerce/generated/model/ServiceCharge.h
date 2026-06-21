@@ -10,16 +10,17 @@
 * Do not edit the class manually.
 */
 /*
- * OrderStatusUpdateRequest.h
+ * ServiceCharge.h
  *
  * 
  */
 
-#ifndef OrderStatusUpdateRequest_H_
-#define OrderStatusUpdateRequest_H_
+#ifndef ServiceCharge_H_
+#define ServiceCharge_H_
 
 
 #include <string>
+#include "Money.h"
 #include <nlohmann/json.hpp>
 
 namespace org::openapitools::server::model
@@ -28,11 +29,11 @@ namespace org::openapitools::server::model
 /// <summary>
 /// 
 /// </summary>
-class  OrderStatusUpdateRequest
+class  ServiceCharge
 {
 public:
-    OrderStatusUpdateRequest();
-    virtual ~OrderStatusUpdateRequest();
+    ServiceCharge();
+    virtual ~ServiceCharge();
 
 
     /// <summary>
@@ -52,17 +53,17 @@ public:
     /// </summary>
     bool validate(std::stringstream& msg, const std::string& pathPrefix) const;
 
-    bool operator==(const OrderStatusUpdateRequest& rhs) const;
-    bool operator!=(const OrderStatusUpdateRequest& rhs) const;
+    bool operator==(const ServiceCharge& rhs) const;
+    bool operator!=(const ServiceCharge& rhs) const;
 
     /////////////////////////////////////////////
-    /// OrderStatusUpdateRequest members
+    /// ServiceCharge members
 
     /// <summary>
     /// 
     /// </summary>
-    std::string getStatus() const;
-    void setStatus(std::string const& value);
+    std::string getName() const;
+    void setName(std::string const& value);
     /// <summary>
     /// 
     /// </summary>
@@ -73,32 +74,30 @@ public:
     /// <summary>
     /// 
     /// </summary>
-    std::string getReasonCode() const;
-    void setReasonCode(std::string const& value);
-    bool reasonCodeIsSet() const;
-    void unsetReason_code();
+    org::openapitools::server::model::Money getAmount() const;
+    void setAmount(org::openapitools::server::model::Money const& value);
     /// <summary>
     /// 
     /// </summary>
-    bool isNotifyCustomer() const;
-    void setNotifyCustomer(bool const value);
-    bool notifyCustomerIsSet() const;
-    void unsetNotify_customer();
+    bool isTaxable() const;
+    void setTaxable(bool const value);
+    bool taxableIsSet() const;
+    void unsetTaxable();
 
-    friend  void to_json(nlohmann::json& j, const OrderStatusUpdateRequest& o);
-    friend  void from_json(const nlohmann::json& j, OrderStatusUpdateRequest& o);
+    friend  void to_json(nlohmann::json& j, const ServiceCharge& o);
+    friend  void from_json(const nlohmann::json& j, ServiceCharge& o);
 protected:
-    std::string m_Status;
+    std::string m_Name;
 
     std::string m_Reason;
     bool m_ReasonIsSet;
-    std::string m_Reason_code;
-    bool m_Reason_codeIsSet;
-    bool m_Notify_customer;
-    bool m_Notify_customerIsSet;
+    org::openapitools::server::model::Money m_Amount;
+
+    bool m_Taxable;
+    bool m_TaxableIsSet;
     
 };
 
 } // namespace org::openapitools::server::model
 
-#endif /* OrderStatusUpdateRequest_H_ */
+#endif /* ServiceCharge_H_ */

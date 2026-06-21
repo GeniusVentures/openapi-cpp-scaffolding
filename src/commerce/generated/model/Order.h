@@ -21,8 +21,10 @@
 
 #include "OrderLine.h"
 #include <nlohmann/json.hpp>
+#include "OrderDiscount.h"
 #include <string>
 #include "Money.h"
+#include "ServiceCharge.h"
 #include <map>
 #include <vector>
 #include <nlohmann/json.hpp>
@@ -178,6 +180,48 @@ public:
     void setLines(std::vector<org::openapitools::server::model::OrderLine> const& value);
     bool linesIsSet() const;
     void unsetLines();
+    /// <summary>
+    /// 
+    /// </summary>
+    std::string getTableId() const;
+    void setTableId(std::string const& value);
+    bool tableIdIsSet() const;
+    void unsetTable_id();
+    /// <summary>
+    /// 
+    /// </summary>
+    std::string getServerId() const;
+    void setServerId(std::string const& value);
+    bool serverIdIsSet() const;
+    void unsetServer_id();
+    /// <summary>
+    /// 
+    /// </summary>
+    int32_t getGuestCount() const;
+    void setGuestCount(int32_t const value);
+    bool guestCountIsSet() const;
+    void unsetGuest_count();
+    /// <summary>
+    /// 
+    /// </summary>
+    std::string getPaymentStatus() const;
+    void setPaymentStatus(std::string const& value);
+    bool paymentStatusIsSet() const;
+    void unsetPayment_status();
+    /// <summary>
+    /// 
+    /// </summary>
+    std::vector<org::openapitools::server::model::OrderDiscount> getDiscounts() const;
+    void setDiscounts(std::vector<org::openapitools::server::model::OrderDiscount> const& value);
+    bool discountsIsSet() const;
+    void unsetDiscounts();
+    /// <summary>
+    /// 
+    /// </summary>
+    std::vector<org::openapitools::server::model::ServiceCharge> getServiceCharges() const;
+    void setServiceCharges(std::vector<org::openapitools::server::model::ServiceCharge> const& value);
+    bool serviceChargesIsSet() const;
+    void unsetService_charges();
 
     friend  void to_json(nlohmann::json& j, const Order& o);
     friend  void from_json(const nlohmann::json& j, Order& o);
@@ -220,6 +264,18 @@ protected:
 
     std::vector<org::openapitools::server::model::OrderLine> m_Lines;
     bool m_LinesIsSet;
+    std::string m_Table_id;
+    bool m_Table_idIsSet;
+    std::string m_Server_id;
+    bool m_Server_idIsSet;
+    int32_t m_Guest_count;
+    bool m_Guest_countIsSet;
+    std::string m_Payment_status;
+    bool m_Payment_statusIsSet;
+    std::vector<org::openapitools::server::model::OrderDiscount> m_Discounts;
+    bool m_DiscountsIsSet;
+    std::vector<org::openapitools::server::model::ServiceCharge> m_Service_charges;
+    bool m_Service_chargesIsSet;
     
 };
 

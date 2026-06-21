@@ -46,7 +46,7 @@ protected:
 
     IStorageEngine* m_storage = nullptr;
 
-    REGISTER_PLUGIN(kDefaultPluginPriority, ({"/api/v1/events", "/api/v1/events/{eventId}"}))
+    REGISTER_PLUGIN(kDefaultPluginPriority, ({"/api/v1/events", "/api/v1/events/audit", "/api/v1/events/audit/{auditEventId}", "/api/v1/events/{eventId}"}))
 
     /// Generate a random UUID (32 hex characters, no hyphens)
     static std::string GenerateUuid()
@@ -147,6 +147,110 @@ protected:
         {
             return R"({"error":{"code":"PARSE_ERROR","message":"Invalid JSON body"}})";
         }
+    }
+
+///
+/// CRUD handler for listAuditEvents — list audit entities
+///
+    virtual std::string listAuditEvents(
+        const RequestContext& /*ctx*/,
+        const std::string& /*method*/,
+        const std::string& urlPath,
+        const std::string& body)
+    {
+        std::string prefix = KeyBuilder::MakePrefix("events", "audit");
+        auto scanResult = m_storage->Scan(prefix);
+
+        json result = json::array();
+        for (const auto& [k, v] : scanResult)
+        {
+            json item = json::parse(v);
+            // Backfill multi-tenant fields for records created before
+            // tenant stamping was added to create handlers.
+            if (!item.contains("tenant_id"))
+            {
+                item["tenant_id"] = "default";
+            }
+            if (!item.contains("organization_id"))
+            {
+                item["organization_id"] = "default";
+            }
+            result.push_back(item);
+        }
+        json response;
+        response["data"] = result;
+        json pagination;
+        pagination["limit"] = kDefaultPaginationLimit;
+        pagination["has_more"] = false;
+        response["pagination"] = pagination;
+        return response.dump();
+    }
+
+///
+/// CRUD handler for createAuditEvent — create a new audit entity
+///
+    virtual std::string createAuditEvent(
+        const RequestContext& ctx,
+        const std::string& /*method*/,
+        const std::string& /*urlPath*/,
+        const std::string& body)
+    {
+        try
+        {
+            json requestData = json::parse(body);
+            std::string id = GenerateUuid();
+            requestData["id"] = id;
+            requestData["tenant_id"] = ctx.tenantId;
+            requestData["organization_id"] = ctx.organizationId;
+            requestData["created_at"] = GetCurrentTimestamp();
+            requestData["updated_at"] = requestData["created_at"];
+
+            auto keyResult = KeyBuilder::Build("events", "audit", id);
+            if (!keyResult.has_value())
+            {
+                return R"({"error":{"code":"INVALID_KEY","message":"Failed to build storage key"}})";
+            }
+            std::string key = keyResult.value();
+
+            if (!m_storage->Put(key, requestData.dump()))
+            {
+                return R"({"error":{"code":"STORAGE_ERROR","message":"Failed to store entity"}})";
+            }
+            return requestData.dump();
+        }
+        catch (const json::parse_error&)
+        {
+            return R"({"error":{"code":"PARSE_ERROR","message":"Invalid JSON body"}})";
+        }
+    }
+
+///
+/// CRUD handler for getAuditEvent — get a single audit entity
+///
+    virtual std::string getAuditEvent(
+        const RequestContext& /*ctx*/,
+        const std::string& /*method*/,
+        const std::string& urlPath,
+        const std::string& body)
+    {
+        std::string id = urlPath.substr(urlPath.rfind(kPathSeparator) + 1);
+
+        auto keyResult = KeyBuilder::Build("events", "audit", id);
+        if (!keyResult.has_value())
+        {
+            return R"({"error":{"code":"INVALID_KEY","message":"Invalid entity ID"}})";
+        }
+        std::string key = keyResult.value();
+
+        std::string value;
+        if (!m_storage->Get(key, value))
+        {
+            return R"({"error":{"code":"NOT_FOUND","message":"Entity not found"}})";
+        }
+        json item = json::parse(value);
+        if (!item.contains("tenant_id")) { item["tenant_id"] = "default"; }
+        if (!item.contains("organization_id")) { item["organization_id"] = "default"; }
+        return item.dump();
     }
 
 ///
@@ -254,6 +358,18 @@ protected:
         pm->RegisterHandler("POST", "/api/v1/events", "createEvent",
             [this](const RequestContext& ctx, const std::string& m, const std::string& p, const std::string& b) {
                 return createEvent(ctx, m, p, b);
+            }, GetName(), kStubHandlerPriority);
+        pm->RegisterHandler("GET", "/api/v1/events/audit", "listAuditEvents",
+            [this](const RequestContext& ctx, const std::string& m, const std::string& p, const std::string& b) {
+                return listAuditEvents(ctx, m, p, b);
+            }, GetName(), kStubHandlerPriority);
+        pm->RegisterHandler("POST", "/api/v1/events/audit", "createAuditEvent",
+            [this](const RequestContext& ctx, const std::string& m, const std::string& p, const std::string& b) {
+                return createAuditEvent(ctx, m, p, b);
+            }, GetName(), kStubHandlerPriority);
+        pm->RegisterHandler("GET", "/api/v1/events/audit/{auditEventId}", "getAuditEvent",
+            [this](const RequestContext& ctx, const std::string& m, const std::string& p, const std::string& b) {
+                return getAuditEvent(ctx, m, p, b);
             }, GetName(), kStubHandlerPriority);
         pm->RegisterHandler("GET", "/api/v1/events/{eventId}", "getEvent",
             [this](const RequestContext& ctx, const std::string& m, const std::string& p, const std::string& b) {

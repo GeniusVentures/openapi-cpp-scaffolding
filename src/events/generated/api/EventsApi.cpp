@@ -32,9 +32,12 @@ void EventsApi::init() {
 void EventsApi::setupRoutes() {
     using namespace Pistache::Rest;
 
+    Routes::Post(*router, base + "/api/v1/events/audit", Routes::bind(&EventsApi::create_audit_event_handler, this));
     Routes::Post(*router, base + "/api/v1/events", Routes::bind(&EventsApi::create_event_handler, this));
     Routes::Delete(*router, base + "/api/v1/events/:eventId", Routes::bind(&EventsApi::delete_event_handler, this));
+    Routes::Get(*router, base + "/api/v1/events/audit/:auditEventId", Routes::bind(&EventsApi::get_audit_event_handler, this));
     Routes::Get(*router, base + "/api/v1/events/:eventId", Routes::bind(&EventsApi::get_event_handler, this));
+    Routes::Get(*router, base + "/api/v1/events/audit", Routes::bind(&EventsApi::list_audit_events_handler, this));
     Routes::Get(*router, base + "/api/v1/events", Routes::bind(&EventsApi::list_events_handler, this));
     Routes::Patch(*router, base + "/api/v1/events/:eventId", Routes::bind(&EventsApi::update_event_handler, this));
 
@@ -66,6 +69,95 @@ void EventsApi::handleOperationException(const std::exception& ex, Pistache::Htt
 
 std::pair<Pistache::Http::Code, std::string> EventsApi::handleOperationException(const std::exception& ex) const noexcept {
     return std::make_pair(Pistache::Http::Code::Internal_Server_Error, ex.what());
+}
+
+void EventsApi::create_audit_event_handler(const Pistache::Rest::Request& request, Pistache::Http::ResponseWriter response) {
+    try {
+
+        
+        // Getting the body param
+        
+        AuditEventCreate auditEventCreate;
+        
+        
+        
+    
+        // Getting the header params
+        auto xTenantId = request.headers().tryGetRaw("X-Tenant-Id");
+        auto xOrganizationId = request.headers().tryGetRaw("X-Organization-Id");
+        auto xLocationId = request.headers().tryGetRaw("X-Location-Id");
+        auto idempotencyKey = request.headers().tryGetRaw("Idempotency-Key");
+
+        try {
+            nlohmann::json::parse(request.body()).get_to(auditEventCreate);
+            auditEventCreate.validate();
+        } catch (std::exception& e) {
+            this->handleParsingException(e, response);
+            return;
+        }
+
+        try {
+#ifndef HTTP_BASIC_AUTH_DEFINED
+#define HTTP_BASIC_AUTH_DEFINED 0
+#endif
+#ifndef HTTP_BEARER_AUTH_DEFINED
+#define HTTP_BEARER_AUTH_DEFINED 0
+#endif
+
+
+
+
+#undef HTTP_BEARER_AUTH_DEFINED
+#define HTTP_BEARER_AUTH_DEFINED 1
+
+            auto bearerAuthHeader = request.headers().tryGet<Pistache::Http::Header::Authorization>();
+
+            if (!bearerAuthHeader || (bearerAuthHeader->getMethod() != Pistache::Http::Header::Authorization::Method::Bearer))
+            {
+                response.send(Pistache::Http::Code::Unauthorized, "");
+                return;
+            }
+
+            std::string completeHeaderValue = bearerAuthHeader->value();
+            const std::string tokenAsString(completeHeaderValue.begin() + std::string("Bearer ").length(), completeHeaderValue.end());
+
+            HttpBearerToken bearerToken{tokenAsString};
+
+            if (!this->bearerTokenAuthenticator.has_value() || !this->bearerTokenAuthenticator.value()(bearerToken))
+            {
+                response.send(Pistache::Http::Code::Unauthorized, "");
+                return;
+            }
+
+            this->create_audit_event(bearerToken,auditEventCreate, xTenantId, xOrganizationId, xLocationId, idempotencyKey, response);
+            } catch (Pistache::Http::HttpError &e) {
+                response.send(static_cast<Pistache::Http::Code>(e.code()), e.what());
+                return;
+            } catch (std::exception &e) {
+                this->handleOperationException(e, response);
+                return;
+            }
+
+    } catch (std::exception &e) {
+        response.send(Pistache::Http::Code::Internal_Server_Error, e.what());
+    }
+
+#ifndef HTTP_BASIC_AUTH_DEFINED
+#define HTTP_BASIC_AUTH_DEFINED 0
+#endif
+#ifndef HTTP_BEARER_AUTH_DEFINED
+#define HTTP_BEARER_AUTH_DEFINED 0
+#endif
+#define REST_PATH "/api/v1/events/audit" 
+    static_assert(HTTP_BASIC_AUTH_DEFINED + HTTP_BEARER_AUTH_DEFINED < 2, "Path '" REST_PATH "' has more than one security scheme specified, and the Pistache server generator does not support that.");
+#undef REST_PATH
+#ifdef HTTP_BEARER_AUTH_DEFINED
+#undef HTTP_BEARER_AUTH_DEFINED
+#endif
+#ifdef HTTP_BASIC_AUTH_DEFINED
+#undef HTTP_BASIC_AUTH_DEFINED
+#endif
+
 }
 
 void EventsApi::create_event_handler(const Pistache::Rest::Request& request, Pistache::Http::ResponseWriter response) {
@@ -236,6 +328,84 @@ void EventsApi::delete_event_handler(const Pistache::Rest::Request& request, Pis
 
 }
 
+void EventsApi::get_audit_event_handler(const Pistache::Rest::Request& request, Pistache::Http::ResponseWriter response) {
+    try {
+
+        // Getting the path params
+        auto auditEventId = request.param(":auditEventId").as<std::string>();
+        
+        
+    
+        // Getting the header params
+        auto xTenantId = request.headers().tryGetRaw("X-Tenant-Id");
+        auto xOrganizationId = request.headers().tryGetRaw("X-Organization-Id");
+        auto xLocationId = request.headers().tryGetRaw("X-Location-Id");
+
+
+        try {
+#ifndef HTTP_BASIC_AUTH_DEFINED
+#define HTTP_BASIC_AUTH_DEFINED 0
+#endif
+#ifndef HTTP_BEARER_AUTH_DEFINED
+#define HTTP_BEARER_AUTH_DEFINED 0
+#endif
+
+
+
+
+#undef HTTP_BEARER_AUTH_DEFINED
+#define HTTP_BEARER_AUTH_DEFINED 1
+
+            auto bearerAuthHeader = request.headers().tryGet<Pistache::Http::Header::Authorization>();
+
+            if (!bearerAuthHeader || (bearerAuthHeader->getMethod() != Pistache::Http::Header::Authorization::Method::Bearer))
+            {
+                response.send(Pistache::Http::Code::Unauthorized, "");
+                return;
+            }
+
+            std::string completeHeaderValue = bearerAuthHeader->value();
+            const std::string tokenAsString(completeHeaderValue.begin() + std::string("Bearer ").length(), completeHeaderValue.end());
+
+            HttpBearerToken bearerToken{tokenAsString};
+
+            if (!this->bearerTokenAuthenticator.has_value() || !this->bearerTokenAuthenticator.value()(bearerToken))
+            {
+                response.send(Pistache::Http::Code::Unauthorized, "");
+                return;
+            }
+
+            this->get_audit_event(bearerToken,auditEventId, xTenantId, xOrganizationId, xLocationId, response);
+            } catch (Pistache::Http::HttpError &e) {
+                response.send(static_cast<Pistache::Http::Code>(e.code()), e.what());
+                return;
+            } catch (std::exception &e) {
+                this->handleOperationException(e, response);
+                return;
+            }
+
+    } catch (std::exception &e) {
+        response.send(Pistache::Http::Code::Internal_Server_Error, e.what());
+    }
+
+#ifndef HTTP_BASIC_AUTH_DEFINED
+#define HTTP_BASIC_AUTH_DEFINED 0
+#endif
+#ifndef HTTP_BEARER_AUTH_DEFINED
+#define HTTP_BEARER_AUTH_DEFINED 0
+#endif
+#define REST_PATH "/api/v1/events/audit/:auditEventId" 
+    static_assert(HTTP_BASIC_AUTH_DEFINED + HTTP_BEARER_AUTH_DEFINED < 2, "Path '" REST_PATH "' has more than one security scheme specified, and the Pistache server generator does not support that.");
+#undef REST_PATH
+#ifdef HTTP_BEARER_AUTH_DEFINED
+#undef HTTP_BEARER_AUTH_DEFINED
+#endif
+#ifdef HTTP_BASIC_AUTH_DEFINED
+#undef HTTP_BASIC_AUTH_DEFINED
+#endif
+
+}
+
 void EventsApi::get_event_handler(const Pistache::Rest::Request& request, Pistache::Http::ResponseWriter response) {
     try {
 
@@ -303,6 +473,139 @@ void EventsApi::get_event_handler(const Pistache::Rest::Request& request, Pistac
 #define HTTP_BEARER_AUTH_DEFINED 0
 #endif
 #define REST_PATH "/api/v1/events/:eventId" 
+    static_assert(HTTP_BASIC_AUTH_DEFINED + HTTP_BEARER_AUTH_DEFINED < 2, "Path '" REST_PATH "' has more than one security scheme specified, and the Pistache server generator does not support that.");
+#undef REST_PATH
+#ifdef HTTP_BEARER_AUTH_DEFINED
+#undef HTTP_BEARER_AUTH_DEFINED
+#endif
+#ifdef HTTP_BASIC_AUTH_DEFINED
+#undef HTTP_BASIC_AUTH_DEFINED
+#endif
+
+}
+
+void EventsApi::list_audit_events_handler(const Pistache::Rest::Request& request, Pistache::Http::ResponseWriter response) {
+    try {
+
+        
+        
+        // Getting the query params
+        auto actorUserIdQuery = request.query().get("actor_user_id");
+        std::optional<std::string> actorUserId;
+        if (actorUserIdQuery.has_value()) {
+            std::string valueQuery_instance;
+            if (fromStringValue(actorUserIdQuery.value(), valueQuery_instance)) {
+                actorUserId = valueQuery_instance;
+            }
+        }
+        auto actionQuery = request.query().get("action");
+        std::optional<std::string> action;
+        if (actionQuery.has_value()) {
+            std::string valueQuery_instance;
+            if (fromStringValue(actionQuery.value(), valueQuery_instance)) {
+                action = valueQuery_instance;
+            }
+        }
+        auto objectTypeQuery = request.query().get("object_type");
+        std::optional<std::string> objectType;
+        if (objectTypeQuery.has_value()) {
+            std::string valueQuery_instance;
+            if (fromStringValue(objectTypeQuery.value(), valueQuery_instance)) {
+                objectType = valueQuery_instance;
+            }
+        }
+        auto fromQuery = request.query().get("from");
+        std::optional<std::string> from;
+        if (fromQuery.has_value()) {
+            std::string valueQuery_instance;
+            if (fromStringValue(fromQuery.value(), valueQuery_instance)) {
+                from = valueQuery_instance;
+            }
+        }
+        auto toQuery = request.query().get("to");
+        std::optional<std::string> to;
+        if (toQuery.has_value()) {
+            std::string valueQuery_instance;
+            if (fromStringValue(toQuery.value(), valueQuery_instance)) {
+                to = valueQuery_instance;
+            }
+        }
+        auto limitQuery = request.query().get("limit");
+        std::optional<int32_t> limit;
+        if (limitQuery.has_value()) {
+            int32_t valueQuery_instance;
+            if (fromStringValue(limitQuery.value(), valueQuery_instance)) {
+                limit = valueQuery_instance;
+            }
+        }
+        auto cursorQuery = request.query().get("cursor");
+        std::optional<std::string> cursor;
+        if (cursorQuery.has_value()) {
+            std::string valueQuery_instance;
+            if (fromStringValue(cursorQuery.value(), valueQuery_instance)) {
+                cursor = valueQuery_instance;
+            }
+        }
+    
+        // Getting the header params
+        auto xTenantId = request.headers().tryGetRaw("X-Tenant-Id");
+        auto xOrganizationId = request.headers().tryGetRaw("X-Organization-Id");
+        auto xLocationId = request.headers().tryGetRaw("X-Location-Id");
+
+
+        try {
+#ifndef HTTP_BASIC_AUTH_DEFINED
+#define HTTP_BASIC_AUTH_DEFINED 0
+#endif
+#ifndef HTTP_BEARER_AUTH_DEFINED
+#define HTTP_BEARER_AUTH_DEFINED 0
+#endif
+
+
+
+
+#undef HTTP_BEARER_AUTH_DEFINED
+#define HTTP_BEARER_AUTH_DEFINED 1
+
+            auto bearerAuthHeader = request.headers().tryGet<Pistache::Http::Header::Authorization>();
+
+            if (!bearerAuthHeader || (bearerAuthHeader->getMethod() != Pistache::Http::Header::Authorization::Method::Bearer))
+            {
+                response.send(Pistache::Http::Code::Unauthorized, "");
+                return;
+            }
+
+            std::string completeHeaderValue = bearerAuthHeader->value();
+            const std::string tokenAsString(completeHeaderValue.begin() + std::string("Bearer ").length(), completeHeaderValue.end());
+
+            HttpBearerToken bearerToken{tokenAsString};
+
+            if (!this->bearerTokenAuthenticator.has_value() || !this->bearerTokenAuthenticator.value()(bearerToken))
+            {
+                response.send(Pistache::Http::Code::Unauthorized, "");
+                return;
+            }
+
+            this->list_audit_events(bearerToken,xTenantId, xOrganizationId, xLocationId, actorUserId, action, objectType, from, to, limit, cursor, response);
+            } catch (Pistache::Http::HttpError &e) {
+                response.send(static_cast<Pistache::Http::Code>(e.code()), e.what());
+                return;
+            } catch (std::exception &e) {
+                this->handleOperationException(e, response);
+                return;
+            }
+
+    } catch (std::exception &e) {
+        response.send(Pistache::Http::Code::Internal_Server_Error, e.what());
+    }
+
+#ifndef HTTP_BASIC_AUTH_DEFINED
+#define HTTP_BASIC_AUTH_DEFINED 0
+#endif
+#ifndef HTTP_BEARER_AUTH_DEFINED
+#define HTTP_BEARER_AUTH_DEFINED 0
+#endif
+#define REST_PATH "/api/v1/events/audit" 
     static_assert(HTTP_BASIC_AUTH_DEFINED + HTTP_BEARER_AUTH_DEFINED < 2, "Path '" REST_PATH "' has more than one security scheme specified, and the Pistache server generator does not support that.");
 #undef REST_PATH
 #ifdef HTTP_BEARER_AUTH_DEFINED

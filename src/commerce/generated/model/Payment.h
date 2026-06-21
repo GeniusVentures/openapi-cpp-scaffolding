@@ -148,6 +148,27 @@ public:
     void setProviderReference(std::string const& value);
     bool providerReferenceIsSet() const;
     void unsetProvider_reference();
+    /// <summary>
+    /// 
+    /// </summary>
+    org::openapitools::server::model::Money getTipAmount() const;
+    void setTipAmount(org::openapitools::server::model::Money const& value);
+    bool tipAmountIsSet() const;
+    void unsetTip_amount();
+    /// <summary>
+    /// 
+    /// </summary>
+    org::openapitools::server::model::Money getRefundAmount() const;
+    void setRefundAmount(org::openapitools::server::model::Money const& value);
+    bool refundAmountIsSet() const;
+    void unsetRefund_amount();
+    /// <summary>
+    /// 
+    /// </summary>
+    std::string getRefundReason() const;
+    void setRefundReason(std::string const& value);
+    bool refundReasonIsSet() const;
+    void unsetRefund_reason();
 
     friend  void to_json(nlohmann::json& j, const Payment& o);
     friend  void from_json(const nlohmann::json& j, Payment& o);
@@ -182,6 +203,12 @@ protected:
 
     std::string m_Provider_reference;
     bool m_Provider_referenceIsSet;
+    org::openapitools::server::model::Money m_Tip_amount;
+    bool m_Tip_amountIsSet;
+    org::openapitools::server::model::Money m_Refund_amount;
+    bool m_Refund_amountIsSet;
+    std::string m_Refund_reason;
+    bool m_Refund_reasonIsSet;
     
 };
 

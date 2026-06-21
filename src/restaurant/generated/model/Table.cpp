@@ -38,6 +38,15 @@ Table::Table()
     m_Status = "";
     m_Asset_id = "";
     m_Asset_idIsSet = false;
+    m_Server_id = "";
+    m_Server_idIsSet = false;
+    m_Guest_count = 0;
+    m_Guest_countIsSet = false;
+    m_Opened_at = "";
+    m_Opened_atIsSet = false;
+    m_Open_order_idsIsSet = false;
+    m_Pos_status = "";
+    m_Pos_statusIsSet = false;
     
 }
 
@@ -62,7 +71,28 @@ bool Table::validate(std::stringstream& msg, const std::string& pathPrefix) cons
     bool success = true;
     const std::string _pathPrefix = pathPrefix.empty() ? "Table" : pathPrefix;
 
-                                                        
+                                                                         
+    if (openOrderIdsIsSet())
+    {
+        const std::vector<std::string>& value = m_Open_order_ids;
+        const std::string currentValuePath = _pathPrefix + ".openOrderIds";
+                
+        
+        { // Recursive validation of array elements
+            const std::string oldValuePath = currentValuePath;
+            int i = 0;
+            for (const std::string& value : value)
+            { 
+                const std::string currentValuePath = oldValuePath + "[" + std::to_string(i) + "]";
+                        
+        
+ 
+                i++;
+            }
+        }
+
+    }
+        
     return success;
 }
 
@@ -108,7 +138,22 @@ bool Table::operator==(const Table& rhs) const
      &&
     
     
-    ((!assetIdIsSet() && !rhs.assetIdIsSet()) || (assetIdIsSet() && rhs.assetIdIsSet() && getAssetId() == rhs.getAssetId()))
+    ((!assetIdIsSet() && !rhs.assetIdIsSet()) || (assetIdIsSet() && rhs.assetIdIsSet() && getAssetId() == rhs.getAssetId())) &&
+    
+    
+    ((!serverIdIsSet() && !rhs.serverIdIsSet()) || (serverIdIsSet() && rhs.serverIdIsSet() && getServerId() == rhs.getServerId())) &&
+    
+    
+    ((!guestCountIsSet() && !rhs.guestCountIsSet()) || (guestCountIsSet() && rhs.guestCountIsSet() && getGuestCount() == rhs.getGuestCount())) &&
+    
+    
+    ((!openedAtIsSet() && !rhs.openedAtIsSet()) || (openedAtIsSet() && rhs.openedAtIsSet() && getOpenedAt() == rhs.getOpenedAt())) &&
+    
+    
+    ((!openOrderIdsIsSet() && !rhs.openOrderIdsIsSet()) || (openOrderIdsIsSet() && rhs.openOrderIdsIsSet() && getOpenOrderIds() == rhs.getOpenOrderIds())) &&
+    
+    
+    ((!posStatusIsSet() && !rhs.posStatusIsSet()) || (posStatusIsSet() && rhs.posStatusIsSet() && getPosStatus() == rhs.getPosStatus()))
     
     ;
 }
@@ -139,6 +184,16 @@ void to_json(nlohmann::json& j, const Table& o)
     j["status"] = o.m_Status;
     if(o.assetIdIsSet())
         j["asset_id"] = o.m_Asset_id;
+    if(o.serverIdIsSet())
+        j["server_id"] = o.m_Server_id;
+    if(o.guestCountIsSet())
+        j["guest_count"] = o.m_Guest_count;
+    if(o.openedAtIsSet())
+        j["opened_at"] = o.m_Opened_at;
+    if(o.openOrderIdsIsSet() || !o.m_Open_order_ids.empty())
+        j["open_order_ids"] = o.m_Open_order_ids;
+    if(o.posStatusIsSet())
+        j["pos_status"] = o.m_Pos_status;
     
 }
 
@@ -176,6 +231,31 @@ void from_json(const nlohmann::json& j, Table& o)
     {
         j.at("asset_id").get_to(o.m_Asset_id);
         o.m_Asset_idIsSet = true;
+    } 
+    if(j.find("server_id") != j.end())
+    {
+        j.at("server_id").get_to(o.m_Server_id);
+        o.m_Server_idIsSet = true;
+    } 
+    if(j.find("guest_count") != j.end())
+    {
+        j.at("guest_count").get_to(o.m_Guest_count);
+        o.m_Guest_countIsSet = true;
+    } 
+    if(j.find("opened_at") != j.end())
+    {
+        j.at("opened_at").get_to(o.m_Opened_at);
+        o.m_Opened_atIsSet = true;
+    } 
+    if(j.find("open_order_ids") != j.end())
+    {
+        j.at("open_order_ids").get_to(o.m_Open_order_ids);
+        o.m_Open_order_idsIsSet = true;
+    } 
+    if(j.find("pos_status") != j.end())
+    {
+        j.at("pos_status").get_to(o.m_Pos_status);
+        o.m_Pos_statusIsSet = true;
     } 
     
 }
@@ -328,6 +408,91 @@ bool Table::assetIdIsSet() const
 void Table::unsetAsset_id()
 {
     m_Asset_idIsSet = false;
+}
+std::string Table::getServerId() const
+{
+    return m_Server_id;
+}
+void Table::setServerId(std::string const& value)
+{
+    m_Server_id = value;
+    m_Server_idIsSet = true;
+}
+bool Table::serverIdIsSet() const
+{
+    return m_Server_idIsSet;
+}
+void Table::unsetServer_id()
+{
+    m_Server_idIsSet = false;
+}
+int32_t Table::getGuestCount() const
+{
+    return m_Guest_count;
+}
+void Table::setGuestCount(int32_t const value)
+{
+    m_Guest_count = value;
+    m_Guest_countIsSet = true;
+}
+bool Table::guestCountIsSet() const
+{
+    return m_Guest_countIsSet;
+}
+void Table::unsetGuest_count()
+{
+    m_Guest_countIsSet = false;
+}
+std::string Table::getOpenedAt() const
+{
+    return m_Opened_at;
+}
+void Table::setOpenedAt(std::string const& value)
+{
+    m_Opened_at = value;
+    m_Opened_atIsSet = true;
+}
+bool Table::openedAtIsSet() const
+{
+    return m_Opened_atIsSet;
+}
+void Table::unsetOpened_at()
+{
+    m_Opened_atIsSet = false;
+}
+std::vector<std::string> Table::getOpenOrderIds() const
+{
+    return m_Open_order_ids;
+}
+void Table::setOpenOrderIds(std::vector<std::string> const& value)
+{
+    m_Open_order_ids = value;
+    m_Open_order_idsIsSet = true;
+}
+bool Table::openOrderIdsIsSet() const
+{
+    return m_Open_order_idsIsSet;
+}
+void Table::unsetOpen_order_ids()
+{
+    m_Open_order_idsIsSet = false;
+}
+std::string Table::getPosStatus() const
+{
+    return m_Pos_status;
+}
+void Table::setPosStatus(std::string const& value)
+{
+    m_Pos_status = value;
+    m_Pos_statusIsSet = true;
+}
+bool Table::posStatusIsSet() const
+{
+    return m_Pos_statusIsSet;
+}
+void Table::unsetPos_status()
+{
+    m_Pos_statusIsSet = false;
 }
 
 

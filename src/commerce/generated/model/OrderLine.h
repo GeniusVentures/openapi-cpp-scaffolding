@@ -117,6 +117,13 @@ public:
     void setModifiers(std::vector<std::map<std::string, nlohmann::json>> const& value);
     bool modifiersIsSet() const;
     void unsetModifiers();
+    /// <summary>
+    /// 
+    /// </summary>
+    int32_t getSeat() const;
+    void setSeat(int32_t const value);
+    bool seatIsSet() const;
+    void unsetSeat();
 
     friend  void to_json(nlohmann::json& j, const OrderLine& o);
     friend  void from_json(const nlohmann::json& j, OrderLine& o);
@@ -139,6 +146,8 @@ protected:
 
     std::vector<std::map<std::string, nlohmann::json>> m_Modifiers;
     bool m_ModifiersIsSet;
+    int32_t m_Seat;
+    bool m_SeatIsSet;
     
 };
 

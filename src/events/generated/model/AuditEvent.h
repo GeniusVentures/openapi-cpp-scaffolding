@@ -1,6 +1,6 @@
 /**
-* AI-Native Business OS API - Restaurant
-* Extracted from business_os_openapi.yaml. Domain: Restaurant. Usable independently for C++ code generation.
+* AI-Native Business OS API - Events
+* Extracted from business_os_openapi.yaml. Domain: Events. Usable independently for C++ code generation.
 *
 * The version of the OpenAPI document: 0.1.0
 * 
@@ -10,19 +10,18 @@
 * Do not edit the class manually.
 */
 /*
- * Table.h
+ * AuditEvent.h
  *
  * 
  */
 
-#ifndef Table_H_
-#define Table_H_
+#ifndef AuditEvent_H_
+#define AuditEvent_H_
 
 
 #include <nlohmann/json.hpp>
 #include <string>
 #include <map>
-#include <vector>
 #include <nlohmann/json.hpp>
 
 namespace org::openapitools::server::model
@@ -31,11 +30,11 @@ namespace org::openapitools::server::model
 /// <summary>
 /// 
 /// </summary>
-class  Table
+class  AuditEvent
 {
 public:
-    Table();
-    virtual ~Table();
+    AuditEvent();
+    virtual ~AuditEvent();
 
 
     /// <summary>
@@ -55,11 +54,11 @@ public:
     /// </summary>
     bool validate(std::stringstream& msg, const std::string& pathPrefix) const;
 
-    bool operator==(const Table& rhs) const;
-    bool operator!=(const Table& rhs) const;
+    bool operator==(const AuditEvent& rhs) const;
+    bool operator!=(const AuditEvent& rhs) const;
 
     /////////////////////////////////////////////
-    /// Table members
+    /// AuditEvent members
 
     /// <summary>
     /// 
@@ -110,70 +109,71 @@ public:
     /// <summary>
     /// 
     /// </summary>
-    std::string getName() const;
-    void setName(std::string const& value);
+    std::string getActorUserId() const;
+    void setActorUserId(std::string const& value);
     /// <summary>
     /// 
     /// </summary>
-    std::string getSection() const;
-    void setSection(std::string const& value);
-    bool sectionIsSet() const;
-    void unsetSection();
+    std::string getActorName() const;
+    void setActorName(std::string const& value);
     /// <summary>
     /// 
     /// </summary>
-    int32_t getCapacity() const;
-    void setCapacity(int32_t const value);
+    std::string getManagerUserId() const;
+    void setManagerUserId(std::string const& value);
+    bool managerUserIdIsSet() const;
+    void unsetManager_user_id();
     /// <summary>
     /// 
     /// </summary>
-    std::string getStatus() const;
-    void setStatus(std::string const& value);
+    std::string getAction() const;
+    void setAction(std::string const& value);
     /// <summary>
     /// 
     /// </summary>
-    std::string getAssetId() const;
-    void setAssetId(std::string const& value);
-    bool assetIdIsSet() const;
-    void unsetAsset_id();
+    std::string getReason() const;
+    void setReason(std::string const& value);
+    bool reasonIsSet() const;
+    void unsetReason();
     /// <summary>
     /// 
     /// </summary>
-    std::string getServerId() const;
-    void setServerId(std::string const& value);
-    bool serverIdIsSet() const;
-    void unsetServer_id();
+    std::string getReasonCode() const;
+    void setReasonCode(std::string const& value);
+    bool reasonCodeIsSet() const;
+    void unsetReason_code();
     /// <summary>
     /// 
     /// </summary>
-    int32_t getGuestCount() const;
-    void setGuestCount(int32_t const value);
-    bool guestCountIsSet() const;
-    void unsetGuest_count();
+    std::string getObjectType() const;
+    void setObjectType(std::string const& value);
     /// <summary>
     /// 
     /// </summary>
-    std::string getOpenedAt() const;
-    void setOpenedAt(std::string const& value);
-    bool openedAtIsSet() const;
-    void unsetOpened_at();
+    std::string getObjectId() const;
+    void setObjectId(std::string const& value);
     /// <summary>
     /// 
     /// </summary>
-    std::vector<std::string> getOpenOrderIds() const;
-    void setOpenOrderIds(std::vector<std::string> const& value);
-    bool openOrderIdsIsSet() const;
-    void unsetOpen_order_ids();
+    std::string getOccurredAt() const;
+    void setOccurredAt(std::string const& value);
     /// <summary>
     /// 
     /// </summary>
-    std::string getPosStatus() const;
-    void setPosStatus(std::string const& value);
-    bool posStatusIsSet() const;
-    void unsetPos_status();
+    std::string getIpAddress() const;
+    void setIpAddress(std::string const& value);
+    bool ipAddressIsSet() const;
+    void unsetIp_address();
+    /// <summary>
+    /// 
+    /// </summary>
+    std::map<std::string, nlohmann::json> getChanges() const;
+    void setChanges(std::map<std::string, nlohmann::json> const& value);
+    bool changesIsSet() const;
+    void unsetChanges();
 
-    friend  void to_json(nlohmann::json& j, const Table& o);
-    friend  void from_json(const nlohmann::json& j, Table& o);
+    friend  void to_json(nlohmann::json& j, const AuditEvent& o);
+    friend  void from_json(const nlohmann::json& j, AuditEvent& o);
 protected:
     std::string m_Id;
 
@@ -191,29 +191,31 @@ protected:
     bool m_Deleted_atIsSet;
     std::map<std::string, nlohmann::json> m_Metadata;
     bool m_MetadataIsSet;
-    std::string m_Name;
+    std::string m_Actor_user_id;
 
-    std::string m_Section;
-    bool m_SectionIsSet;
-    int32_t m_Capacity;
+    std::string m_Actor_name;
 
-    std::string m_Status;
+    std::string m_Manager_user_id;
+    bool m_Manager_user_idIsSet;
+    std::string m_Action;
 
-    std::string m_Asset_id;
-    bool m_Asset_idIsSet;
-    std::string m_Server_id;
-    bool m_Server_idIsSet;
-    int32_t m_Guest_count;
-    bool m_Guest_countIsSet;
-    std::string m_Opened_at;
-    bool m_Opened_atIsSet;
-    std::vector<std::string> m_Open_order_ids;
-    bool m_Open_order_idsIsSet;
-    std::string m_Pos_status;
-    bool m_Pos_statusIsSet;
+    std::string m_Reason;
+    bool m_ReasonIsSet;
+    std::string m_Reason_code;
+    bool m_Reason_codeIsSet;
+    std::string m_Object_type;
+
+    std::string m_Object_id;
+
+    std::string m_Occurred_at;
+
+    std::string m_Ip_address;
+    bool m_Ip_addressIsSet;
+    std::map<std::string, nlohmann::json> m_Changes;
+    bool m_ChangesIsSet;
     
 };
 
 } // namespace org::openapitools::server::model
 
-#endif /* Table_H_ */
+#endif /* AuditEvent_H_ */
