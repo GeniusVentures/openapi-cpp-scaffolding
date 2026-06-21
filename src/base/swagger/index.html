@@ -303,11 +303,6 @@
             {
                 document.getElementById("loading").style.display = "none";
 
-                // x-tagGroups lost during spec merge — restore from gsm spec.
-                mergedSpec["x-tagGroups"] = [
-                    { name: "GSM", tags: ["Jobs", "Evidence", "Reviews", "Reports"] }
-                ];
-
                 SwaggerUIBundle(
                 {
                     spec: mergedSpec,
@@ -322,7 +317,14 @@
                     docExpansion: "list",
                     filter: true,
                     showRequestHeaders: true,
-                    tryItOutEnabled: true
+                    tryItOutEnabled: true,
+                    tagsSorter: "alpha",
+                    tagGroups: [
+                        {
+                            name: "GSM",
+                            tags: ["Jobs", "Evidence", "Reviews", "Reports"]
+                        }
+                    ]
                 });
             })
             .catch(function(err)
