@@ -444,3 +444,103 @@ TEST_F(PluginManagerTest, MultiplePluginsDifferentPathsWorkTogether)
 
     EXPECT_EQ(pm.GetPluginCount(), 3);
 }
+
+// ============================================================================
+// Unhappy-Path / Edge-Input Tests
+// ----------------------------------------------------------------------------
+
+TEST_F(PluginManagerTest, RegisterPlugin_WrappedNegativePriority_IsAccepted)
+{
+    // Priority is `unsigned int`. Passing -1 wraps to UINT_MAX. The manager
+    // has no upper-bound validation, so this value is accepted and the plugin
+    // is initialized last in ascending-priority order.
+    constexpr unsigned int kWrappedNegative = static_cast<unsigned int>(-1);
+
+    auto plugin = MakeMock("WrappedPri", kWrappedNegative);
+    pm.RegisterPlugin(plugin, kWrappedNegative, {"/api/wrapped"});
+
+    EXPECT_EQ(pm.GetPluginCount(), 1);
+    pm.InitializeAll(locator);
+    EXPECT_TRUE(plugin->IsInitialized());
+}
+
+TEST_F(PluginManagerTest, RegisterPlugin_PriorityZero_IsAccepted)
+{
+    // 0 is the lowest valid priority (no lower-bound rejection).
+    auto plugin = MakeMock("ZeroPri", 0);
+    pm.RegisterPlugin(plugin, 0, {"/api/zero"});
+
+    EXPECT_EQ(pm.GetPluginCount(), 1);
+    pm.InitializeAll(locator);
+    EXPECT_TRUE(plugin->IsInitialized());
+}
+
+TEST_F(PluginManagerTest, RegisterPlugin_LargePriority_IsAccepted)
+{
+    // A large but in-range priority (999999) is accepted without validation.
+    constexpr unsigned int kLargePriority = 999999;
+    auto plugin = MakeMock("LargePri", kLargePriority);
+    pm.RegisterPlugin(plugin, kLargePriority, {"/api/large"});
+
+    EXPECT_EQ(pm.GetPluginCount(), 1);
+    pm.InitializeAll(locator);
+    EXPECT_TRUE(plugin->IsInitialized());
+}
+
+TEST_F(PluginManagerTest, Route_ToEmptyPath_ReturnsEmptyWhenNoHandler)
+{
+    // No handler registered under empty path -> Route returns empty string.
+    std::string result = pm.Route(RequestContext{}, "GET", "", "{}");
+    EXPECT_TRUE(result.empty());
+}
+
+TEST_F(PluginManagerTest, Route_ToPathWithDotDot_DoesNotEscapeRegisteredRoutes)
+{
+    // Path traversal segments ("..") do not match a registered handler whose
+    // path does not literally contain "..". This documents that the router
+    // performs no path normalization: only exact or pattern-segment matches
+    // succeed, so traversal strings simply fail to route.
+    auto plugin = MakeMock("TraversalPlugin");
+    pm.RegisterPlugin(plugin, 100, {"/api/safe"});
+
+    HandlerFn fn = [](const RequestContext& /*ctx*/, const std::string&,
+                      const std::string&, const std::string&) -> std::string {
+        return "leaked";
+    };
+    pm.RegisterHandler("GET", "/api/safe/data", "get_data", fn,
+                       "TraversalPlugin", kStubHandlerPriority);
+
+    // Legitimate route dispatches normally.
+    EXPECT_EQ(pm.Route(RequestContext{}, "GET", "/api/safe/data", "{}"), "leaked");
+
+    // Traversal attempt does not reach the handler.
+    std::string result = pm.Route(
+        RequestContext{}, "GET", "/api/safe/../other/data", "{}");
+    EXPECT_TRUE(result.empty());
+}
+
+TEST_F(PluginManagerTest, RegisterHandler_OverwritesAcrossPlugins_ForSameMethodPath)
+{
+    // Two different owner plugins registering the same METHOD+path+priority
+    // collide on the same priority slot; the second registration wins.
+    auto pluginA = MakeMock("OwnerA");
+    auto pluginB = MakeMock("OwnerB");
+    pm.RegisterPlugin(pluginA, 100, {"/api/x"});
+    pm.RegisterPlugin(pluginB, 100, {"/api/x"});
+
+    HandlerFn fnA = [](const RequestContext&, const std::string&,
+                       const std::string&, const std::string&) -> std::string {
+        return "from-A";
+    };
+    HandlerFn fnB = [](const RequestContext&, const std::string&,
+                       const std::string&, const std::string&) -> std::string {
+        return "from-B";
+    };
+
+    pm.RegisterHandler("GET", "/api/x/data", "do_x", fnA, "OwnerA", kStubHandlerPriority);
+    pm.RegisterHandler("GET", "/api/x/data", "do_x", fnB, "OwnerB", kStubHandlerPriority);
+
+    // Same priority slot -> second registration wins; handler count is 1.
+    EXPECT_EQ(pm.GetHandlerCount(), 1);
+    EXPECT_EQ(pm.Route(RequestContext{}, "GET", "/api/x/data", "{}"), "from-B");
+}
