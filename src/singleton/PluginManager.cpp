@@ -86,7 +86,20 @@ void PluginManager::RegisterPlugin(std::shared_ptr<IPlugin>       plugin,
                                     unsigned int                    priority,
                                     const std::vector<std::string>& urlPaths)
 {
+    if (!plugin)
+    {
+        SPDLOG_ERROR("PluginManager::RegisterPlugin — null plugin rejected");
+        return;
+    }
+
     const std::string pluginName = plugin->GetName();
+
+    if (m_plugins.find(pluginName) != m_plugins.end())
+    {
+        SPDLOG_WARN("PluginManager::RegisterPlugin — duplicate plugin '{}' rejected",
+                    pluginName);
+        return;
+    }
 
     PluginEntry entry;
     entry.plugin   = std::move(plugin);
@@ -114,6 +127,13 @@ void PluginManager::RegisterHandler(const std::string& method,
                                      const std::string& ownerPluginName,
                                      unsigned int       priority)
 {
+    if (!fn)
+    {
+        SPDLOG_ERROR("PluginManager::RegisterHandler — null handler rejected ({})",
+                     functionName);
+        return;
+    }
+
     HandlerEntry entry;
     entry.fn              = fn;
     entry.method          = method;

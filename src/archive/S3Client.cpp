@@ -36,12 +36,24 @@ constexpr int kSslShutdownMaxRetries = 3;
 // ArchiveConfig
 // ============================================================================
 
+namespace
+{
+/// Trim leading and trailing whitespace from a string view.
+std::string Trim(std::string_view s) noexcept
+{
+    const auto start = s.find_first_not_of(" \t\n\r\f\v");
+    if (start == std::string_view::npos) return {};
+    const auto end = s.find_last_not_of(" \t\n\r\f\v");
+    return std::string(s.substr(start, end - start + 1));
+}
+} // namespace
+
 bool ArchiveConfig::IsValid() const noexcept
 {
-    return !endpoint.empty() &&
-           !bucket.empty() &&
-           !access_key.empty() &&
-           !secret_key.empty();
+    return !Trim(endpoint).empty() &&
+           !Trim(bucket).empty() &&
+           !Trim(access_key).empty() &&
+           !Trim(secret_key).empty();
 }
 
 // ============================================================================

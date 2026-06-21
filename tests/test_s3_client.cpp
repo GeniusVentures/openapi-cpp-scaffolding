@@ -230,39 +230,36 @@ TEST(S3ClientTest, ComputeSignature_ProducesNonEmptySignature)
 // ============================================================================
 
 /**
- * @brief  IsValid returns true when endpoint is whitespace-only
+ * @brief  IsValid returns false when endpoint is whitespace-only
  *
- * ArchiveConfig::IsValid only rejects the empty string; a whitespace-only
- * endpoint is treated as "present" and reports valid. This documents the
- * current lack of trimming so callers know they must pre-trim inputs.
+ * IsValid trims leading/trailing whitespace before checking emptiness.
+ * A whitespace-only endpoint is trimmed to empty and rejected.
  */
-TEST(ArchiveConfigTest, IsValid_ReturnsTrue_WhenEndpointIsWhitespaceOnly)
+TEST(ArchiveConfigTest, IsValid_ReturnsFalse_WhenEndpointIsWhitespaceOnly)
 {
     ArchiveConfig config;
-    config.endpoint = "   ";  // whitespace-only — not empty
+    config.endpoint = "   ";  // whitespace-only — trimmed to empty
     config.bucket = "my-bucket";
     config.access_key = "AKIAIOSFODNN7EXAMPLE";
     config.secret_key = "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY";
 
-    // Documents current behavior: IsValid does not trim whitespace.
-    EXPECT_TRUE(config.IsValid());
+    EXPECT_FALSE(config.IsValid());
 }
 
 /**
- * @brief  IsValid returns true when access_key is whitespace-only
+ * @brief  IsValid returns false when access_key is whitespace-only
  *
- * Documents that whitespace-only credentials are treated as present.
+ * Whitespace-only credentials are trimmed to empty and rejected.
  */
-TEST(ArchiveConfigTest, IsValid_ReturnsTrue_WhenAccessKeyIsWhitespaceOnly)
+TEST(ArchiveConfigTest, IsValid_ReturnsFalse_WhenAccessKeyIsWhitespaceOnly)
 {
     ArchiveConfig config;
     config.endpoint = "https://s3.amazonaws.com";
     config.bucket = "my-bucket";
-    config.access_key = "   ";  // whitespace-only — not empty
+    config.access_key = "   ";  // whitespace-only — trimmed to empty
     config.secret_key = "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY";
 
-    // Documents current behavior: no whitespace trimming on credentials.
-    EXPECT_TRUE(config.IsValid());
+    EXPECT_FALSE(config.IsValid());
 }
 
 /**

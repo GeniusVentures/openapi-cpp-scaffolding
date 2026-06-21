@@ -269,25 +269,21 @@ TEST_F(MockPluginTest, CanReRegisterAfterShutdown)
 
 TEST_F(MockPluginTest, DuplicateRegistration_OverwritesPluginEntry)
 {
-    // PluginManager keys plugins by name. Registering two different plugin
-    // instances under the same name overwrites the stored entry but leaves
-    // the init queue referring to that name twice. After InitializeAll,
-    // only the most recently registered instance is reachable.
+    // PluginManager now rejects duplicate names. The first registration sticks.
     auto first  = std::make_shared<LifecycleMockPlugin>("Collide", 10);
     auto second = std::make_shared<LifecycleMockPlugin>("Collide", 20);
 
     pm.RegisterPlugin(first,  10, {"/api/collide"});
-    pm.RegisterPlugin(second, 20, {"/api/collide"});
+    pm.RegisterPlugin(second, 20, {"/api/collide"});  // rejected — duplicate
 
-    // Only one plugin entry survives (keyed by name).
+    // Only first plugin registered.
     EXPECT_EQ(pm.GetPluginCount(), 1);
 
     pm.InitializeAll(locator);
 
-    // The first instance was displaced and never initialized.
-    EXPECT_FALSE(first->IsInitialized());
-    // The second instance is the one reachable under "Collide".
-    EXPECT_TRUE(second->IsInitialized());
+    // First plugin initialized, second was rejected.
+    EXPECT_TRUE(first->IsInitialized());
+    EXPECT_FALSE(second->IsInitialized());
 }
 
 TEST_F(MockPluginTest, InitializeAll_BeforeAnyRegistration_IsSafe)
