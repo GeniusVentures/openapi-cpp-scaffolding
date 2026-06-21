@@ -15,8 +15,6 @@
 #include <string>
 #include <thread>
 
-#include <sys/stat.h>
-
 #ifdef __APPLE__
 #include <mach-o/dyld.h>
 #elif defined(__linux__)
@@ -45,9 +43,8 @@ namespace
 /// PluginManager pointer — set in main(), used by HttpSession for routing.
 PluginManager* g_pluginManager = nullptr;
 
-/// Base directory — resolved from executable path at startup.
-/// All relative paths (plugins, static files) are resolved from here.
-std::string g_baseDir;
+/// Executable directory — all assets live next to the binary (cmake copies them there).
+std::string g_exeDir;
 
 /// JWT signing secret — loaded from environment or config file.
 std::string g_jwtSecret;
@@ -108,32 +105,6 @@ bool PathExists(const std::string& path)
 }
 
 ///
-/// Find the base directory for static assets (swagger, json specs).
-/// Searches relative to the executable for the swagger index.html.
-///
-std::string FindBaseDir(const std::string& exeDir)
-{
-    // Search upward from exeDir for backend/examples/swagger/index.html
-    std::string dir = exeDir;
-    for (int i = 0; i < 10; ++i)
-    {
-        if (PathExists(dir + "/examples/swagger/index.html"))
-        {
-            return dir;
-        }
-        auto pos = dir.rfind('/');
-        if (pos == std::string::npos || pos == 0)
-        {
-            break;
-        }
-        dir = dir.substr(0, pos);
-    }
-
-    // Fallback: use exeDir (will produce "file not found" errors)
-    return exeDir;
-}
-
-///
 /// Read a file into a string. Returns empty string on failure.
 ///
 std::string ReadFile(const std::string& path);
@@ -160,7 +131,7 @@ void LoadJwtSecret()
     }
 
     // Priority 2: Config file
-    std::string secretPath = g_baseDir + "/data/jwt_secret";
+    std::string secretPath = g_exeDir + "/data/jwt_secret";
     std::string fileContent = ReadFile(secretPath);
     if (!fileContent.empty())
     {
@@ -326,7 +297,7 @@ private:
         }
         else if (method == "GET" && (target == "/swagger" || target == "/swagger/"))
         {
-            ServeStaticFile(g_baseDir + "/examples/swagger/index.html");
+            ServeStaticFile(g_exeDir + "/examples/swagger/index.html");
         }
         else if (method == "GET" && target.compare(0, 15, "/swagger/specs/") == 0)
         {
@@ -334,7 +305,7 @@ private:
             // Prevent directory traversal
             if (filename.find("..") == std::string::npos)
             {
-                ServeStaticFile(g_baseDir + "/json/" + filename);
+                ServeStaticFile(g_exeDir + "/json/" + filename);
             }
             else
             {
@@ -517,13 +488,12 @@ private:
 
 int main(int argc, char* argv[])
 {
-    std::string exeDir = GetExecutableDir();
-    g_baseDir = FindBaseDir(exeDir);
+    g_exeDir = GetExecutableDir();
 
     // Plugin directory: search upward from exeDir for a plugins/ directory
     std::string pluginDir;
     {
-        std::string dir = exeDir;
+        std::string dir = g_exeDir;
         for (int i = 0; i < 10; ++i)
         {
             if (PathExists(dir + "/plugins"))
@@ -540,7 +510,7 @@ int main(int argc, char* argv[])
         }
         if (pluginDir.empty())
         {
-            pluginDir = exeDir + "/plugins";
+            pluginDir = g_exeDir + "/plugins";
         }
     }
     std::string host       = "127.0.0.1";
@@ -592,7 +562,7 @@ int main(int argc, char* argv[])
     serviceLocator.RegisterService(gnus::hash::Fnv1a("JwtSecret"), &g_jwtSecret);
 
     // Create and register the storage engine
-    std::string dbPath = g_baseDir + "/data/db";
+    std::string dbPath = g_exeDir + "/data/db";
     std::filesystem::create_directories(dbPath);
     auto storageResult = RocksDBEngine::Create(dbPath);
     if (!storageResult.has_value())

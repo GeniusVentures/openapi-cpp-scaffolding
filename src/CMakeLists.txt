@@ -93,7 +93,7 @@ foreach(SPEC_FILE ${SPEC_FILES})
 
     # Step 3: Add domain subdirectory for building the plugin .dylib
     if(EXISTS "${SRC_DIR}/CMakeLists.txt")
-        add_subdirectory(${SRC_DIR})
+        add_subdirectory(${SRC_DIR} ${CMAKE_CURRENT_BINARY_DIR}/${PREFIX})
         list(APPEND BACKEND_PLUGIN_TARGETS ${PREFIX}_api_plugin)
     endif()
 endforeach()
