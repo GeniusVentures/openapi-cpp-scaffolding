@@ -208,3 +208,94 @@ TEST(StreamingWorkerTest, GetStatus_CorrectAfterEnqueue)
     EXPECT_EQ(status.total_streamed, 0u);
     EXPECT_EQ(status.total_errors, 0u);
 }
+
+// ============================================================================
+// Unhappy-Path / Lifecycle Safety Tests
+// ============================================================================
+
+/**
+ * @brief  Stop() before Start() is a safe no-op
+ *
+ * The worker checks m_running before doing anything in Stop(); calling Stop
+ * on a never-started worker must not crash and must leave the worker usable
+ * for a subsequent Start/Stop cycle.
+ */
+TEST(StreamingWorkerTest, Stop_BeforeStart_IsSafeNoOp)
+{
+    ArchiveConfig config = MakeTestConfig();
+    StreamingWorker worker(config);
+
+    // Stop without Start — must be a no-op.
+    worker.Stop();
+    worker.Stop();  // idempotent
+
+    // Worker is still usable: Start then Stop should complete cleanly.
+    worker.Start();
+    std::this_thread::sleep_for(std::chrono::milliseconds(50));
+    worker.Stop();
+
+    // The worker thread has been joined; queue state is queryable.
+    EXPECT_EQ(worker.GetStatus().queue_size, 0u);
+}
+
+/**
+ * @brief  Destructor calls Stop() implicitly when worker is still running
+ *
+ * If the caller Starts the worker but never calls Stop, the destructor must
+ * shut down the background thread cleanly without hanging or crashing.
+ */
+TEST(StreamingWorkerTest, Destructor_StopsRunningWorker_Cleanly)
+{
+    ArchiveConfig config = MakeTestConfig();
+
+    // Construct inside a block so the destructor runs at scope exit.
+    {
+        StreamingWorker worker(config);
+        worker.Start();
+        std::this_thread::sleep_for(std::chrono::milliseconds(50));
+        // No explicit Stop() — destructor must handle it.
+    }
+
+    // If we reach here without hanging or crashing, the destructor cleaned up.
+    SUCCEED() << "Destructor cleanly stopped a running worker";
+}
+
+/**
+ * @brief  Enqueue while paused still accepts entries into the queue
+ *
+ * Pause stops the worker from draining, but Enqueue is independent of the
+ * pause flag and must continue to accept (or drop on full-queue) entries.
+ */
+TEST(StreamingWorkerTest, Enqueue_WhilePaused_StillAcceptsEntries)
+{
+    ArchiveConfig config = MakeTestConfig();
+    StreamingWorker worker(config);
+
+    worker.Pause();
+    EXPECT_TRUE(worker.GetStatus().is_paused);
+
+    worker.Enqueue("paused/key1", "value1", false);
+    worker.Enqueue("paused/key2", "value2", false);
+
+    WorkerStatus status = worker.GetStatus();
+    EXPECT_EQ(status.queue_size, 2u);
+    EXPECT_TRUE(status.is_paused);
+}
+
+/**
+ * @brief  Enqueue with empty key and empty value is accepted
+ *
+ * The worker does not validate key/value content. Empty strings are stored
+ * as-is. Documents that validation (if any) is the caller's responsibility.
+ */
+TEST(StreamingWorkerTest, Enqueue_EmptyKeyAndValue_IsAccepted)
+{
+    ArchiveConfig config = MakeTestConfig();
+    StreamingWorker worker(config);
+
+    worker.Enqueue("", "", false);
+
+    WorkerStatus status = worker.GetStatus();
+    EXPECT_EQ(status.queue_size, 1u);
+    EXPECT_EQ(status.total_errors, 0u);
+}
