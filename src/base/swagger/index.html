@@ -303,6 +303,9 @@
             {
                 document.getElementById("loading").style.display = "none";
 
+                // Show all paths together — no tag-based grouping.
+                mergedSpec.tags = [];
+
                 SwaggerUIBundle(
                 {
                     spec: mergedSpec,
