@@ -56,7 +56,7 @@
         },
         "responses": {
           "200": {
-            "description": "OK",
+            "description": "OK. The access_token is a signed JWT containing claims: sub (userId), tenant (tenantId), org (orgId), and perms (array of permission strings in {domain}:{action} format, flattened from all user roles). TokenResponse.permissions in the response body provides the same flattened permission list for client convenience.",
             "content": {
               "application/json": {
                 "schema": {
@@ -1103,13 +1103,21 @@
           },
           "user": {
             "$ref": "#/components/schemas/User"
+          },
+          "permissions": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Flattened list of all permission strings from all roles assigned to this user. Uses {domain}:{action} format (e.g. 'identity:read', 'hrm:write'). This is a convenience field — the same data is available via user.roles[].permissions[]."
           }
         },
         "required": [
           "access_token",
           "token_type",
           "expires_in",
-          "user"
+          "user",
+          "permissions"
         ]
       },
       "User": {
