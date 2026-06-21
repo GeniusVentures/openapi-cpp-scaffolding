@@ -261,3 +261,108 @@ TEST_F(MockPluginTest, CanReRegisterAfterShutdown)
     EXPECT_EQ(pm.GetPluginCount(), 1);
     EXPECT_TRUE(p2->IsInitialized());
 }
+
+// ============================================================================
+// Unhappy-Path Tests — registration collisions, out-of-order lifecycle,
+// extreme priority values, and shutdown-before-init safety.
+// ============================================================================
+
+TEST_F(MockPluginTest, DuplicateRegistration_OverwritesPluginEntry)
+{
+    // PluginManager keys plugins by name. Registering two different plugin
+    // instances under the same name overwrites the stored entry but leaves
+    // the init queue referring to that name twice. After InitializeAll,
+    // only the most recently registered instance is reachable.
+    auto first  = std::make_shared<LifecycleMockPlugin>("Collide", 10);
+    auto second = std::make_shared<LifecycleMockPlugin>("Collide", 20);
+
+    pm.RegisterPlugin(first,  10, {"/api/collide"});
+    pm.RegisterPlugin(second, 20, {"/api/collide"});
+
+    // Only one plugin entry survives (keyed by name).
+    EXPECT_EQ(pm.GetPluginCount(), 1);
+
+    pm.InitializeAll(locator);
+
+    // The first instance was displaced and never initialized.
+    EXPECT_FALSE(first->IsInitialized());
+    // The second instance is the one reachable under "Collide".
+    EXPECT_TRUE(second->IsInitialized());
+}
+
+TEST_F(MockPluginTest, InitializeAll_BeforeAnyRegistration_IsSafe)
+{
+    // InitializeAll on an empty plugin manager is a no-op and must not crash.
+    EXPECT_EQ(pm.GetPluginCount(), 0);
+    pm.InitializeAll(locator);
+    EXPECT_EQ(pm.GetPluginCount(), 0);
+}
+
+TEST_F(MockPluginTest, ShutdownAll_BeforeInitialize_ShutsDownUninitializedPlugins)
+{
+    // ShutdownAll without an intervening InitializeAll still calls Shutdown()
+    // and DeInit() on every registered plugin, even though Initialize() was
+    // never called. This documents the current behavior: Shutdown/DeInit are
+    // invoked unconditionally on teardown.
+    auto plugin = std::make_shared<LifecycleMockPlugin>("NotInited", 50);
+    pm.RegisterPlugin(plugin, 50, {"/api/notinited"});
+
+    EXPECT_FALSE(plugin->IsInitialized());
+
+    pm.ShutdownAll();
+
+    EXPECT_FALSE(plugin->IsInitialized());
+    EXPECT_TRUE(plugin->IsShutdown());
+    EXPECT_TRUE(plugin->IsDeInit());
+    EXPECT_EQ(pm.GetPluginCount(), 0);
+}
+
+TEST_F(MockPluginTest, RegisterPlugin_AcceptsMaxUnsignedPriority)
+{
+    // Priority is unsigned int. A caller passing -1 wraps to UINT_MAX on
+    // conversion; the plugin is still accepted and initialized last
+    // (highest priority number = latest in ascending init order).
+    constexpr unsigned int kWrappedPriority =
+        static_cast<unsigned int>(-1);
+
+    auto early = std::make_shared<LifecycleMockPlugin>("Early", 1);
+    auto late  = std::make_shared<LifecycleMockPlugin>("Late",  kWrappedPriority);
+
+    pm.RegisterPlugin(early, 1,             {"/api/early"});
+    pm.RegisterPlugin(late,  kWrappedPriority, {"/api/late"});
+
+    EXPECT_EQ(pm.GetPluginCount(), 2);
+
+    pm.InitializeAll(locator);
+
+    EXPECT_TRUE(early->IsInitialized());
+    EXPECT_TRUE(late->IsInitialized());
+}
+
+TEST_F(MockPluginTest, RegisterPlugin_ZeroPriority_IsAccepted)
+{
+    // Priority 0 is a valid value (lowest possible) and must not be rejected.
+    auto plugin = std::make_shared<LifecycleMockPlugin>("ZeroPri", 0);
+    pm.RegisterPlugin(plugin, 0, {"/api/zero"});
+
+    EXPECT_EQ(pm.GetPluginCount(), 1);
+
+    pm.InitializeAll(locator);
+    EXPECT_TRUE(plugin->IsInitialized());
+}
+
+TEST_F(MockPluginTest, InitializeAll_IsNotIdempotent_PerPluginFlag)
+{
+    // Calling InitializeAll twice invokes Initialize() on each plugin twice.
+    // The mock's flag remains true after the first call, so this documents
+    // that the manager does not skip already-initialized plugins.
+    auto plugin = std::make_shared<LifecycleMockPlugin>("Double", 50);
+    pm.RegisterPlugin(plugin, 50, {"/api/double"});
+
+    pm.InitializeAll(locator);
+    EXPECT_TRUE(plugin->IsInitialized());
+
+    // Second pass is safe and still calls Initialize() again.
+    pm.InitializeAll(locator);
+    EXPECT_TRUE(plugin->IsInitialized());
+}
