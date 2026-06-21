@@ -307,3 +307,101 @@ TEST_F(AuthLoginTest, TestingFlag_PreventsOverrideRegistration)
     // Stub at priority 100 is active (no override)
     EXPECT_FALSE(data.contains("access_token"));
 }
+
+// ============================================================================
+// Unhappy-Path Login Tests — empty credentials, missing fields, malformed body
+// ============================================================================
+
+TEST_F(AuthLoginTest, RealLogin_EmptyEmail_ReturnsInvalidCredentials)
+{
+    RegisterRealLogin();
+
+    json body;
+    body["email"] = std::string("");  // explicitly empty
+    body["password"] = kTestPassword;
+
+    std::string response = m_pm.Route(m_ctx, "POST", "/api/v1/auth/login", body.dump());
+    auto data = json::parse(response);
+
+    // No user is keyed under "identity/users_by_email/" (empty email),
+    // so the lookup misses and the handler returns INVALID_CREDENTIALS.
+    EXPECT_TRUE(data.contains("error"));
+    EXPECT_EQ("INVALID_CREDENTIALS", data["error"]["code"].get<std::string>());
+}
+
+TEST_F(AuthLoginTest, RealLogin_EmptyPassword_ReturnsInvalidCredentials)
+{
+    RegisterRealLogin();
+
+    json body;
+    body["email"] = kTestEmail;
+    body["password"] = std::string("");  // explicitly empty
+
+    std::string response = m_pm.Route(m_ctx, "POST", "/api/v1/auth/login", body.dump());
+    auto data = json::parse(response);
+
+    // The seeded user's hash was derived from a non-empty password, so an
+    // empty plaintext must fail PBKDF2 verification.
+    EXPECT_TRUE(data.contains("error"));
+    EXPECT_EQ("INVALID_CREDENTIALS", data["error"]["code"].get<std::string>());
+}
+
+TEST_F(AuthLoginTest, RealLogin_EmptyEmailAndEmptyPassword_ReturnsInvalidCredentials)
+{
+    RegisterRealLogin();
+
+    json body;
+    body["email"]    = std::string("");
+    body["password"] = std::string("");
+
+    std::string response = m_pm.Route(m_ctx, "POST", "/api/v1/auth/login", body.dump());
+    auto data = json::parse(response);
+
+    EXPECT_TRUE(data.contains("error"));
+    EXPECT_EQ("INVALID_CREDENTIALS", data["error"]["code"].get<std::string>());
+}
+
+TEST_F(AuthLoginTest, RealLogin_MalformedJsonBody_ThrowsAndPropagates)
+{
+    RegisterRealLogin();
+
+    // The real_login handler invokes json::parse(body) with no try/catch,
+    // and PluginManager::Route does not catch handler exceptions. A malformed
+    // body therefore propagates as a nlohmann::json::parse_error. This test
+    // documents the current behavior: callers must send valid JSON or the
+    // process terminates the request with an uncaught exception.
+    EXPECT_THROW(
+        {
+            m_pm.Route(m_ctx, "POST", "/api/v1/auth/login",
+                       "this is not json {{{");
+        },
+        nlohmann::json::exception);
+}
+
+TEST_F(AuthLoginTest, RealLogin_MissingEmailField_ThrowsAndPropagates)
+{
+    RegisterRealLogin();
+
+    // A well-formed JSON body that omits the "email" field causes
+    // req["email"] (operator[]) to throw. Documents that the handler does
+    // not pre-validate presence of required fields.
+    json body;
+    body["password"] = kTestPassword;
+    // note: no "email" key
+
+    EXPECT_THROW(
+        {
+            m_pm.Route(m_ctx, "POST", "/api/v1/auth/login", body.dump());
+        },
+        nlohmann::json::exception);
+}
+
+TEST_F(AuthLoginTest, StubLogin_EmptyCredentialsBody_EchoesBody)
+{
+    // Without the real override registered, the stub at priority 0 echoes
+    // the raw body back. An empty body is valid stub input.
+    std::string response = m_pm.Route(m_ctx, "POST", "/api/v1/auth/login", "");
+
+    // Stub returns the body verbatim — empty in, empty out.
+    EXPECT_TRUE(response.empty());
+}
