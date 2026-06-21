@@ -20,11 +20,7 @@ namespace bp = boost::process;
 // Constants
 // ============================================================================
 
-#ifdef _WIN32
-static constexpr char kBinaryName[] = "cloudflared.exe";
-#else
 static constexpr char kBinaryName[] = "cloudflared";
-#endif
 
 // ============================================================================
 // Public Interface
@@ -101,19 +97,7 @@ bool BinaryDiscovery::ValidateBinary(const std::string& binaryPath) noexcept
         return false;
     }
 
-#ifdef _WIN32
-    // On Windows, existence check is sufficient (permissions model differs)
-    return true;
-#else
-    // On POSIX, check owner-execute permission
-    auto perms = fs::status(binaryPath, ec).permissions();
-    if (ec)
-    {
-        return false;
-    }
-
-    return (perms & fs::perms::owner_exec) != fs::perms::none;
-#endif
+    return fs::is_regular_file(binaryPath, ec) && !ec;
 }
 
 const char* BinaryDiscovery::GetBinaryName() noexcept
