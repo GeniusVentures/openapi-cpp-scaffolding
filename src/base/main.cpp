@@ -117,7 +117,7 @@ std::string FindBaseDir(const std::string& exeDir)
     std::string dir = exeDir;
     for (int i = 0; i < 10; ++i)
     {
-        if (PathExists(dir + "/backend/examples/swagger/index.html"))
+        if (PathExists(dir + "/examples/swagger/index.html"))
         {
             return dir;
         }
@@ -334,7 +334,7 @@ private:
             // Prevent directory traversal
             if (filename.find("..") == std::string::npos)
             {
-                ServeStaticFile(g_baseDir + "/backend/json/" + filename);
+                ServeStaticFile(g_baseDir + "/json/" + filename);
             }
             else
             {
