@@ -303,30 +303,6 @@
             {
                 document.getElementById("loading").style.display = "none";
 
-                // Group non-identity paths under "GSM" tag.
-                var identityTag = null;
-                mergedSpec.tags = mergedSpec.tags.filter(function(t)
-                {
-                    if (t.name === "Identity") { identityTag = t; return true; }
-                    return false;
-                });
-                if (!identityTag)
-                {
-                    mergedSpec.tags.unshift({ name: "Identity", description: "Authentication and user management" });
-                }
-                mergedSpec.tags.push({ name: "GSM", description: "Jobs, Evidence, Reviews, Reports" });
-                for (var p in mergedSpec.paths)
-                {
-                    var methods = mergedSpec.paths[p];
-                    for (var m in methods)
-                    {
-                        var op = methods[m];
-                        if (op.tags && op.tags[0] !== "Identity")
-                        {
-                            op.tags = ["GSM"];
-                        }
-                    }
-                }
 
                 SwaggerUIBundle(
                 {
