@@ -7,7 +7,7 @@ add_executable(genius_ai_server
 target_include_directories(genius_ai_server PRIVATE
     "${CMAKE_CURRENT_SOURCE_DIR}/../../../src"
     "${CMAKE_CURRENT_SOURCE_DIR}/../../../scaffold/src"
-    "${CMAKE_CURRENT_SOURCE_DIR}/../os/${GENIUS_PLATFORM}"
+    "${CMAKE_CURRENT_SOURCE_DIR}/../os/${TARGET_PLATFORM}"
 )
 
 target_link_libraries(genius_ai_server

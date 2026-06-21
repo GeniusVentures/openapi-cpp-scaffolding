@@ -54,7 +54,28 @@ bool TokenResponse::validate(std::stringstream& msg, const std::string& pathPref
     if (!m_User.validate(msg, _pathPrefix + ".user")) {
         msg << _pathPrefix << ": User is invalid;";
         success = false;
+    }     
+    
+    /* Permissions */ {
+        const std::vector<std::string>& value = m_Permissions;
+        const std::string currentValuePath = _pathPrefix + ".permissions";
+                
+        
+        { // Recursive validation of array elements
+            const std::string oldValuePath = currentValuePath;
+            int i = 0;
+            for (const std::string& value : value)
+            { 
+                const std::string currentValuePath = oldValuePath + "[" + std::to_string(i) + "]";
+                        
+        
+ 
+                i++;
+            }
+        }
+
     }
+    
     return success;
 }
 
@@ -76,6 +97,9 @@ bool TokenResponse::operator==(const TokenResponse& rhs) const
      &&
     
     (getUser() == rhs.getUser())
+     &&
+    
+    (getPermissions() == rhs.getPermissions())
     
     
     ;
@@ -95,6 +119,7 @@ void to_json(nlohmann::json& j, const TokenResponse& o)
     j["token_type"] = o.m_Token_type;
     j["expires_in"] = o.m_Expires_in;
     j["user"] = o.m_User;
+    j["permissions"] = o.m_Permissions;
     
 }
 
@@ -109,6 +134,7 @@ void from_json(const nlohmann::json& j, TokenResponse& o)
     j.at("token_type").get_to(o.m_Token_type);
     j.at("expires_in").get_to(o.m_Expires_in);
     j.at("user").get_to(o.m_User);
+    j.at("permissions").get_to(o.m_Permissions);
     
 }
 
@@ -160,6 +186,14 @@ org::openapitools::server::model::User TokenResponse::getUser() const
 void TokenResponse::setUser(org::openapitools::server::model::User const& value)
 {
     m_User = value;
+}
+std::vector<std::string> TokenResponse::getPermissions() const
+{
+    return m_Permissions;
+}
+void TokenResponse::setPermissions(std::vector<std::string> const& value)
+{
+    m_Permissions = value;
 }
 
 
