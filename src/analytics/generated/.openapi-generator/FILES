@@ -1,0 +1,17 @@
+CMakeLists.txt
+README.md
+api/AnalyticsApi.cpp
+api/AnalyticsApi.h
+api/ApiBase.cpp
+api/ApiBase.h
+impl/AnalyticsApiImpl.cpp
+impl/AnalyticsApiImpl.h
+main-api-server.cpp
+model/AnalyticsQuery_200_response.cpp
+model/AnalyticsQuery_200_response.h
+model/AnalyticsQuery_request.cpp
+model/AnalyticsQuery_request.h
+model/Helpers.cpp
+model/Helpers.h
+model/TimeWindow.cpp
+model/TimeWindow.h

@@ -11,8 +11,8 @@ install(DIRECTORY "${CMAKE_CURRENT_LIST_DIR}/json"
 )
 
 # Install parent-project OpenAPI specs if api-specs/ exists
-if(EXISTS "${CMAKE_CURRENT_LIST_DIR}/../api-specs")
-    install(DIRECTORY "${CMAKE_CURRENT_LIST_DIR}/../api-specs"
+if(EXISTS "${CMAKE_CURRENT_LIST_DIR}/../../api-specs")
+    install(DIRECTORY "${CMAKE_CURRENT_LIST_DIR}/../../api-specs"
         DESTINATION backend
         FILES_MATCHING PATTERN "*.json"
     )

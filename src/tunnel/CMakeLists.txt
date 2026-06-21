@@ -4,8 +4,6 @@
 # This plugin manages cloudflared as a subprocess for Cloudflare Tunnel support.
 #
 
-#
-
 set(TUNNEL_SOURCES
     SubprocessManager.cpp
     BinaryDiscovery.cpp
@@ -25,10 +23,10 @@ target_link_libraries(tunnel_api PRIVATE
     storage
     Boost::filesystem
     Boost::headers
+    nlohmann_json::nlohmann_json
     OpenSSL::Crypto
     OpenSSL::SSL
     spdlog::spdlog
-    nlohmann_json::nlohmann_json
 )
 
 set_target_properties(tunnel_api PROPERTIES

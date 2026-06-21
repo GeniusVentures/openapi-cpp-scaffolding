@@ -18,7 +18,7 @@ file(GLOB SPEC_FILES "${CMAKE_CURRENT_SOURCE_DIR}/../json/*_openapi.json")
 
 # Scan parent-project specs (e.g., gsm_openapi.json in api-specs/ — project-specific,
 # outside the submodule so the parent repo owns them)
-file(GLOB EXTERNAL_SPEC_FILES "${CMAKE_CURRENT_SOURCE_DIR}/../../api-specs/*_openapi.json")
+file(GLOB EXTERNAL_SPEC_FILES "${CMAKE_CURRENT_SOURCE_DIR}/../../../api-specs/*_openapi.json")
 list(APPEND SPEC_FILES ${EXTERNAL_SPEC_FILES})
 
 set(BACKEND_API_TARGETS "")
