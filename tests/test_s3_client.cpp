@@ -224,3 +224,103 @@ TEST(S3ClientTest, ComputeSignature_ProducesNonEmptySignature)
 
     EXPECT_FALSE(signature.empty());
 }
+
+// ============================================================================
+// Unhappy-Path ArchiveConfig / S3Client Tests
+// ============================================================================
+
+/**
+ * @brief  IsValid returns false when endpoint is whitespace-only
+ *
+ * IsValid trims leading/trailing whitespace before checking emptiness.
+ * A whitespace-only endpoint is trimmed to empty and rejected.
+ */
+TEST(ArchiveConfigTest, IsValid_ReturnsFalse_WhenEndpointIsWhitespaceOnly)
+{
+    ArchiveConfig config;
+    config.endpoint = "   ";  // whitespace-only — trimmed to empty
+    config.bucket = "my-bucket";
+    config.access_key = "AKIAIOSFODNN7EXAMPLE";
+    config.secret_key = "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY";
+
+    EXPECT_FALSE(config.IsValid());
+}
+
+/**
+ * @brief  IsValid returns false when access_key is whitespace-only
+ *
+ * Whitespace-only credentials are trimmed to empty and rejected.
+ */
+TEST(ArchiveConfigTest, IsValid_ReturnsFalse_WhenAccessKeyIsWhitespaceOnly)
+{
+    ArchiveConfig config;
+    config.endpoint = "https://s3.amazonaws.com";
+    config.bucket = "my-bucket";
+    config.access_key = "   ";  // whitespace-only — trimmed to empty
+    config.secret_key = "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY";
+
+    EXPECT_FALSE(config.IsValid());
+}
+
+/**
+ * @brief  Construct with a malformed endpoint URL does not crash
+ *
+ * The constructor stores the config without parsing or validating the URL
+ * scheme/host. ParseUrl is deferred to ConnectToEndpoint. This test confirms
+ * that arbitrary garbage in the endpoint field does not crash construction.
+ */
+TEST(S3ClientTest, Construct_WithMalformedEndpointUrl_DoesNotCrash)
+{
+    ArchiveConfig config;
+    config.endpoint = "not a valid url ::: broken";
+    config.bucket = "my-bucket";
+    config.access_key = "AKIAIOSFODNN7EXAMPLE";
+    config.secret_key = "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY";
+
+    S3Client client(config);
+    EXPECT_FALSE(client.IsConnected());
+}
+
+/**
+ * @brief  ConnectToEndpoint with an unresolvable host returns false
+ *
+ * ParseUrl never fails parsing (it returns the input as host on no match),
+ * so a syntactically-valid-but-non-existent host surfaces as a DNS-resolution
+ * failure inside ConnectToEndpoint. This verifies the failure is reported as
+ * false rather than crashing or hanging.
+ */
+TEST(S3ClientTest, ConnectToEndpoint_WithUnresolvableHost_ReturnsFalse)
+{
+    ArchiveConfig config;
+    // Hostname that is syntactically valid but guaranteed not to resolve.
+    config.endpoint = "https://nonexistent-invalid-host.invalid";
+    config.bucket = "my-bucket";
+    config.access_key = "AKIAIOSFODNN7EXAMPLE";
+    config.secret_key = "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY";
+
+    S3Client client(config);
+    bool connected = client.ConnectToEndpoint();
+
+    EXPECT_FALSE(connected);
+    EXPECT_FALSE(client.IsConnected());
+}
+
+/**
+ * @brief  PutObject on a client built from an invalid config returns false
+ *
+ * Constructed with empty required fields, the client never connects, so
+ * PutObject must fail fast without attempting network I/O.
+ */
+TEST(S3ClientTest, PutObject_ReturnsFalse_WhenConfigInvalid)
+{
+    ArchiveConfig config;
+    config.endpoint = "";          // empty -> IsValid() == false
+    config.bucket = "";
+    config.access_key = "";        // empty access key
+    config.secret_key = "";
+
+    EXPECT_FALSE(config.IsValid());
+
+    S3Client client(config);
+    EXPECT_FALSE(client.PutObject("any-key", "any-content"));
+}

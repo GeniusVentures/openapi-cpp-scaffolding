@@ -9,84 +9,36 @@
 
 #include <algorithm>
 #include <cstring>
+#include <filesystem>
 #include <spdlog/spdlog.h>
 
-#ifdef _WIN32
-#define NOMINMAX
-#include <windows.h>
-#else
-#include <dlfcn.h>
-#include <dirent.h>
-#endif
-
+#include "Platform.hpp"
 #include "singleton/fnv1a.hpp"
 
-namespace
-{
-
-#ifdef _WIN32
-
-using DllHandle = HMODULE;
-
-DllHandle LoadDll(const char* path)
-{
-    return LoadLibraryA(path);
-}
-
-void UnloadDll(DllHandle handle)
-{
-    FreeLibrary(handle);
-}
-
-void* GetSymbol(DllHandle handle, const char* name)
-{
-    return reinterpret_cast<void*>(GetProcAddress(handle, name));
-}
-
-bool IsSharedLibrary(const std::string& filename)
-{
-    const auto len = filename.size();
-    return (len > 4 && filename.compare(len - 4, 4, ".dll") == 0);
-}
-
-#else // macOS / Linux
-
-using DllHandle = void*;
-
-#if defined(__APPLE__)
-static constexpr const char* kDylibExtension = ".dylib";
-#elif defined(__ANDROID__)
-static constexpr const char* kDylibExtension = ".so";
-#else
-static constexpr const char* kDylibExtension = ".so";
-#endif
-
-DllHandle LoadDll(const char* path)
-{
-    return dlopen(path, RTLD_NOW | RTLD_GLOBAL);
-}
-
-void UnloadDll(DllHandle handle)
-{
-    dlclose(handle);
-}
-
-bool IsSharedLibrary(const std::string& filename)
-{
-    const auto len = filename.size();
-    const auto extLen = std::strlen(kDylibExtension);
-    return (len > extLen && filename.compare(len - extLen, extLen, kDylibExtension) == 0);
-}
-
-#endif // _WIN32
-
-} // namespace
+using genius::os::DllHandle;
+using genius::os::LoadDll;
+using genius::os::UnloadDll;
+using genius::os::GetSymbol;
+using genius::os::IsSharedLibrary;
 
 void PluginManager::RegisterPlugin(std::shared_ptr<IPlugin>       plugin,
                                     unsigned int                    priority,
                                     const std::vector<std::string>& urlPaths)
 {
+    if (!plugin)
+    {
+        SPDLOG_ERROR("PluginManager::RegisterPlugin — null plugin rejected");
+        return;
+    }
+
     const std::string pluginName = plugin->GetName();
+
+    if (m_plugins.find(pluginName) != m_plugins.end())
+    {
+        SPDLOG_WARN("PluginManager::RegisterPlugin — duplicate plugin '{}' rejected",
+                    pluginName);
+        return;
+    }
 
     PluginEntry entry;
     entry.plugin   = std::move(plugin);
@@ -114,6 +66,13 @@ void PluginManager::RegisterHandler(const std::string& method,
                                      const std::string& ownerPluginName,
                                      unsigned int       priority)
 {
+    if (!fn)
+    {
+        SPDLOG_ERROR("PluginManager::RegisterHandler — null handler rejected ({})",
+                     functionName);
+        return;
+    }
+
     HandlerEntry entry;
     entry.fn              = fn;
     entry.method          = method;
@@ -138,87 +97,53 @@ void PluginManager::LoadAllPlugins(const std::string& pluginDir)
 
     SPDLOG_INFO("Scanning for plugins in: {}", pluginDir);
 
-#ifdef _WIN32
-    std::string searchPath = pluginDir + "\\*.dll";
-    WIN32_FIND_DATAA findData;
-    HANDLE hFind = FindFirstFileA(searchPath.c_str(), &findData);
-    if (hFind == INVALID_HANDLE_VALUE)
+    std::error_code ec;
+    for (const auto& entry : std::filesystem::directory_iterator(pluginDir, ec))
     {
-        return;
-    }
-
-    do
-    {
-        std::string fullPath = pluginDir + "\\" + findData.cFileName;
-        DllHandle handle = LoadDll(fullPath.c_str());
-        if (handle != nullptr)
+        if (ec)
         {
-            auto createFn = reinterpret_cast<CreatePluginFn>(
-                GetSymbol(handle, "CreatePlugin"));
-            if (createFn != nullptr)
-            {
-                IPlugin* rawPlugin = createFn();
-                if (rawPlugin != nullptr)
-                {
-                    auto plugin = std::shared_ptr<IPlugin>(rawPlugin);
-                    RegisterPlugin(plugin, plugin->GetPriority(), plugin->GetUrlPaths());
-                    auto it = m_plugins.find(plugin->GetName());
-                    if (it != m_plugins.end())
-                    {
-                        it->second.dlHandle = static_cast<void*>(handle);
-                    }
-                }
-            }
+            break;
         }
-    }
-    while (FindNextFileA(hFind, &findData) != 0);
 
-    FindClose(hFind);
-#else
-    DIR* dir = opendir(pluginDir.c_str());
-    if (dir == nullptr)
-    {
-        return;
-    }
-
-    struct dirent* entry = nullptr;
-    while ((entry = readdir(dir)) != nullptr)
-    {
-        if (entry->d_type != DT_REG && entry->d_type != DT_LNK)
+        if (!entry.is_regular_file() && !entry.is_symlink())
         {
             continue;
         }
 
-        if (!IsSharedLibrary(entry->d_name))
+        const auto filename = entry.path().filename().string();
+        if (!IsSharedLibrary(filename))
         {
             continue;
         }
 
-        std::string fullPath = pluginDir + "/" + entry->d_name;
+        const std::string fullPath = entry.path().string();
         DllHandle handle = LoadDll(fullPath.c_str());
-        if (handle != nullptr)
+        if (handle == nullptr)
         {
-            auto createFn = reinterpret_cast<CreatePluginFn>(
-                dlsym(handle, "CreatePlugin"));
-            if (createFn != nullptr)
-            {
-                IPlugin* rawPlugin = createFn();
-                if (rawPlugin != nullptr)
-                {
-                    auto plugin = std::shared_ptr<IPlugin>(rawPlugin);
-                    RegisterPlugin(plugin, plugin->GetPriority(), plugin->GetUrlPaths());
-                    auto it = m_plugins.find(plugin->GetName());
-                    if (it != m_plugins.end())
-                    {
-                        it->second.dlHandle = static_cast<void*>(handle);
-                    }
-                }
-            }
+            continue;
+        }
+
+        auto createFn = reinterpret_cast<CreatePluginFn>(
+            GetSymbol(handle, "CreatePlugin"));
+        if (createFn == nullptr)
+        {
+            continue;
+        }
+
+        IPlugin* rawPlugin = createFn();
+        if (rawPlugin == nullptr)
+        {
+            continue;
+        }
+
+        auto plugin = std::shared_ptr<IPlugin>(rawPlugin);
+        RegisterPlugin(plugin, plugin->GetPriority(), plugin->GetUrlPaths());
+        auto it = m_plugins.find(plugin->GetName());
+        if (it != m_plugins.end())
+        {
+            it->second.dlHandle = static_cast<void*>(handle);
         }
     }
-
-    closedir(dir);
-#endif
 }
 
 void PluginManager::InitializeAll(IServiceLocator& manager)

@@ -36,12 +36,24 @@ constexpr int kSslShutdownMaxRetries = 3;
 // ArchiveConfig
 // ============================================================================
 
+namespace
+{
+/// Trim leading and trailing whitespace from a string view.
+std::string Trim(std::string_view s) noexcept
+{
+    const auto start = s.find_first_not_of(" \t\n\r\f\v");
+    if (start == std::string_view::npos) return {};
+    const auto end = s.find_last_not_of(" \t\n\r\f\v");
+    return std::string(s.substr(start, end - start + 1));
+}
+} // namespace
+
 bool ArchiveConfig::IsValid() const noexcept
 {
-    return !endpoint.empty() &&
-           !bucket.empty() &&
-           !access_key.empty() &&
-           !secret_key.empty();
+    return !Trim(endpoint).empty() &&
+           !Trim(bucket).empty() &&
+           !Trim(access_key).empty() &&
+           !Trim(secret_key).empty();
 }
 
 // ============================================================================
@@ -376,11 +388,8 @@ bool S3Client::PutObject(const std::string& s3Key, const std::string& content) n
         auto now = std::chrono::system_clock::now();
         auto time = std::chrono::system_clock::to_time_t(now);
         std::tm utcTime{};
-#if defined(_WIN32)
-        gmtime_s(&utcTime, &time);
-#else
-        gmtime_r(&time, &utcTime);
-#endif
+        const auto* tmPtr = std::gmtime(&time);
+        if (tmPtr) { utcTime = *tmPtr; }
 
         char dateStampBuf[9];
         char amzDateBuf[17];

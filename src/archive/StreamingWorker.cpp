@@ -71,11 +71,8 @@ void StreamingWorker::Enqueue(
     auto now = std::chrono::system_clock::now();
     auto time = std::chrono::system_clock::to_time_t(now);
     std::tm utcTime{};
-#if defined(_WIN32)
-    gmtime_s(&utcTime, &time);
-#else
-    gmtime_r(&time, &utcTime);
-#endif
+    const auto* tmPtr = std::gmtime(&time);
+    if (tmPtr) { utcTime = *tmPtr; }
     std::ostringstream oss;
     oss << std::put_time(&utcTime, "%Y-%m-%dT%H:%M:%SZ");
     entry.timestamp = oss.str();
@@ -255,11 +252,8 @@ void StreamingWorker::FlushBatch(std::vector<ChangeEntry>& batch) noexcept
     auto now = std::chrono::system_clock::now();
     auto time = std::chrono::system_clock::to_time_t(now);
     std::tm utcTime{};
-#if defined(_WIN32)
-    gmtime_s(&utcTime, &time);
-#else
-    gmtime_r(&time, &utcTime);
-#endif
+    const auto* tmPtr = std::gmtime(&time);
+    if (tmPtr) { utcTime = *tmPtr; }
 
     char datePath[11];
     std::strftime(datePath, sizeof(datePath), "%Y/%m/%d", &utcTime);

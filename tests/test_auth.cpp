@@ -133,3 +133,113 @@ TEST(AuthPasswordTest, HashPassword_SamePasswordDifferentSalts)
     EXPECT_TRUE(VerifyPassword("same-password", hash1));
     EXPECT_TRUE(VerifyPassword("same-password", hash2));
 }
+
+// ============================================================================
+// Unhappy-Path Password / JWT Tests
+// ============================================================================
+
+TEST(AuthPasswordTest, HashPassword_EmptyPassword_StillProducesValidSizedHash)
+{
+    // Hashing the empty string must still produce a 16-byte salt and 32-byte
+    // derived key (PBKDF2 accepts a zero-length input). The result is a valid
+    // PasswordHash, distinct from the failure sentinel returned on RAND/PBKDF2
+    // errors (which has empty salt/hash).
+    const auto result = HashPassword("");
+
+    EXPECT_EQ(16u, result.salt.size());
+    EXPECT_EQ(32u, result.hash.size());
+    EXPECT_EQ(100000, result.iterations);
+
+    // The empty password verifies against its own hash.
+    EXPECT_TRUE(VerifyPassword("", result));
+
+    // A non-empty password does not verify against the empty-password hash.
+    EXPECT_FALSE(VerifyPassword("non-empty", result));
+}
+
+TEST(AuthPasswordTest, VerifyPassword_EmptyPassword_AgainstNonEmptyHash_ReturnsFalse)
+{
+    const auto stored = HashPassword("real-password");
+
+    // Empty plaintext must not verify against a hash of a non-empty password.
+    EXPECT_FALSE(VerifyPassword("", stored));
+}
+
+TEST(AuthPasswordTest, VerifyPassword_ZeroLengthSalt_ReturnsFalse)
+{
+    // A stored hash with a zero-length salt is rejected by the size guard
+    // before PBKDF2 is invoked (kSaltLength=16).
+    PasswordHash malformed;
+    // salt and hash intentionally left empty; iterations left at default
+    EXPECT_TRUE(malformed.salt.empty());
+    EXPECT_TRUE(malformed.hash.empty());
+
+    EXPECT_FALSE(VerifyPassword("any-password", malformed));
+}
+
+TEST(AuthPasswordTest, VerifyPassword_ZeroLengthHash_ReturnsFalse)
+{
+    // A stored hash with a zero-length derived key is rejected by the size
+    // guard (kHashLength=32), even if the salt is the correct length.
+    PasswordHash malformed;
+    malformed.salt.assign(16, 0xAB);  // valid 16-byte salt
+    // hash intentionally left empty
+    EXPECT_TRUE(malformed.hash.empty());
+
+    EXPECT_FALSE(VerifyPassword("any-password", malformed));
+}
+
+TEST(AuthPasswordTest, VerifyPassword_WrongSaltSize_ReturnsFalse)
+{
+    // A 15-byte salt (off by one) is rejected by the size guard.
+    PasswordHash malformed;
+    malformed.salt.assign(15, 0xAB);
+    malformed.hash.assign(32, 0xCD);
+
+    EXPECT_FALSE(VerifyPassword("any-password", malformed));
+}
+
+TEST(AuthJwtTest, ValidateJwtToken_EmptyToken_ReturnsFalse)
+{
+    // An empty token string cannot be decoded and must be rejected.
+    RequestContext ctx;
+    const bool result = ValidateJwtToken("", kTestSecret, ctx);
+
+    EXPECT_FALSE(result);
+    EXPECT_FALSE(ctx.authenticated);
+}
+
+TEST(AuthJwtTest, ValidateJwtToken_MalformedToken_ReturnsFalse)
+{
+    // A token that is not a valid compact JWT (wrong segment count, non-base64
+    // payload, etc.) must be rejected without crashing.
+    RequestContext ctx;
+    const bool result = ValidateJwtToken("not.a.valid.jwt", kTestSecret, ctx);
+
+    EXPECT_FALSE(result);
+    EXPECT_FALSE(ctx.authenticated);
+}
+
+TEST(AuthJwtTest, ValidateJwtToken_EmptySecret_RejectsValidFormatToken)
+{
+    // A token signed with a real secret must not validate against an empty
+    // secret. (This documents signature verification, not token creation.)
+    const auto token = CreateJwtToken(kTestSecret, kTestUserId, kTestTenant, kTestOrg);
+
+    RequestContext ctx;
+    const bool result = ValidateJwtToken(token, "", ctx);
+
+    EXPECT_FALSE(result);
+    EXPECT_FALSE(ctx.authenticated);
+}
+
+TEST(AuthJwtTest, CreateJwtToken_EmptySecret_ProducesNonEmptyToken)
+{
+    // jwt-cpp's hs256 accepts any secret length (no minimum enforced by the
+    // library), so even an empty secret produces a signed token. Callers must
+    // enforce the 32-byte minimum themselves; this test documents that the
+    // utility does not reject short/empty secrets at creation time.
+    const auto token = CreateJwtToken("", kTestUserId, kTestTenant, kTestOrg);
+
+    EXPECT_FALSE(token.empty());
+}

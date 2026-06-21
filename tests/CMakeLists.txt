@@ -56,12 +56,12 @@ target_link_libraries(test_auth_login PRIVATE
     GTest::gtest_main
     OpenSSL::Crypto
     spdlog::spdlog
-    nlohmann_json::nlohmann_json
 )
 target_include_directories(test_auth_login PRIVATE
     "${CMAKE_CURRENT_SOURCE_DIR}/../src"
     "${CMAKE_CURRENT_SOURCE_DIR}/../src/identity/../jwt-cpp/include"
 )
+target_link_libraries(test_auth_login PRIVATE nlohmann_json::nlohmann_json)
 add_test(NAME test_auth_login COMMAND test_auth_login)
 
 # S3Client tests
@@ -77,7 +77,6 @@ target_link_libraries(test_s3_client PRIVATE
     OpenSSL::Crypto
     OpenSSL::SSL
     spdlog::spdlog
-    nlohmann_json::nlohmann_json
 )
 target_include_directories(test_s3_client PRIVATE
     "${CMAKE_CURRENT_SOURCE_DIR}/../src"
@@ -95,10 +94,10 @@ target_link_libraries(test_streaming_worker PRIVATE
     storage
     GTest::gtest_main
     Boost::headers
+    nlohmann_json::nlohmann_json
     OpenSSL::Crypto
     OpenSSL::SSL
     spdlog::spdlog
-    nlohmann_json::nlohmann_json
 )
 target_include_directories(test_streaming_worker PRIVATE
     "${CMAKE_CURRENT_SOURCE_DIR}/../src"
@@ -116,10 +115,10 @@ target_link_libraries(test_archive_handlers PRIVATE
     storage
     GTest::gtest_main
     Boost::headers
+    nlohmann_json::nlohmann_json
     OpenSSL::Crypto
     OpenSSL::SSL
     spdlog::spdlog
-    nlohmann_json::nlohmann_json
 )
 target_include_directories(test_archive_handlers PRIVATE
     "${CMAKE_CURRENT_SOURCE_DIR}/../src"
@@ -140,10 +139,10 @@ target_link_libraries(test_tunnel_setup PRIVATE
     Boost::headers
     Boost::filesystem
     Boost::system
+    nlohmann_json::nlohmann_json
     OpenSSL::Crypto
     OpenSSL::SSL
     spdlog::spdlog
-    nlohmann_json::nlohmann_json
 )
 target_include_directories(test_tunnel_setup PRIVATE
     "${CMAKE_CURRENT_SOURCE_DIR}/../src"

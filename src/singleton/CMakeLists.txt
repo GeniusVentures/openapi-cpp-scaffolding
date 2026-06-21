@@ -6,6 +6,7 @@ add_library(component_factory
 target_include_directories(component_factory
     PUBLIC
     "${CMAKE_CURRENT_SOURCE_DIR}/.."
+    "${CMAKE_CURRENT_SOURCE_DIR}/../os/${GENIUS_PLATFORM}"
 )
 
 target_link_libraries(component_factory

@@ -1,0 +1,551 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>API Explorer</title>
+    <style>
+        html
+        {
+            box-sizing: border-box;
+        }
+
+        *,
+        *:before,
+        *:after
+        {
+            box-sizing: inherit;
+        }
+
+        body
+        {
+            margin: 0;
+            background: #fafafa;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            font-size: 16px !important;
+        }
+
+        /* ReDoc renders styled-component inline font-weights (light 300) that the
+           theme.typography token does not override. Force a readable weight across
+           all panels (left menu, middle content, right samples); keep headings bold. */
+        #redoc-container *
+        {
+            font-weight: 700 !important;
+        }
+
+        #redoc-container h1,
+        #redoc-container h2,
+        #redoc-container h3,
+        #redoc-container h4,
+        #redoc-container h5,
+        #redoc-container h6,
+        #redoc-container b,
+        #redoc-container strong
+        {
+            font-weight: 700 !important;
+        }
+
+        /* TRY OUT button — injected by redoc-try next to each HTTP verb.
+           Make it stand out (default is a flat white box). */
+        #redoc-container .tryBtn
+        {
+            background-color: #4990e2 !important;
+            color: #ffffff !important;
+            border: 1px solid #2f7bd6 !important;
+            border-radius: 4px !important;
+            padding: 5px 14px !important;
+            font-size: 12px !important;
+            font-weight: 700 !important;
+            letter-spacing: 0.04em !important;
+            cursor: pointer !important;
+            box-shadow: 0 1px 2px rgba(0, 0, 0, 0.15) !important;
+        }
+
+        #redoc-container .tryBtn:hover
+        {
+            background-color: #2f7bd6 !important;
+        }
+
+        /* Swagger try panel (.swaggerBox) is appended to <body>, outside
+           #redoc-container, so it inherits the 16px body font and inflates.
+           Reset to swagger-ui's designed 14px and give it a clear border. */
+        .swaggerBox
+        {
+            font-size: 14px !important;
+            line-height: 1.45 !important;
+            font-family: "Helvetica Neue", Helvetica, Arial, sans-serif !important;
+            border: 1px solid #d8dde7 !important;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12) !important;
+            background-color: #ffffff !important;
+        }
+
+        .swaggerBox .swagger-ui .responses-inner
+        {
+            padding: 17px !important;
+        }
+
+        /* The -12 scroll nudge leaves the opblock's bottom ~10px clipped by the
+           box's overflow:hidden (clip = |nudge| - kBottomAllowance). In the
+           empty state that clip falls on the responses section's trailing
+           padding (invisible). But Execute -> Clear collapses that section, so
+           the same clip then bites the opblock border / content. Give the
+           opblock a fixed trailing bottom pad >= the clip so it always absorbs
+           it. Being inside the opblock, it's counted in offsetHeight, so
+           redoc-try grows the box to fit it — no clip in any state, and no white
+           gap below the opblock (the box grows with it, not past it). */
+        .swaggerBox .swagger-ui .opblock
+        {
+            padding-bottom: 14px !important;
+        }
+
+        .loading
+        {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
+            color: #3b4151;
+            font-size: 1.2em;
+        }
+
+        .loading .spinner
+        {
+            width: 24px;
+            height: 24px;
+            border: 3px solid #ccc;
+            border-top-color: #3b4151;
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+            margin-right: 12px;
+        }
+
+        @keyframes spin
+        {
+            to { transform: rotate(360deg); }
+        }
+
+        .error
+        {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
+            color: #a94442;
+            background: #f2dede;
+            padding: 20px;
+            flex-direction: column;
+        }
+
+        .error pre
+        {
+            background: #fff;
+            padding: 12px;
+            border-radius: 4px;
+            max-width: 800px;
+            overflow-x: auto;
+        }
+    </style>
+</head>
+<body>
+    <div id="loading" class="loading">
+        <div class="spinner"></div>
+        <span>Loading API specs...</span>
+    </div>
+    <div id="redoc-container"></div>
+
+    <script src="https://cdn.jsdelivr.net/npm/redoc@2.5.3/bundles/redoc.standalone.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/redoc-try@1.4.10/dist/try.js"></script>
+    <script>
+    (function()
+    {
+        "use strict";
+
+        ///
+        /// Base URL for spec JSON files, served by the Boost.Beast server.
+        ///
+        var SPEC_BASE_URL = "/swagger/specs";
+
+        ///
+        /// Deep merge: entries from src overwrite or extend dst.
+        /// Arrays are concatenated (not replaced).
+        ///
+        function deepMerge(dst, src)
+        {
+            if (!src)
+            {
+                return dst;
+            }
+
+            var keys = Object.keys(src);
+            for (var i = 0; i < keys.length; i++)
+            {
+                var key = keys[i];
+                var srcVal = src[key];
+                var dstVal = dst[key];
+
+                if (Array.isArray(srcVal))
+                {
+                    dst[key] = Array.isArray(dstVal)
+                        ? dstVal.concat(srcVal)
+                        : srcVal.slice();
+                }
+                else if (srcVal && typeof srcVal === "object")
+                {
+                    dst[key] = (dstVal && typeof dstVal === "object")
+                        ? deepMerge(dstVal, srcVal)
+                        : JSON.parse(JSON.stringify(srcVal));
+                }
+                else
+                {
+                    dst[key] = srcVal;
+                }
+            }
+
+            return dst;
+        }
+
+        ///
+        /// Merge an array of OpenAPI specs into one combined spec.
+        /// Preserves x-tagGroups so ReDoc renders tag categories.
+        ///
+        function mergeSpecs(specs)
+        {
+            var merged =
+            {
+                openapi: "3.1.0",
+                info:
+                {
+                    title: (specs[0] && specs[0].info && specs[0].info.title)
+                           || "API Specification",
+                    version: (specs[0] && specs[0].info && specs[0].info.version)
+                             || "0.1.0",
+                    description: "Combined API specification."
+                },
+                servers: [
+                    {
+                        url: window.location.origin,
+                        description: "Local server"
+                    }
+                ],
+                tags: [],
+                paths: {},
+                components:
+                {
+                    schemas: {},
+                    parameters: {},
+                    securitySchemes: {}
+                },
+                security: []
+            };
+
+            var seenTags = {};
+            var tagGroups = [];
+
+            for (var i = 0; i < specs.length; i++)
+            {
+                var spec = specs[i];
+                if (!spec)
+                {
+                    continue;
+                }
+
+                if (spec.paths)
+                {
+                    deepMerge(merged.paths, spec.paths);
+                }
+
+                if (spec.tags)
+                {
+                    for (var t = 0; t < spec.tags.length; t++)
+                    {
+                        var tag = spec.tags[t];
+                        if (!seenTags[tag.name])
+                        {
+                            seenTags[tag.name] = true;
+                            merged.tags.push(tag);
+                        }
+                    }
+                }
+
+                if (spec.components)
+                {
+                    if (spec.components.schemas)
+                    {
+                        deepMerge(merged.components.schemas, spec.components.schemas);
+                    }
+                    if (spec.components.parameters)
+                    {
+                        deepMerge(merged.components.parameters, spec.components.parameters);
+                    }
+                    if (spec.components.securitySchemes)
+                    {
+                        deepMerge(merged.components.securitySchemes, spec.components.securitySchemes);
+                    }
+                }
+
+                if (spec.security && spec.security.length > 0 && merged.security.length === 0)
+                {
+                    merged.security = spec.security;
+                }
+
+                // Preserve x-tagGroups (ReDoc renders these as categories).
+                if (spec["x-tagGroups"])
+                {
+                    tagGroups = tagGroups.concat(spec["x-tagGroups"]);
+                }
+            }
+
+            if (tagGroups.length > 0)
+            {
+                // ReDoc hides any tag not listed in a tag group. Promote
+                // ungrouped tags to their own top-level groups so nothing
+                // disappears (e.g. a spec without x-tagGroups).
+                var covered = {};
+                for (var g = 0; g < tagGroups.length; g++)
+                {
+                    var groupTags = tagGroups[g].tags || [];
+                    for (var gt = 0; gt < groupTags.length; gt++)
+                    {
+                        covered[groupTags[gt]] = true;
+                    }
+                }
+                for (var u = 0; u < merged.tags.length; u++)
+                {
+                    var tagName = merged.tags[u].name;
+                    if (!covered[tagName])
+                    {
+                        tagGroups.push({ name: tagName, tags: [tagName] });
+                    }
+                }
+
+                merged["x-tagGroups"] = tagGroups;
+            }
+
+            // Sort tags alphabetically for consistent ordering.
+            merged.tags.sort(function(a, b)
+            {
+                return a.name.localeCompare(b.name);
+            });
+
+            return merged;
+        }
+
+        ///
+        /// Discover available spec files from the server.
+        ///
+        function discoverSpecs()
+        {
+            return fetch(SPEC_BASE_URL)
+                .then(function(resp) { return resp.json(); })
+                .catch(function() { return []; });
+        }
+
+        ///
+        /// Fetch all spec files and merge them.
+        ///
+        function loadAllSpecs()
+        {
+            return discoverSpecs().then(function(files)
+            {
+                if (!files || files.length === 0)
+                {
+                    throw new Error("No specs found at " + SPEC_BASE_URL);
+                }
+
+                document.getElementById("loading").innerHTML =
+                    "<div class=\"spinner\"></div><span>Loading " + files.length + " spec(s)...</span>";
+
+                var promises = files.map(function(filename)
+                {
+                    var url = SPEC_BASE_URL + "/" + filename;
+                    return fetch(url)
+                        .then(function(resp)
+                        {
+                            if (!resp.ok)
+                            {
+                                throw new Error("Failed to fetch " + url + ": " + resp.status);
+                            }
+                            return resp.json();
+                        })
+                        .catch(function(err)
+                        {
+                            console.warn("Skipping " + filename + ": " + err.message);
+                            return null;
+                        });
+                });
+
+                return Promise.all(promises).then(function(specs)
+                {
+                    var loaded = specs.filter(function(s) { return s !== null; });
+                    if (loaded.length === 0)
+                    {
+                        throw new Error("No specs loaded. Check SPEC_BASE_URL: " + SPEC_BASE_URL);
+                    }
+                    console.log("Loaded " + loaded.length + " of " + files.length + " specs");
+                    return mergeSpecs(loaded);
+                });
+            });
+        }
+
+        ///
+        /// Initialize ReDoc via redoc-try, which wires Swagger UI's Try-It-Out
+        /// into each operation. It calls Redoc.init internally; openApi accepts
+        /// the merged spec object (it creates a blob URL for the swagger side).
+        /// redocVersion is passed explicitly because cdn.redocly.com/redoc/latest
+        /// has no "/redoc@" segment for the plugin's auto-detection.
+        ///
+        loadAllSpecs()
+            .then(function(mergedSpec)
+            {
+                document.getElementById("loading").style.display = "none";
+
+                initTry(
+                {
+                    openApi: mergedSpec,
+                    redocVersion: "2.5.3",
+                    tryText: "Try It",
+                    // Keep redocOptions minimal — options like pathInMiddlePanel
+                    // move the path out of the operation summary where redoc-try
+                    // reads "METHOD /path", breaking its selector (try.js:106).
+                    redocOptions:
+                    {
+                    scrollYOffset: 0,
+                    hideLoading: true,
+                    theme:
+                    {
+                        colors:
+                        {
+                            primary:
+                            {
+                                main: "#3b4151"
+                            },
+                            text:
+                            {
+                                primary: "#1f2329",
+                                secondary: "#4b5363"
+                            }
+                        },
+                        typography:
+                        {
+                            fontSize: "16px",
+                            lineHeight: "1.6em",
+                            fontWeight: "500",
+                            fontWeightBold: "700",
+                            fontFamily: "Roboto, -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif",
+                            headings:
+                            {
+                                fontWeight: "600"
+                            }
+                        }
+                    }
+                }
+                });
+
+                // redoc-try scrolls the swagger box so the opblock lands
+                // flush at the top (padding/margin scroll out of view). Nudge
+                // jQuery.scrollTo up by 10px so a gap shows above the opblock.
+                // Safe with overflow:hidden — no scroll trap, just a one-time
+                // programmatic scroll. Loaded async by redoc-try, so poll.
+                var kTryScrollNudge = -12;
+
+                // The nudge scrolls the opblock up by ~12px, but the opblock's
+                // offsetHeight already includes ~11px of trailing empty padding,
+                // so only the final ~1px bottom border actually clips — not 12px.
+                // Allow just enough extra box height to clear that border.
+                // (Bumping by the full |kTryScrollNudge| = +12 overshot and left
+                // a ~10px white gap.)
+                var kBottomAllowance = 2;
+                (function wrapScrollTo()
+                {
+                    if (window.jQuery && window.jQuery.fn.scrollTo)
+                    {
+                        var orig = window.jQuery.fn.scrollTo;
+                        window.jQuery.fn.scrollTo = function(target, duration, opts)
+                        {
+                            opts = opts || {};
+                            opts.offset = (typeof opts.offset === "number"
+                                           ? opts.offset : 0) + kTryScrollNudge;
+                            return orig.call(this, target, duration, opts);
+                        };
+                    }
+                    else
+                    {
+                        setTimeout(wrapScrollTo, 100);
+                    }
+                })();
+
+                // Option C — external override, vendor untouched.
+                // redoc-try sets .swaggerBox height = opblock offsetHeight. The
+                // scroll nudge clips only the final ~1px border (offsetHeight
+                // already absorbs the rest). Wrap $.fn.css so any height set on
+                // .swaggerBox grows by kBottomAllowance — just enough to clear
+                // the border, without the white gap a full +nudge left.
+                (function wrapCss()
+                {
+                    if (window.jQuery && window.jQuery.fn.css)
+                    {
+                        var orig = window.jQuery.fn.css;
+                        window.jQuery.fn.css = function(prop, val)
+                        {
+                            if (prop && typeof prop === "object" && prop.height
+                                && this.hasClass && this.hasClass("swaggerBox"))
+                            {
+                                var n = parseInt(prop.height, 10);
+                                if (!isNaN(n))
+                                {
+                                    var bumped = Object.assign({}, prop,
+                                        { height: (n + kBottomAllowance) + "px" });
+                                    return orig.call(this, bumped);
+                                }
+                            }
+                            return orig.apply(this, arguments);
+                        };
+                    }
+                    else
+                    {
+                        setTimeout(wrapCss, 100);
+                    }
+                })();
+
+                // redoc-try calls a.click() on the opblock summary to expand it,
+                // but swagger-ui v5 owns expand state in its layout store and
+                // reflects it on .opblock-summary-control[aria-expanded]. redoc-
+                // try's own "open" class drifts, so a.click() ends up toggling —
+                // the opblock flips between expanded/collapsed on repeated Try-It
+                // opens (full, close, collapsed, close, full).
+                // Fix: capture clicks on the summary and swallow them whenever the
+                // opblock is ALREADY expanded (aria-expanded === "true"). A summary
+                // click can then only ever expand, never collapse — the opblock
+                // stays open every time the panel shows.
+                document.addEventListener("click", function(e)
+                {
+                    var summary = e.target.closest
+                        && e.target.closest(".swaggerBox .opblock-summary");
+                    if (!summary)
+                    {
+                        return;
+                    }
+                    var ctrl = summary.querySelector
+                        && summary.querySelector(".opblock-summary-control");
+                    if (ctrl && ctrl.getAttribute("aria-expanded") === "true")
+                    {
+                        e.stopPropagation();
+                        e.preventDefault();
+                    }
+                }, true);
+            })
+            .catch(function(err)
+            {
+                document.getElementById("loading").style.display = "none";
+                var errorDiv = document.createElement("div");
+                errorDiv.className = "error";
+                errorDiv.innerHTML =
+                    "<h2>Failed to load API specs</h2>" +
+                    "<pre>" + err.message + "</pre>" +
+                    "<p>Ensure the spec files are accessible at: <code>" + SPEC_BASE_URL + "</code></p>";
+                document.body.appendChild(errorDiv);
+            });
+    })();
+    </script>
+</body>
+</html>

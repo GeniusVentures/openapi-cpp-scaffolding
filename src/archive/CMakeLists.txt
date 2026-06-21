@@ -4,8 +4,6 @@
 # This plugin streams RocksDB changes to S3-compatible storage.
 #
 
-#
-
 set(ARCHIVE_SOURCES
     archive_plugin.cpp
     S3Client.cpp
@@ -23,10 +21,10 @@ target_link_libraries(archive_api PRIVATE
     component_factory
     storage
     Boost::headers
+    nlohmann_json::nlohmann_json
     OpenSSL::Crypto
     OpenSSL::SSL
     spdlog::spdlog
-    nlohmann_json::nlohmann_json
 )
 
 set_target_properties(archive_api PROPERTIES

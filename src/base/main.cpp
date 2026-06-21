@@ -15,24 +15,19 @@
 #include <string>
 #include <thread>
 
-#include <sys/stat.h>
-
-#ifdef __APPLE__
-#include <mach-o/dyld.h>
-#elif defined(__linux__)
-#include <unistd.h>
-#endif
-
 #include <boost/asio.hpp>
 #include <boost/beast.hpp>
 
+#include "Platform.hpp"
 #include "singleton/PluginManager.hpp"
 #include "singleton/CServiceLocator.hpp"
 #include "singleton/fnv1a.hpp"
 #include "storage/RocksDBEngine.hpp"
 #include "storage/KeyBuilder.hpp"
+#include "config/GsmConfig.hpp"
 #include "identity/auth_utils.hpp"
 #include "logging.hpp"
+#include "storage/GsmStorageManager.hpp"
 
 namespace net       = boost::asio;
 namespace beast     = boost::beast;
@@ -45,57 +40,19 @@ namespace
 /// PluginManager pointer — set in main(), used by HttpSession for routing.
 PluginManager* g_pluginManager = nullptr;
 
-/// Base directory — resolved from executable path at startup.
-/// All relative paths (plugins, static files) are resolved from here.
-std::string g_baseDir;
+/// Executable directory — all assets live next to the binary (cmake copies them there).
+std::string g_exeDir;
 
 /// JWT signing secret — loaded from environment or config file.
 std::string g_jwtSecret;
 
 ///
 /// Get the directory containing the executable.
+/// Delegates to the platform abstraction layer (os/${GENIUS_PLATFORM}/Platform.hpp).
 ///
 std::string GetExecutableDir()
 {
-#ifdef __APPLE__
-    char buf[PATH_MAX];
-    uint32_t size = sizeof(buf);
-    if (_NSGetExecutablePath(buf, &size) == 0)
-    {
-        std::string path(buf);
-        auto pos = path.rfind('/');
-        if (pos != std::string::npos)
-        {
-            return path.substr(0, pos);
-        }
-    }
-#elif defined(__linux__)
-    char buf[PATH_MAX];
-    ssize_t len = readlink("/proc/self/exe", buf, sizeof(buf) - 1);
-    if (len != -1)
-    {
-        buf[len] = '\0';
-        std::string path(buf);
-        auto pos = path.rfind('/');
-        if (pos != std::string::npos)
-        {
-            return path.substr(0, pos);
-        }
-    }
-#elif defined(_WIN32)
-    char buf[MAX_PATH];
-    DWORD len = GetModuleFileNameA(nullptr, buf, MAX_PATH);
-    if (len > 0)
-    {
-        std::string path(buf, len);
-        auto pos = path.rfind('\\');
-        if (pos != std::string::npos)
-        {
-            return path.substr(0, pos);
-        }
-    }
-#endif
-    return ".";
+    return genius::os::GetExecutableDir();
 }
 
 ///
@@ -105,32 +62,6 @@ bool PathExists(const std::string& path)
 {
     struct stat s;
     return stat(path.c_str(), &s) == 0;
-}
-
-///
-/// Find the base directory for static assets (swagger, json specs).
-/// Searches relative to the executable for the swagger index.html.
-///
-std::string FindBaseDir(const std::string& exeDir)
-{
-    // Search upward from exeDir for backend/examples/swagger/index.html
-    std::string dir = exeDir;
-    for (int i = 0; i < 10; ++i)
-    {
-        if (PathExists(dir + "/backend/examples/swagger/index.html"))
-        {
-            return dir;
-        }
-        auto pos = dir.rfind('/');
-        if (pos == std::string::npos || pos == 0)
-        {
-            break;
-        }
-        dir = dir.substr(0, pos);
-    }
-
-    // Fallback: use exeDir (will produce "file not found" errors)
-    return exeDir;
 }
 
 ///
@@ -160,7 +91,7 @@ void LoadJwtSecret()
     }
 
     // Priority 2: Config file
-    std::string secretPath = g_baseDir + "/data/jwt_secret";
+    std::string secretPath = g_exeDir + "/data/jwt_secret";
     std::string fileContent = ReadFile(secretPath);
     if (!fileContent.empty())
     {
@@ -326,7 +257,27 @@ private:
         }
         else if (method == "GET" && (target == "/swagger" || target == "/swagger/"))
         {
-            ServeStaticFile(g_baseDir + "/backend/examples/swagger/index.html");
+            ServeStaticFile(g_exeDir + "/swagger/index.html");
+        }
+        else if (method == "GET" && target == "/swagger/specs")
+        {
+            // List available spec files in the json/ directory
+            std::string jsonDir = g_exeDir + "/json";
+            std::string jsonList = "[";
+            bool first = true;
+            for (const auto& entry : std::filesystem::directory_iterator(jsonDir))
+            {
+                if (entry.path().extension() == ".json")
+                {
+                    if (!first) jsonList += ",";
+                    jsonList += "\"" + entry.path().filename().string() + "\"";
+                    first = false;
+                }
+            }
+            jsonList += "]";
+            m_response.set(http::field::content_type, "application/json");
+            m_response.result(http::status::ok);
+            m_response.body() = jsonList;
         }
         else if (method == "GET" && target.compare(0, 15, "/swagger/specs/") == 0)
         {
@@ -334,7 +285,7 @@ private:
             // Prevent directory traversal
             if (filename.find("..") == std::string::npos)
             {
-                ServeStaticFile(g_baseDir + "/backend/json/" + filename);
+                ServeStaticFile(g_exeDir + "/json/" + filename);
             }
             else
             {
@@ -517,13 +468,12 @@ private:
 
 int main(int argc, char* argv[])
 {
-    std::string exeDir = GetExecutableDir();
-    g_baseDir = FindBaseDir(exeDir);
+    g_exeDir = GetExecutableDir();
 
     // Plugin directory: search upward from exeDir for a plugins/ directory
     std::string pluginDir;
     {
-        std::string dir = exeDir;
+        std::string dir = g_exeDir;
         for (int i = 0; i < 10; ++i)
         {
             if (PathExists(dir + "/plugins"))
@@ -540,7 +490,7 @@ int main(int argc, char* argv[])
         }
         if (pluginDir.empty())
         {
-            pluginDir = exeDir + "/plugins";
+            pluginDir = g_exeDir + "/plugins";
         }
     }
     std::string host       = "127.0.0.1";
@@ -591,18 +541,27 @@ int main(int argc, char* argv[])
     serviceLocator.RegisterService(gnus::hash::Fnv1a("PluginManager"), &pluginManager);
     serviceLocator.RegisterService(gnus::hash::Fnv1a("JwtSecret"), &g_jwtSecret);
 
-    // Create and register the storage engine
-    std::string dbPath = g_baseDir + "/data/db";
-    std::filesystem::create_directories(dbPath);
-    auto storageResult = RocksDBEngine::Create(dbPath);
+    // Create and register the GSM storage manager (owns the RocksDB engine).
+    // GsmStorageManager is registered under Fnv1a("StorageManager") for domain
+    // plugins to resolve via the service locator. The raw IStorageEngine is also
+    // registered under the legacy Fnv1a("StorageEngine") key for backward
+    // compatibility with existing scaffold plugins (identity auth handlers).
+    gsm::config::GsmConfig gsmConfig;
+    gsmConfig.databasePath = g_exeDir + "/data/db";
+    std::filesystem::create_directories(gsmConfig.databasePath);
+
+    auto storageResult = gsm::storage::GsmStorageManager::Create(gsmConfig);
     if (!storageResult.has_value())
     {
-        SPDLOG_ERROR("Failed to create storage engine at {}", dbPath);
+        SPDLOG_ERROR("Failed to create storage manager at {}", gsmConfig.databasePath);
         return 1;
     }
-    auto storageEngine = std::move(storageResult.value());
-    serviceLocator.RegisterService(gnus::hash::Fnv1a("StorageEngine"), storageEngine.get());
-    SPDLOG_INFO("Storage engine initialized at {}", dbPath);
+    auto storageManager = std::move(storageResult.value());
+    serviceLocator.RegisterService(
+        gnus::hash::Fnv1a("StorageManager"), storageManager.get());
+    serviceLocator.RegisterService(
+        gnus::hash::Fnv1a("StorageEngine"), &storageManager->Engine());
+    SPDLOG_INFO("Storage manager initialized at {}", gsmConfig.databasePath);
 
     SPDLOG_INFO("Loading plugins from {}...", pluginDir);
     pluginManager.LoadAllPlugins(pluginDir);
