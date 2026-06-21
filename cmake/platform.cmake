@@ -8,14 +8,15 @@
 
 if(CMAKE_SYSTEM_NAME STREQUAL "Darwin")
     set(GENIUS_PLATFORM "OSX")
-elseif(CMAKE_SYSTEM_NAME STREQUAL "Linux")
-    set(GENIUS_PLATFORM "Linux")
-elseif(CMAKE_SYSTEM_NAME STREQUAL "Windows")
-    set(GENIUS_PLATFORM "Windows")
-elseif(CMAKE_SYSTEM_NAME STREQUAL "Android")
-    set(GENIUS_PLATFORM "Android")
-elseif(CMAKE_SYSTEM_NAME STREQUAL "iOS")
-    set(GENIUS_PLATFORM "iOS")
-else()
-    message(FATAL_ERROR "Unsupported CMAKE_SYSTEM_NAME: ${CMAKE_SYSTEM_NAME}")
+else
+    set(GENIUS_PLATFORM ${CMAKE_SYSTEM_NAME})
 endif()
+
+option(SUPPORTED_PLATFORMS "List of supported platforms" "OSX;Linux;Windows;iOS;Android")
+
+# supported platform check
+if(NOT GENIUS_PLATFORM IN_LIST SUPPORTED_PLATFORMS)
+    message(FATAL_ERROR "Unsupported platform: ${GENIUS_PLATFORM}")
+else()
+    message(STATUS "Building for platform: ${GENIUS_PLATFORM}")
+    endif()
