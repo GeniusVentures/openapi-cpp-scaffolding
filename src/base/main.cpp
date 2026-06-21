@@ -15,15 +15,10 @@
 #include <string>
 #include <thread>
 
-#ifdef __APPLE__
-#include <mach-o/dyld.h>
-#elif defined(__linux__)
-#include <unistd.h>
-#endif
-
 #include <boost/asio.hpp>
 #include <boost/beast.hpp>
 
+#include "Platform.hpp"
 #include "singleton/PluginManager.hpp"
 #include "singleton/CServiceLocator.hpp"
 #include "singleton/fnv1a.hpp"
@@ -53,48 +48,11 @@ std::string g_jwtSecret;
 
 ///
 /// Get the directory containing the executable.
+/// Delegates to the platform abstraction layer (os/${GENIUS_PLATFORM}/Platform.hpp).
 ///
 std::string GetExecutableDir()
 {
-#ifdef __APPLE__
-    char buf[PATH_MAX];
-    uint32_t size = sizeof(buf);
-    if (_NSGetExecutablePath(buf, &size) == 0)
-    {
-        std::string path(buf);
-        auto pos = path.rfind('/');
-        if (pos != std::string::npos)
-        {
-            return path.substr(0, pos);
-        }
-    }
-#elif defined(__linux__)
-    char buf[PATH_MAX];
-    ssize_t len = readlink("/proc/self/exe", buf, sizeof(buf) - 1);
-    if (len != -1)
-    {
-        buf[len] = '\0';
-        std::string path(buf);
-        auto pos = path.rfind('/');
-        if (pos != std::string::npos)
-        {
-            return path.substr(0, pos);
-        }
-    }
-#elif defined(_WIN32)
-    char buf[MAX_PATH];
-    DWORD len = GetModuleFileNameA(nullptr, buf, MAX_PATH);
-    if (len > 0)
-    {
-        std::string path(buf, len);
-        auto pos = path.rfind('\\');
-        if (pos != std::string::npos)
-        {
-            return path.substr(0, pos);
-        }
-    }
-#endif
-    return ".";
+    return genius::os::GetExecutableDir();
 }
 
 ///
