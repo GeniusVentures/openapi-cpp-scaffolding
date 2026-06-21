@@ -20,6 +20,7 @@
 
 
 #include <string>
+#include <vector>
 #include "User.h"
 #include <nlohmann/json.hpp>
 
@@ -86,6 +87,11 @@ public:
     /// </summary>
     org::openapitools::server::model::User getUser() const;
     void setUser(org::openapitools::server::model::User const& value);
+    /// <summary>
+    /// Flattened list of all permission strings from all roles assigned to this user. Uses {domain}:{action} format (e.g. &#39;identity:read&#39;, &#39;hrm:write&#39;). This is a convenience field — the same data is available via user.roles[].permissions[].
+    /// </summary>
+    std::vector<std::string> getPermissions() const;
+    void setPermissions(std::vector<std::string> const& value);
 
     friend  void to_json(nlohmann::json& j, const TokenResponse& o);
     friend  void from_json(const nlohmann::json& j, TokenResponse& o);
@@ -99,6 +105,8 @@ protected:
     int32_t m_Expires_in;
 
     org::openapitools::server::model::User m_User;
+
+    std::vector<std::string> m_Permissions;
 
     
 };
