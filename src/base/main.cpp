@@ -299,6 +299,26 @@ private:
         {
             ServeStaticFile(g_exeDir + "/swagger/index.html");
         }
+        else if (method == "GET" && target == "/swagger/specs")
+        {
+            // List available spec files in the json/ directory
+            std::string jsonDir = g_exeDir + "/json";
+            std::string jsonList = "[";
+            bool first = true;
+            for (const auto& entry : std::filesystem::directory_iterator(jsonDir))
+            {
+                if (entry.path().extension() == ".json")
+                {
+                    if (!first) jsonList += ",";
+                    jsonList += "\"" + entry.path().filename().string() + "\"";
+                    first = false;
+                }
+            }
+            jsonList += "]";
+            m_response.set(http::field::content_type, "application/json");
+            m_response.result(http::status::ok);
+            m_response.body() = jsonList;
+        }
         else if (method == "GET" && target.compare(0, 15, "/swagger/specs/") == 0)
         {
             std::string filename = target.substr(15);

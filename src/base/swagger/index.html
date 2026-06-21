@@ -83,7 +83,7 @@
 <body>
     <div id="loading" class="loading">
         <div class="spinner"></div>
-        <span>Loading 27 domain specs...</span>
+        <span>Loading API specs...</span>
     </div>
     <div id="swagger-ui"></div>
 
@@ -100,35 +100,8 @@
         ///
         var SPEC_BASE_URL = "/swagger/specs";
 
-        var SPEC_FILES = [
-            "ai_openapi.json",
-            "analytics_openapi.json",
-            "assets_openapi.json",
-            "catalog_openapi.json",
-            "commerce_openapi.json",
-            "devices_openapi.json",
-            "documents_openapi.json",
-            "edge_nodes_openapi.json",
-            "events_openapi.json",
-            "hrm_openapi.json",
-            "identity_openapi.json",
-            "integrations_openapi.json",
-            "inventory_openapi.json",
-            "ledger_openapi.json",
-            "locations_openapi.json",
-            "messaging_openapi.json",
-            "notifications_openapi.json",
-            "operations_openapi.json",
-            "organizations_openapi.json",
-            "people_openapi.json",
-            "procurement_openapi.json",
-            "restaurant_openapi.json",
-            "scheduling_openapi.json",
-            "sync_openapi.json",
-            "tenancy_openapi.json",
-            "webhooks_openapi.json",
-            "workflows_openapi.json"
-        ];
+        // Discovered at runtime from the server's /swagger/specs endpoint.
+        var SPEC_FILES = [];
 
         ///
         /// Deep merge: entries from src overwrite or extend dst.
@@ -266,38 +239,59 @@
         }
 
         ///
+        /// Discover available spec files from the server.
+        ///
+        function discoverSpecs()
+        {
+            return fetch(SPEC_BASE_URL)
+                .then(function(resp) { return resp.json(); })
+                .catch(function() { return []; });
+        }
+
+        ///
         /// Fetch all spec files and merge them.
         ///
         function loadAllSpecs()
         {
-            var promises = SPEC_FILES.map(function(filename)
+            return discoverSpecs().then(function(files)
             {
-                var url = SPEC_BASE_URL + "/" + filename;
-                return fetch(url)
-                    .then(function(resp)
-                    {
-                        if (!resp.ok)
-                        {
-                            throw new Error("Failed to fetch " + url + ": " + resp.status);
-                        }
-                        return resp.json();
-                    })
-                    .catch(function(err)
-                    {
-                        console.warn("Skipping " + filename + ": " + err.message);
-                        return null;
-                    });
-            });
-
-            return Promise.all(promises).then(function(specs)
-            {
-                var loaded = specs.filter(function(s) { return s !== null; });
-                if (loaded.length === 0)
+                if (!files || files.length === 0)
                 {
-                    throw new Error("No specs loaded. Check SPEC_BASE_URL: " + SPEC_BASE_URL);
+                    throw new Error("No specs found at " + SPEC_BASE_URL);
                 }
-                console.log("Loaded " + loaded.length + " of " + SPEC_FILES.length + " specs");
-                return mergeSpecs(loaded);
+                SPEC_FILES = files;
+                document.getElementById("loading").innerHTML =
+                    "<div class=\"spinner\"></div><span>Loading " + files.length + " spec(s)...</span>";
+
+                var promises = files.map(function(filename)
+                {
+                    var url = SPEC_BASE_URL + "/" + filename;
+                    return fetch(url)
+                        .then(function(resp)
+                        {
+                            if (!resp.ok)
+                            {
+                                throw new Error("Failed to fetch " + url + ": " + resp.status);
+                            }
+                            return resp.json();
+                        })
+                        .catch(function(err)
+                        {
+                            console.warn("Skipping " + filename + ": " + err.message);
+                            return null;
+                        });
+                });
+
+                return Promise.all(promises).then(function(specs)
+                {
+                    var loaded = specs.filter(function(s) { return s !== null; });
+                    if (loaded.length === 0)
+                    {
+                        throw new Error("No specs loaded. Check SPEC_BASE_URL: " + SPEC_BASE_URL);
+                    }
+                    console.log("Loaded " + loaded.length + " of " + files.length + " specs");
+                    return mergeSpecs(loaded);
+                });
             });
         }
 
