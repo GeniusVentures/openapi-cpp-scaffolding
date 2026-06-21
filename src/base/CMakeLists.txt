@@ -1,5 +1,12 @@
 add_executable(genius_ai_server
     main.cpp
+    "${CMAKE_CURRENT_SOURCE_DIR}/../../../src/config/GsmConfig.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/../../../src/storage/GsmStorageManager.cpp"
+)
+
+target_include_directories(genius_ai_server PRIVATE
+    "${CMAKE_CURRENT_SOURCE_DIR}/../../../src"
+    "${CMAKE_CURRENT_SOURCE_DIR}/../../../scaffold/src"
 )
 
 target_link_libraries(genius_ai_server
@@ -9,6 +16,7 @@ target_link_libraries(genius_ai_server
     auth_utils
     Boost::system
     OpenSSL::Crypto
+    nlohmann_json::nlohmann_json
 )
 
 if(TARGET backend_apis)
