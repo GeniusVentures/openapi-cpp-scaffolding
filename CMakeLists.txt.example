@@ -1,0 +1,63 @@
+cmake_minimum_required(VERSION 3.22)
+
+project(my_project VERSION 0.1.0
+        DESCRIPTION "My Project"
+        LANGUAGES CXX)
+
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_CXX_EXTENSIONS OFF)
+
+# ============================================================================
+# Backend Scaffold Submodule
+# ============================================================================
+# Copy or symlink the openapi-cpp-scaffolding repo into backend/scaffold/,
+# then add it as a subdirectory. The scaffold provides:
+#   - Domain plugin framework (PluginManager, CServiceLocator)
+#   - Storage engine (RocksDB via IStorageEngine)
+#   - OpenAPI code generation (ExternalProject for each domain spec)
+#   - Base server binary (genius_ai_server)
+#
+if(EXISTS "${CMAKE_CURRENT_LIST_DIR}/backend/scaffold/CMakeLists.txt")
+    add_subdirectory(${CMAKE_CURRENT_LIST_DIR}/backend/scaffold scaffold)
+endif()
+
+# ============================================================================
+# Project-Specific OpenAPI Specs
+# ============================================================================
+# Place your domain-specific OpenAPI specs in api-specs/ at the project root.
+# They are copied into json/ next to the server binary so the Swagger UI
+# and /swagger/specs endpoint can serve them alongside scaffold-internal specs.
+#
+#   api-specs/
+#   └── my_domain_openapi.json
+#
+if(EXISTS "${CMAKE_CURRENT_LIST_DIR}/api-specs")
+    file(COPY "${CMAKE_CURRENT_LIST_DIR}/api-specs/"
+         DESTINATION "${CMAKE_BINARY_DIR}/scaffold/src/base/json"
+         FILES_MATCHING PATTERN "*.json")
+    install(DIRECTORY "${CMAKE_CURRENT_LIST_DIR}/api-specs/"
+        DESTINATION json
+        FILES_MATCHING PATTERN "*.json")
+endif()
+
+# ============================================================================
+# Handwritten Backend Code
+# ============================================================================
+# backend/CMakeLists.txt lives in your repo (not the scaffold) and contains
+# your project's handwritten implementations — config loaders, storage managers,
+# domain plugin override files, etc.
+#
+if(EXISTS "${CMAKE_CURRENT_LIST_DIR}/backend/CMakeLists.txt")
+    add_subdirectory(${CMAKE_CURRENT_LIST_DIR}/backend backend)
+endif()
+
+# ============================================================================
+# Frontend Scaffold + Handwritten Code (see openapi-client-scaffolding)
+# ============================================================================
+if(EXISTS "${CMAKE_CURRENT_LIST_DIR}/frontend/scaffold/CMakeLists.txt")
+    add_subdirectory(${CMAKE_CURRENT_LIST_DIR}/frontend/scaffold frontend_scaffold)
+endif()
+if(EXISTS "${CMAKE_CURRENT_LIST_DIR}/frontend/CMakeLists.txt")
+    add_subdirectory(${CMAKE_CURRENT_LIST_DIR}/frontend frontend)
+endif()
