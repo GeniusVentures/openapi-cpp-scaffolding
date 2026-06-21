@@ -27,4 +27,8 @@ add_custom_command(
 add_custom_target(swagger_ui DEPENDS "${CMAKE_CURRENT_BINARY_DIR}/swagger/index.html")
 add_dependencies(genius_ai_server swagger_ui)
 
+# Install swagger next to the binary so it finds it at g_exeDir + "/swagger/".
+install(FILES "${CMAKE_CURRENT_BINARY_DIR}/swagger/index.html"
+    DESTINATION "${CMAKE_INSTALL_BINDIR}/swagger")
+
 project_install(genius_ai_server)
