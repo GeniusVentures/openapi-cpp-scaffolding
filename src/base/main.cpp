@@ -297,7 +297,7 @@ private:
         }
         else if (method == "GET" && (target == "/swagger" || target == "/swagger/"))
         {
-            ServeStaticFile(g_exeDir + "/examples/swagger/index.html");
+            ServeStaticFile(g_exeDir + "/swagger/index.html");
         }
         else if (method == "GET" && target.compare(0, 15, "/swagger/specs/") == 0)
         {
