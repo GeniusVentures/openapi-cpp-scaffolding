@@ -63,6 +63,7 @@ foreach(SPEC_FILE ${SPEC_FILES})
         WORKING_DIRECTORY "${SRC_DIR}"
         COMMENT "Generating C++ API code for ${PREFIX} from ${SPEC_BASENAME}"
         ALWAYS OFF
+        LOG ON
     )
 
     # Step 2: Fix generated code issues (destructor syntax)
@@ -73,6 +74,7 @@ foreach(SPEC_FILE ${SPEC_FILES})
             WORKING_DIRECTORY "${SRC_DIR}"
             COMMENT "Fixing generated code for ${PREFIX}"
             ALWAYS OFF
+            LOG ON
         )
 
         # Step 3: Generate plugin wrapper from OpenAPI spec
@@ -86,6 +88,7 @@ foreach(SPEC_FILE ${SPEC_FILES})
             WORKING_DIRECTORY "${SRC_DIR}"
             COMMENT "Generating plugin wrapper for ${PREFIX}"
             ALWAYS OFF
+            LOG ON
         )
     endif()
 
