@@ -24,10 +24,8 @@
 #include "singleton/fnv1a.hpp"
 #include "storage/RocksDBEngine.hpp"
 #include "storage/KeyBuilder.hpp"
-#include "config/GsmConfig.hpp"
 #include "identity/auth_utils.hpp"
 #include "logging.hpp"
-#include "storage/GsmStorageManager.hpp"
 
 namespace net       = boost::asio;
 namespace beast     = boost::beast;
@@ -541,27 +539,22 @@ int main(int argc, char* argv[])
     serviceLocator.RegisterService(gnus::hash::Fnv1a("PluginManager"), &pluginManager);
     serviceLocator.RegisterService(gnus::hash::Fnv1a("JwtSecret"), &g_jwtSecret);
 
-    // Create and register the GSM storage manager (owns the RocksDB engine).
-    // GsmStorageManager is registered under Fnv1a("StorageManager") for domain
-    // plugins to resolve via the service locator. The raw IStorageEngine is also
-    // registered under the legacy Fnv1a("StorageEngine") key for backward
-    // compatibility with existing scaffold plugins (identity auth handlers).
-    gsm::config::GsmConfig gsmConfig;
-    gsmConfig.databasePath = g_exeDir + "/data/db";
-    std::filesystem::create_directories(gsmConfig.databasePath);
+    // Create and register the RocksDB storage engine (owned here, self-contained
+    // in the scaffold). Registered under Fnv1a("StorageEngine") for domain plugins
+    // to resolve via the service locator.
+    const std::string dbPath = g_exeDir + "/data/db";
+    std::filesystem::create_directories(dbPath);
 
-    auto storageResult = gsm::storage::GsmStorageManager::Create(gsmConfig);
+    auto storageResult = RocksDBEngine::Create(dbPath);
     if (!storageResult.has_value())
     {
-        SPDLOG_ERROR("Failed to create storage manager at {}", gsmConfig.databasePath);
+        SPDLOG_ERROR("Failed to create storage engine at {}", dbPath);
         return 1;
     }
-    auto storageManager = std::move(storageResult.value());
+    auto storageEngine = std::move(storageResult.value());
     serviceLocator.RegisterService(
-        gnus::hash::Fnv1a("StorageManager"), storageManager.get());
-    serviceLocator.RegisterService(
-        gnus::hash::Fnv1a("StorageEngine"), &storageManager->Engine());
-    SPDLOG_INFO("Storage manager initialized at {}", gsmConfig.databasePath);
+        gnus::hash::Fnv1a("StorageEngine"), storageEngine.get());
+    SPDLOG_INFO("Storage engine initialized at {}", dbPath);
 
     SPDLOG_INFO("Loading plugins from {}...", pluginDir);
     pluginManager.LoadAllPlugins(pluginDir);
