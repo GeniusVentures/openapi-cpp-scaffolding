@@ -1,11 +1,8 @@
 add_executable(genius_ai_server
     main.cpp
-    "${CMAKE_CURRENT_SOURCE_DIR}/../../../src/config/GsmConfig.cpp"
-    "${CMAKE_CURRENT_SOURCE_DIR}/../../../src/storage/GsmStorageManager.cpp"
 )
 
 target_include_directories(genius_ai_server PRIVATE
-    "${CMAKE_CURRENT_SOURCE_DIR}/../../../src"
     "${CMAKE_CURRENT_SOURCE_DIR}/../../../scaffold/src"
     "${CMAKE_CURRENT_SOURCE_DIR}/../os/${TARGET_PLATFORM}"
 )
