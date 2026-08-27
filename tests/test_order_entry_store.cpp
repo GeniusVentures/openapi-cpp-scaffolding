@@ -252,7 +252,10 @@ TEST(OrderEntryStoreTest, SubscribeDeliversEachSnapshotOnce)
     genius::stores::OrderEntryStore store;
     SubscriptionRecorder recorder;
     const unsigned int subscriptionId =
-        store.Subscribe([&recorder](const nlohmann::json& snapshot) { recorder.Record(snapshot); });
+        store.Subscribe([&recorder](const nlohmann::json& snapshot)
+        {
+            recorder.Record(snapshot);
+        });
     EXPECT_GE(subscriptionId, kFirstSubscriptionId);
 
     store.SetState(MakeTypedOrder(kNotifiedOrderId));
@@ -261,7 +264,10 @@ TEST(OrderEntryStoreTest, SubscribeDeliversEachSnapshotOnce)
     EXPECT_EQ(kNotifiedOrderId, recorder.LastId());
 
     const unsigned int secondSubscriptionId =
-        store.Subscribe([&recorder](const nlohmann::json& snapshot) { recorder.Record(snapshot); });
+        store.Subscribe([&recorder](const nlohmann::json& snapshot)
+        {
+            recorder.Record(snapshot);
+        });
     EXPECT_GT(secondSubscriptionId, subscriptionId);
 
     store.SetState(MakeTypedOrder(kSnapshotOrderId));
@@ -275,7 +281,10 @@ TEST(OrderEntryStoreTest, UnsubscribeStopsCallbacks)
     genius::stores::OrderEntryStore store;
     SubscriptionRecorder recorder;
     const unsigned int subscriptionId =
-        store.Subscribe([&recorder](const nlohmann::json& snapshot) { recorder.Record(snapshot); });
+        store.Subscribe([&recorder](const nlohmann::json& snapshot)
+        {
+            recorder.Record(snapshot);
+        });
 
     store.SetState(MakeTypedOrder(kNotifiedOrderId));
     ASSERT_TRUE(recorder.WaitForInvocations(kSingleMutationInvocations));
