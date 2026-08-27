@@ -12,6 +12,7 @@
 #include <chrono>
 #include <condition_variable>
 #include <mutex>
+#include <stdexcept>
 #include <string>
 
 #include "commerce/generated/model/Order.h"
@@ -214,6 +215,32 @@ TEST(OrderEntryStoreTest, ApplyCommandRejectsMissingRequiredField)
     const nlohmann::json command = {{"kind", "replace"}, {"state", payload}};
 
     EXPECT_FALSE(store.ApplyCommand(command));
+}
+
+TEST(OrderEntryStoreTest, ApplyCommandCommitsBeforeSubscriberExceptionPropagates)
+{
+    genius::stores::OrderEntryStore store;
+    SubscriptionRecorder recorder;
+    store.Subscribe([&recorder](const nlohmann::json& snapshot)
+    {
+        recorder.Record(snapshot);
+    });
+    store.Subscribe([](const nlohmann::json&)
+    {
+        throw std::runtime_error("subscriber failure");
+    });
+
+    const nlohmann::json command = {
+        {"kind", "replace"},
+        {"state", MakeValidOrderPayload(kReplacedOrderId)}
+    };
+
+    // WR-02 corrected contract: the command committed before the second
+    // subscriber threw, so the exception must propagate raw (it is not a
+    // rejection) and the committed state must survive it.
+    EXPECT_THROW(store.ApplyCommand(command), std::runtime_error);
+    EXPECT_EQ(kReplacedOrderId, store.Snapshot().at("id").get<std::string>());
+    EXPECT_EQ(kSingleMutationInvocations, recorder.InvocationCount());
 }
 
 // ============================================================================
