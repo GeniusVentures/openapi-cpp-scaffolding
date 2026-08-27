@@ -16,6 +16,7 @@
 #include <string>
 
 #include "commerce/generated/model/Order.h"
+#include "OrderEntryOpenApiImporter.hpp"
 #include "OrderEntryStore.hpp"
 
 namespace
@@ -296,6 +297,68 @@ TEST(OrderEntryStoreTest, UnsubscribeStopsCallbacks)
     // can arrive, so the count is deterministic without any sleep.
     EXPECT_EQ(kSingleMutationInvocations, recorder.InvocationCount());
     EXPECT_EQ(kNotifiedOrderId, recorder.LastId());
+}
+
+// ============================================================================
+// Importer (D-04 seam)
+// ============================================================================
+
+TEST(OrderEntryImporterTest, ImportCommitsValidPayload)
+{
+    genius::stores::OrderEntryStore store;
+    const genius::stores::OrderEntryOpenApiImporter importer;
+
+    EXPECT_TRUE(importer.Import(store, MakeValidOrderPayload(kReplacedOrderId)));
+    EXPECT_EQ(kReplacedOrderId, store.Snapshot().at("id").get<std::string>());
+}
+
+TEST(OrderEntryImporterTest, ImportRejectsInvalidPayloadWithoutCommitting)
+{
+    genius::stores::OrderEntryStore store;
+    store.SetState(MakeTypedOrder(kSnapshotOrderId));
+    const genius::stores::OrderEntryOpenApiImporter importer;
+
+    nlohmann::json payload = MakeValidOrderPayload(kReplacedOrderId);
+    payload["total"]["currency"] = kInvalidCurrency;
+
+    EXPECT_FALSE(importer.Import(store, payload));
+    EXPECT_EQ(kSnapshotOrderId, store.Snapshot().at("id").get<std::string>());
+}
+
+TEST(OrderEntryImporterTest, ImportRejectsMissingRequiredFieldWithoutCommitting)
+{
+    genius::stores::OrderEntryStore store;
+    store.SetState(MakeTypedOrder(kSnapshotOrderId));
+    const genius::stores::OrderEntryOpenApiImporter importer;
+
+    nlohmann::json payload = MakeValidOrderPayload(kReplacedOrderId);
+    payload.erase("status");
+
+    EXPECT_FALSE(importer.Import(store, payload));
+    EXPECT_EQ(kSnapshotOrderId, store.Snapshot().at("id").get<std::string>());
+}
+
+TEST(OrderEntryImporterTest, ImportCommitsBeforeSubscriberExceptionPropagates)
+{
+    genius::stores::OrderEntryStore store;
+    SubscriptionRecorder recorder;
+    store.Subscribe([&recorder](const nlohmann::json& snapshot)
+    {
+        recorder.Record(snapshot);
+    });
+    store.Subscribe([](const nlohmann::json&)
+    {
+        throw std::runtime_error("subscriber failure");
+    });
+    const genius::stores::OrderEntryOpenApiImporter importer;
+
+    // PR #15 P2 parity with the WR-02 store contract: the import committed
+    // before the second subscriber threw, so the exception must propagate
+    // raw (a false rejection would claim nothing was committed) and the
+    // committed state must survive it.
+    EXPECT_THROW(importer.Import(store, MakeValidOrderPayload(kReplacedOrderId)), std::runtime_error);
+    EXPECT_EQ(kReplacedOrderId, store.Snapshot().at("id").get<std::string>());
+    EXPECT_EQ(kSingleMutationInvocations, recorder.InvocationCount());
 }
 
 }  // namespace
