@@ -148,3 +148,37 @@ target_include_directories(test_tunnel_setup PRIVATE
     "${CMAKE_CURRENT_SOURCE_DIR}/../src"
 )
 add_test(NAME test_tunnel_setup COMMAND test_tunnel_setup)
+
+# --- Phase 7: generated OrderEntry store Google Test (07-04, D-17) ----------
+# Compiles the RENDERED OrderEntryStore.cpp (frontend/generated) against the
+# commerce OpenAPI model sources it reuses (D-05). No per-store .jinja2 test
+# template exists by design. The render-before-test dependency edge is created
+# by the parent frontend/CMakeLists.txt when this directory configures first
+# (normal order: root adds backend/scaffold BEFORE frontend); the TARGET guard
+# below covers the reverse order. The EXISTS guard mirrors the frontend side's
+# condition so a missing frontend scaffold submodule skips registration.
+set(_order_entry_repo_root "${CMAKE_CURRENT_SOURCE_DIR}/../../..")
+if(EXISTS "${_order_entry_repo_root}/frontend/scaffold/tools/scaffold_codegen/generators/cpp_store.py")
+    add_unittest(test_order_entry_store
+        test_order_entry_store.cpp
+        "${_order_entry_repo_root}/frontend/generated/pos/cpp/order_entry/OrderEntryStore.cpp"
+        "${CMAKE_CURRENT_SOURCE_DIR}/../src/commerce/generated/model/Order.cpp"
+        "${CMAKE_CURRENT_SOURCE_DIR}/../src/commerce/generated/model/OrderLine.cpp"
+        "${CMAKE_CURRENT_SOURCE_DIR}/../src/commerce/generated/model/OrderDiscount.cpp"
+        "${CMAKE_CURRENT_SOURCE_DIR}/../src/commerce/generated/model/ServiceCharge.cpp"
+        "${CMAKE_CURRENT_SOURCE_DIR}/../src/commerce/generated/model/Money.cpp"
+        "${CMAKE_CURRENT_SOURCE_DIR}/../src/commerce/generated/model/Helpers.cpp"
+    )
+    target_include_directories(test_order_entry_store PRIVATE
+        "${_order_entry_repo_root}/frontend/generated/pos/cpp/order_entry"
+        "${_order_entry_repo_root}/frontend/generated/shared/cpp"
+    )
+    set_source_files_properties(
+        "${_order_entry_repo_root}/frontend/generated/pos/cpp/order_entry/OrderEntryStore.cpp"
+        PROPERTIES GENERATED TRUE
+    )
+    target_link_libraries(test_order_entry_store PRIVATE nlohmann_json::nlohmann_json)
+    if(TARGET frontend_generate_cpp_templates)
+        add_dependencies(test_order_entry_store frontend_generate_cpp_templates)
+    endif()
+endif()
