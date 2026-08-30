@@ -18,6 +18,11 @@
 #include "storage/KeyBuilder.hpp"
 #include "nlohmann/json.hpp"
 #include <spdlog/spdlog.h>
+#include <chrono>
+#include <ctime>
+#include <iomanip>
+#include <random>
+#include <sstream>
 
 using json = nlohmann::json;
 using namespace gnus::hash;
@@ -123,6 +128,92 @@ static std::string auth_refreshToken(const RequestContext&, const std::string&, 
 }
 
 // ============================================================================
+// Users Create Override
+//
+// Restores the hand-written create semantics (4d8144a) lost when generated
+// CRUD took over POST /api/v1/users at the 7da1328 relocation: the User
+// response schema requires "status", which the generic handler never sets.
+// ============================================================================
+
+static constexpr unsigned int kUuidHexLength    = 32;
+static constexpr uint8_t      kHexDigitMax      = 15;
+static constexpr const char*  kHexChars         = "0123456789abcdef";
+static constexpr const char*  kUserStatusActive = "active";
+
+/// Generate a random UUID (32 hex characters, no hyphens)
+static std::string GenerateUserUuid() noexcept
+{
+    static thread_local std::mt19937 rng(std::random_device{}());
+    static thread_local std::uniform_int_distribution<uint8_t> dist(0, kHexDigitMax);
+
+    std::string result;
+    result.reserve(kUuidHexLength);
+    for (unsigned int i = 0; i < kUuidHexLength; ++i)
+    {
+        result += kHexChars[dist(rng)];
+    }
+    return result;
+}
+
+/// Get current UTC timestamp in ISO 8601 format
+static std::string GetCurrentTimestamp() noexcept
+{
+    auto now = std::chrono::system_clock::now();
+    auto time = std::chrono::system_clock::to_time_t(now);
+    std::ostringstream oss;
+    oss << std::put_time(std::gmtime(&time), "%Y-%m-%dT%H:%M:%SZ");
+    return oss.str();
+}
+
+/**
+ * @brief      Create a user with contract-required defaults
+ *
+ * Injects the fields the generic CRUD handler cannot: status defaults to
+ * active (required by the User response schema), display_name falls back
+ * to email. Tenant/organization come from the request context.
+ *
+ * @param      ctx    Request context (tenant/organization stamping)
+ * @param      body   JSON body — UserCreate (email required)
+ *
+ * @return     JSON user record, or error JSON
+ */
+static std::string users_create(const RequestContext& ctx, const std::string& /*method*/, const std::string& /*urlPath*/, const std::string& body)
+{
+    try
+    {
+        json requestData = json::parse(body);
+        if (!requestData.contains("email"))
+        {
+            return R"({"error":{"code":"INVALID_REQUEST","message":"Email is required"}})";
+        }
+        std::string email = requestData["email"].get<std::string>();
+        std::string id = GenerateUserUuid();
+        requestData["id"] = id;
+        requestData["display_name"] = requestData.value("display_name", email);
+        requestData["tenant_id"] = ctx.tenantId;
+        requestData["organization_id"] = ctx.organizationId;
+        requestData["status"] = kUserStatusActive;
+        requestData["created_at"] = GetCurrentTimestamp();
+        requestData["updated_at"] = requestData["created_at"];
+
+        auto keyResult = KeyBuilder::Build("identity", "users", id);
+        if (!keyResult.has_value())
+        {
+            return R"({"error":{"code":"INVALID_KEY","message":"Failed to build storage key"}})";
+        }
+        if (!s_storage->Put(keyResult.value(), requestData.dump()))
+        {
+            return R"({"error":{"code":"STORAGE_ERROR","message":"Failed to store entity"}})";
+        }
+        return requestData.dump();
+    }
+    catch (const json::parse_error&)
+    {
+        return R"({"error":{"code":"PARSE_ERROR","message":"Invalid JSON body"}})";
+    }
+}
+
+// ============================================================================
 // init_identity_overrides — called from generated Initialize()
 // ============================================================================
 
@@ -159,4 +250,5 @@ void init_identity_overrides(PluginManager* pm, IServiceLocator& locator)
     pm->RegisterHandler("POST", "/api/v1/auth/logout",   "auth_logout",        auth_logout,        "Identity", kOverrideHandlerPriority);
     pm->RegisterHandler("GET",  "/api/v1/auth/me",       "auth_getCurrentUser",auth_getCurrentUser,"Identity", kOverrideHandlerPriority);
     pm->RegisterHandler("POST", "/api/v1/auth/refresh",  "auth_refreshToken",  auth_refreshToken,  "Identity", kOverrideHandlerPriority);
+    pm->RegisterHandler("POST", "/api/v1/users",         "users_create",       users_create,       "Identity", kOverrideHandlerPriority);
 }
