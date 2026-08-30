@@ -19,10 +19,12 @@
 
 #include "singleton/PluginManager.hpp"
 #include "singleton/CServiceLocator.hpp"
+#include "singleton/IServiceLocator.hpp"
 #include "storage/RocksDBEngine.hpp"
 #include "storage/KeyBuilder.hpp"
 #include "singleton/fnv1a.hpp"
 #include "identity/auth_utils.hpp"
+#include "identity/identity_auth_handlers.hpp"
 #include "nlohmann/json.hpp"
 
 using json = nlohmann::json;
@@ -40,6 +42,17 @@ static std::string stub_login(
     const std::string& body)
 {
     return body;  // just returns raw body (auto-generated behavior)
+}
+
+/// Stub users-create — mimics the generic CRUD handler: stores and returns
+/// the body verbatim without contract-required defaults.
+static std::string stub_users_create(
+    const RequestContext& /*ctx*/,
+    const std::string& /*method*/,
+    const std::string& /*urlPath*/,
+    const std::string& body)
+{
+    return body;  // verbatim (generic auto-generated behavior)
 }
 
 // ============================================================================
@@ -404,4 +417,88 @@ TEST_F(AuthLoginTest, StubLogin_EmptyCredentialsBody_EchoesBody)
 
     // Stub returns the body verbatim — empty in, empty out.
     EXPECT_TRUE(response.empty());
+}
+
+// ============================================================================
+// Users Create Override Tests
+//
+// Regression (7da1328 relocation): the hand-written identity createUser
+// (4d8144a) set status="active"; the generic CRUD handler that took over
+// POST /api/v1/users stores/returns the body verbatim. The User response
+// schema requires "status", so every created user broke client parsing.
+// ============================================================================
+
+TEST_F(AuthLoginTest, UsersCreate_WithoutOverride_BodyLacksStatus)
+{
+    // Baseline documenting the regression: only the generic stub (priority 0)
+    // is registered — the response has no "status".
+    m_pm.RegisterHandler("POST", "/api/v1/users", "stub_users_create",
+                         stub_users_create, "Identity", 0);
+
+    json body;
+    body["email"] = "nostatus@test.com";
+    body["display_name"] = "No Status";
+
+    std::string response = m_pm.Route(m_ctx, "POST", "/api/v1/users", body.dump());
+    auto data = json::parse(response);
+
+    EXPECT_FALSE(data.contains("status"))
+        << "Generic handler echoed the body — status must come from the override";
+}
+
+TEST_F(AuthLoginTest, UsersCreate_Override_SetsStatusAndRequiredFields)
+{
+    m_pm.RegisterHandler("POST", "/api/v1/users", "stub_users_create",
+                         stub_users_create, "Identity", 0);
+    init_identity_overrides(&m_pm, m_locator);
+
+    json body;
+    body["email"] = "override@test.com";
+    body["display_name"] = "Override User";
+
+    std::string response = m_pm.Route(m_ctx, "POST", "/api/v1/users", body.dump());
+    auto data = json::parse(response);
+
+    ASSERT_FALSE(data.contains("error")) << response;
+    EXPECT_EQ("active", data.value("status", ""))
+        << "status is required by the User schema and must default to active";
+    EXPECT_EQ("Override User", data["display_name"].get<std::string>());
+    EXPECT_FALSE(data.value("id", "").empty());
+    EXPECT_EQ(m_ctx.tenantId, data.value("tenant_id", std::string()));
+    EXPECT_EQ(m_ctx.organizationId, data.value("organization_id", std::string()));
+    EXPECT_FALSE(data.value("created_at", "").empty());
+    EXPECT_EQ(data["created_at"], data["updated_at"]);
+}
+
+TEST_F(AuthLoginTest, UsersCreate_Override_DisplayNameFallsBackToEmail)
+{
+    m_pm.RegisterHandler("POST", "/api/v1/users", "stub_users_create",
+                         stub_users_create, "Identity", 0);
+    init_identity_overrides(&m_pm, m_locator);
+
+    json body;
+    body["email"] = "fallback@test.com";
+    // no display_name — handler must tolerate and fall back (4d8144a behavior)
+
+    std::string response = m_pm.Route(m_ctx, "POST", "/api/v1/users", body.dump());
+    auto data = json::parse(response);
+
+    ASSERT_FALSE(data.contains("error")) << response;
+    EXPECT_EQ("fallback@test.com", data["display_name"].get<std::string>());
+}
+
+TEST_F(AuthLoginTest, UsersCreate_Override_MissingEmail_ReturnsInvalidRequest)
+{
+    m_pm.RegisterHandler("POST", "/api/v1/users", "stub_users_create",
+                         stub_users_create, "Identity", 0);
+    init_identity_overrides(&m_pm, m_locator);
+
+    json body;
+    body["display_name"] = "No Email";
+
+    std::string response = m_pm.Route(m_ctx, "POST", "/api/v1/users", body.dump());
+    auto data = json::parse(response);
+
+    EXPECT_TRUE(data.contains("error"));
+    EXPECT_EQ("INVALID_REQUEST", data["error"]["code"].get<std::string>());
 }
