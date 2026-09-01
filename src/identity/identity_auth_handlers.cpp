@@ -246,6 +246,33 @@ void init_identity_overrides(PluginManager* pm, IServiceLocator& locator)
         }
     }
 
+    // Seed touch-pos PIN quick-login user if absent (dev PIN 0000). Seeded
+    // independently of the empty-DB check so existing dev databases get it too.
+    {
+        std::string existingPinUser;
+        auto pk = KeyBuilder::Build("identity", "users_by_email", "pin_user_0000@touchpos.local");
+        if (pk.has_value() && !s_storage->Get(pk.value(), existingPinUser))
+        {
+            auto hr = HashPassword("pin_0000");
+            if (!hr.salt.empty())
+            {
+                json u; u["id"]=GenerateUserUuid(); u["email"]="pin_user_0000@touchpos.local";
+                u["display_name"]="Pin User"; u["tenant_id"]="default"; u["organization_id"]="default";
+                u["role"]="admin"; u["status"]="active"; u["created_at"]="2026-01-01T00:00:00Z"; u["updated_at"]="2026-01-01T00:00:00Z";
+                u["password_hash"]=HexEncode(std::string(hr.hash.begin(),hr.hash.end()));
+                u["password_salt"]=HexEncode(std::string(hr.salt.begin(),hr.salt.end()));
+                u["password_iterations"]=hr.iterations;
+                auto uk = KeyBuilder::Build("identity","users",u["id"].get<std::string>());
+                auto ek = KeyBuilder::Build("identity","users_by_email","pin_user_0000@touchpos.local");
+                if (uk.has_value() && ek.has_value())
+                {
+                    s_storage->WriteBatch({{uk.value(),u.dump()},{ek.value(),u["id"].get<std::string>()}},{});
+                    SPDLOG_INFO("Seeded touch-pos PIN user (email: pin_user_0000@touchpos.local, PIN: 0000)");
+                }
+            }
+        }
+    }
+
     pm->RegisterHandler("POST", "/api/v1/auth/login",    "auth_login",         auth_login,         "Identity", kOverrideHandlerPriority);
     pm->RegisterHandler("POST", "/api/v1/auth/logout",   "auth_logout",        auth_logout,        "Identity", kOverrideHandlerPriority);
     pm->RegisterHandler("GET",  "/api/v1/auth/me",       "auth_getCurrentUser",auth_getCurrentUser,"Identity", kOverrideHandlerPriority);
