@@ -64,6 +64,8 @@ static constexpr int32_t           kWrongClientLineTotal = 1;    ///< Deliberate
 static constexpr int32_t           kModifierDelta      = 50;     ///< Minor units of the inline test modifier
 static constexpr int32_t           kFractionalPrice    = 101;    ///< 101 x 0.5 = 50.5 rounds half-up to 51
 static constexpr double            kHalfQuantity       = 0.5;    ///< Fractional order quantity
+static constexpr double            kHugeQuantity       = 1e18;   ///< WR-07: 1000 x 1e18 leaves llround's int64 domain
+static constexpr double            kAbsurdQuantity     = 1e300;  ///< WR-07: parseable double far past every money range
 static constexpr int32_t           kHalfUpLineTotal    = 51;     ///< llround(101 * 0.5)
 static constexpr int32_t           kMatchQty           = 2;      ///< Quantity for the recompute/mismatch tests
 static constexpr int32_t           kRecomputedTotal    = kItemPrice * kMatchQty;  ///< Server-recomputed order total
@@ -1520,6 +1522,47 @@ TEST_F(PosHandlersTest, OrderCreateRejectsOrderAdjustmentCurrencyMismatch)
     m_ctx.queryString = "";
     EXPECT_EQ(ListAsJson(kOrdersPath).at("data").size(), 0)
         << "Mixed-currency order adjustments must not persist";
+}
+
+///
+/// Quantities whose price x quantity product would leave std::llround's
+/// int64 domain (1e18 against a 1000-unit price, and 1e300 outright) are
+/// rejected cleanly with INVALID_REQUEST and nothing persists — llround's
+/// return value is unspecified for out-of-range arguments, so the bound is
+/// enforced before the rounding, not after it (WR-07).
+///
+TEST_F(PosHandlersTest, OrderCreateRejectsHugeQuantity)
+{
+    const std::string itemId = CreateMenuItem("latte", kItemPrice, kUsdCurrency);
+    const std::vector<double> hugeQuantities = { kHugeQuantity, kAbsurdQuantity };
+
+    for (const double quantity : hugeQuantities)
+    {
+        const std::string body = R"({
+            "status": "draft",
+            "channel": "pos",
+            "fulfillment_type": "pickup",
+            "total": {"amount": 1, "currency": "USD"},
+            "lines": [{
+                "product_id": ")" + itemId + R"(",
+                "quantity": )" + std::to_string(quantity) + R"(,
+                "unit_price": {"amount": 1, "currency": "USD"},
+                "line_total": {"amount": 1, "currency": "USD"}
+            }]
+        })";
+
+        const std::string result = Route("POST", kOrdersPath, body);
+        EXPECT_NE(result.find("INVALID_REQUEST"), std::string::npos)
+            << "Expected INVALID_REQUEST for quantity " << std::to_string(quantity)
+            << ", got: " << result;
+        EXPECT_NE(result.find("quantity out of range"), std::string::npos)
+            << "Expected the quantity-range message for quantity "
+            << std::to_string(quantity) << ", got: " << result;
+    }
+
+    m_ctx.queryString = "";
+    EXPECT_EQ(ListAsJson(kOrdersPath).at("data").size(), 0)
+        << "Huge-quantity orders must not persist";
 }
 
 ///
