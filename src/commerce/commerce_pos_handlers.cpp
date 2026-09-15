@@ -355,7 +355,9 @@ static std::string orders_list(const RequestContext& ctx, const std::string& /*m
  * pricing would exist). Per line, the
  * unit price is resolved by point-Get from restaurant/menu-items (shared
  * storage engine); unknown product_id is rejected with INVALID_REFERENCE (D-02)
- * and a line currency that differs from the stored item's currency is rejected.
+ * and a line currency that differs from the stored item's currency is rejected,
+ * as are adjustment currencies (line tax/discount, order tax/tip/discount)
+ * that differ from the item/order currency when set (WR-06).
  * lineTotal = llround(item price amount x quantity) + line tax - line
  * discount — the single rounding point applies to the price x quantity term
  * (half-up; prices and quantities are non-negative) and the folded line
@@ -461,6 +463,22 @@ static std::string orders_create(const RequestContext& ctx, const std::string& /
                 return R"({"error":{"code":"INVALID_REQUEST","message":"Order total currency must match the menu item currency"}})";
             }
 
+            // WR-06: when set, line adjustment currencies must match the
+            // item currency — the generated OrderLine::validate() never
+            // reaches these optional fields, so without this check a USD
+            // order could persist EUR (or non-3-char) adjustments folded
+            // into USD money
+            if (lines[i].taxTotalIsSet() &&
+                lines[i].getTaxTotal().getCurrency() != itemCurrency)
+            {
+                return R"({"error":{"code":"INVALID_REQUEST","message":"Line tax currency must match the menu item currency"}})";
+            }
+            if (lines[i].discountTotalIsSet() &&
+                lines[i].getDiscountTotal().getCurrency() != itemCurrency)
+            {
+                return R"({"error":{"code":"INVALID_REQUEST","message":"Line discount currency must match the menu item currency"}})";
+            }
+
             // Line-level client adjustments (WR-03): optional tax_total /
             // discount_total fold into the recomputed line total so the
             // stored document stays internally consistent — the amounts
@@ -529,6 +547,19 @@ static std::string orders_create(const RequestContext& ctx, const std::string& /
         return R"({"error":{"code":"INVALID_REQUEST","message":"Order adjustments must be non-negative"}})";
     }
 
+    // WR-06: when set, order-level adjustment currencies must match the
+    // order total's currency (which the per-line check above already pinned
+    // to every line's item currency) — OrderCreate::validate() never
+    // reaches these optional fields, so without this check a USD order
+    // could persist EUR tax/tip/discount folded into its USD total
+    const std::string orderCurrency = dto.getTotal().getCurrency();
+    if ((dto.taxTotalIsSet() && dto.getTaxTotal().getCurrency() != orderCurrency) ||
+        (dto.tipTotalIsSet() && dto.getTipTotal().getCurrency() != orderCurrency) ||
+        (dto.discountTotalIsSet() && dto.getDiscountTotal().getCurrency() != orderCurrency))
+    {
+        return R"({"error":{"code":"INVALID_REQUEST","message":"Order adjustment currency must match the order currency"}})";
+    }
+
     if (!FitsInInt32(subtotal))
     {
         return R"({"error":{"code":"INVALID_REQUEST","message":"Amount overflow"}})";
@@ -554,7 +585,6 @@ static std::string orders_create(const RequestContext& ctx, const std::string& /
 
     // Persist the stamped, server-authoritative document
     const std::string id = GenerateUuid();
-    const std::string orderCurrency = dto.getTotal().getCurrency();
     requestData["subtotal"]["amount"]   = static_cast<int32_t>(subtotal);
     requestData["subtotal"]["currency"] = orderCurrency;
     requestData["total"]["amount"]      = static_cast<int32_t>(total);
