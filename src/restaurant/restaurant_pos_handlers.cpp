@@ -22,6 +22,7 @@
 #include "singleton/PluginManager.hpp"
 #include "storage/IStorageEngine.hpp"
 #include "storage/KeyBuilder.hpp"
+#include "restaurant/generated/model/KitchenTicketCreate.h"
 #include "restaurant/generated/model/MenuCategoryCreate.h"
 #include "restaurant/generated/model/MenuItemCreate.h"
 #include "restaurant/generated/model/ModifierGroupCreate.h"
@@ -528,6 +529,59 @@ static std::string modifier_groups_create(const RequestContext& ctx, const std::
     }
 }
 
+/**
+ * @brief      Create a kitchen ticket (HANDLER-04) with D-02 order reference
+ *
+ * Parses and validates the body against the generated KitchenTicketCreate
+ * contract (from_json requires order_id, station, and status). Before any
+ * stamping or Put, the order_id is point-Get against commerce/orders on the
+ * shared storage engine — a dangling reference returns INVALID_REFERENCE and
+ * nothing is persisted (D-02). The echoed/stored document is contract-shaped
+ * KitchenTicket JSON: Create fields plus the five server stamps (id,
+ * tenant_id, organization_id, created_at, updated_at), which is exactly the
+ * full KitchenTicket model's required set.
+ *
+ * @param      ctx   Request context (auth, tenant, organization)
+ * @param      body  Raw JSON request body (KitchenTicketCreate)
+ *
+ * @return     JSON document echo, or error envelope
+ */
+static std::string kitchen_tickets_create(const RequestContext& ctx, const std::string& /*method*/, const std::string& /*urlPath*/, const std::string& body)
+{
+    // HANDLER-06 defense-in-depth auth check (behind the main.cpp JWT middleware)
+    if (ctx.userId.empty())
+    {
+        return R"({"error":{"code":"UNAUTHORIZED","message":"No authenticated user"}})";
+    }
+
+    try
+    {
+        // Strict contract validation — same json::exception discipline as above
+        json requestData = json::parse(body);
+        const org::openapitools::server::model::KitchenTicketCreate dto =
+            requestData.get<org::openapitools::server::model::KitchenTicketCreate>();
+
+        // D-02 referential integrity: the order must exist in commerce/orders
+        // before anything is stamped or persisted
+        auto orderKeyResult = KeyBuilder::Build("commerce", "orders", dto.getOrderId());
+        if (!orderKeyResult.has_value())
+        {
+            return R"({"error":{"code":"INVALID_KEY","message":"Failed to build order key"}})";
+        }
+        std::string orderDoc;
+        if (!s_storage->Get(orderKeyResult.value(), orderDoc))
+        {
+            return R"({"error":{"code":"INVALID_REFERENCE","message":"Unknown order_id reference"}})";
+        }
+
+        return stamp_and_persist(ctx, "kitchen-tickets", requestData);
+    }
+    catch (const json::exception&)
+    {
+        return R"({"error":{"code":"INVALID_REQUEST","message":"Invalid kitchen ticket request body"}})";
+    }
+}
+
 // ============================================================================
 // init_restaurant_pos_overrides — called from RestaurantPluginImpl::Initialize()
 // ============================================================================
@@ -536,9 +590,9 @@ static std::string modifier_groups_create(const RequestContext& ctx, const std::
  * @brief      Resolve storage and register the POS override handlers
  *
  * Registers GET menu-categories/menu-items/modifier-groups and POST
- * menu-categories/menu-items/modifier-groups at kOverrideHandlerPriority
- * (200), superseding the generated stubs (priority 0). Owner name is
- * "Restaurant" (the plugin's GetName()).
+ * menu-categories/menu-items/modifier-groups/kitchen-tickets at
+ * kOverrideHandlerPriority (200), superseding the generated stubs
+ * (priority 0). Owner name is "Restaurant" (the plugin's GetName()).
  * No seed data — Phase 2 ships none.
  *
  * @param      pm       PluginManager from service locator
@@ -561,4 +615,5 @@ void init_restaurant_pos_overrides(PluginManager* pm, IServiceLocator& locator)
     pm->RegisterHandler("POST", "/api/v1/restaurant/menu-categories", "menu_categories_create", menu_categories_create, "Restaurant", kOverrideHandlerPriority);
     pm->RegisterHandler("POST", "/api/v1/restaurant/menu-items", "menu_items_create", menu_items_create, "Restaurant", kOverrideHandlerPriority);
     pm->RegisterHandler("POST", "/api/v1/restaurant/modifier-groups", "modifier_groups_create", modifier_groups_create, "Restaurant", kOverrideHandlerPriority);
+    pm->RegisterHandler("POST", "/api/v1/restaurant/kitchen-tickets", "kitchen_tickets_create", kitchen_tickets_create, "Restaurant", kOverrideHandlerPriority);
 }
