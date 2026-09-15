@@ -661,6 +661,43 @@ TEST_F(PosHandlersTest, ModifierGroupCreatePersistsAndRoundTrips)
 }
 
 ///
+/// Inline modifiers whose client-sent tenant_id/organization_id differ from
+/// the request context are rewritten to the ctx values — the same D-03
+/// body-stamp the group document gets — so a stored group can never claim a
+/// different tenant than its embedded modifiers. Every other modifier field
+/// keeps its parsed client value; the D-08 strict field-set parse is
+/// untouched (IN-01).
+///
+TEST_F(PosHandlersTest, ModifierGroupCreateRestampsInlineModifierTenancy)
+{
+    json modifier = FullModifier();
+    modifier["tenant_id"]       = kOtherTenant;
+    modifier["organization_id"] = kOtherTenant;
+
+    json body;
+    body["name"]      = "cross-tenant-modifiers";
+    body["modifiers"] = json::array({ modifier });
+    PostJson(kModifierGroupsPath, body.dump());
+
+    m_ctx.queryString = "";
+    const json page = ListAsJson(kModifierGroupsPath);
+    ASSERT_EQ(page.at("data").size(), 1);
+    ASSERT_TRUE(page.at("data")[0].contains("modifiers"));
+    ASSERT_EQ(page.at("data")[0].at("modifiers").size(), 1);
+
+    const json& storedModifier = page.at("data")[0].at("modifiers")[0];
+    EXPECT_EQ(storedModifier.at("tenant_id").get<std::string>(), kDefaultTenant)
+        << "Modifier tenant must be restamped from ctx, not stored verbatim";
+    EXPECT_EQ(storedModifier.at("organization_id").get<std::string>(), kDefaultTenant)
+        << "Modifier organization must be restamped from ctx, not stored verbatim";
+    EXPECT_EQ(storedModifier.at("id").get<std::string>(), kInlineModifierId)
+        << "Non-tenancy fields keep their parsed client values (D-08)";
+    EXPECT_EQ(storedModifier.at("created_at").get<std::string>(), kTestTimestamp)
+        << "Modifier audit fields are not server-minted (D-08)";
+    EXPECT_EQ(storedModifier.at("name").get<std::string>(), "extra-shot");
+}
+
+///
 /// POST menu-items referencing a real modifier group keeps the
 /// modifier_group_ids reference in the persisted document (dependency order:
 /// group before item — Pitfall 8).
