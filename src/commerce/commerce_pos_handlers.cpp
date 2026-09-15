@@ -174,6 +174,15 @@ static std::string orders_create(const RequestContext& ctx, const std::string& /
             // Corrupt stored rows surface through the shared json-exception
             // discipline below (INVALID_REQUEST)
             const json item = json::parse(itemDoc);
+
+            // D-02 tenant scoping — the referenced item must belong to the
+            // caller's tenant, or its price/currency would leak cross-tenant
+            // into this order (legacy rows without tenant_id count as "default")
+            if (item.value("tenant_id", "default") != ctx.tenantId)
+            {
+                return R"({"error":{"code":"INVALID_REFERENCE","message":"product_id belongs to another tenant"}})";
+            }
+
             const json itemPrice = item.at("price");
             const std::string itemCurrency = itemPrice.at("currency").get<std::string>();
             const int64_t itemPriceAmount = static_cast<int64_t>(itemPrice.at("amount").get<int32_t>());

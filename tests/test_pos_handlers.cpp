@@ -89,6 +89,8 @@ static const std::string kSeedMenuId          = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 static const std::string kSeedCategoryId      = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
 static const std::string kMissingRefId        = "cccccccccccccccccccccccccccccccc";
 static const std::string kOtherTenantItemId   = "dddddddddddddddddddddddddddddddd";
+static const std::string kOtherTenantGroupId  = "88888888888888888888888888888888";
+static const std::string kOtherTenantOrderId  = "77777777777777777777777777777777";
 static const std::string kInlineModifierId    = "ffffffffffffffffffffffffffffffff";
 static const std::string kTestUserId          = "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee";
 
@@ -306,6 +308,23 @@ protected:
         body["total"]            = total;
         body["lines"]            = json::array({ line });
         return ParseId(PostJson(kOrdersPath, body.dump()));
+    }
+
+    ///
+    /// Write a document owned by the OTHER tenant directly to storage, the
+    /// way a cross-tenant writer would have left it (bypasses the API stamp)
+    ///
+    void PutOtherTenantDoc(const std::string& domain,
+                           const std::string& entity,
+                           const std::string& id,
+                           const json& doc)
+    {
+        json otherDoc = doc;
+        otherDoc["id"]        = id;
+        otherDoc["tenant_id"] = kOtherTenant;
+        auto keyResult = KeyBuilder::Build(domain, entity, id);
+        ASSERT_TRUE(keyResult.has_value());
+        ASSERT_TRUE(m_engine->Put(keyResult.value(), otherDoc.dump()));
     }
 
     ///
@@ -725,6 +744,35 @@ TEST_F(PosHandlersTest, MenuItemCreateRejectsDanglingModifierGroup)
 }
 
 ///
+/// A modifier group that exists but belongs to ANOTHER tenant rejects the
+/// menu-item create with INVALID_REFERENCE — existence alone is not enough,
+/// the reference must resolve within the caller's tenant (WR-01).
+///
+TEST_F(PosHandlersTest, MenuItemCreateRejectsCrossTenantModifierGroup)
+{
+    PutOtherTenantDoc("restaurant", "modifier-groups", kOtherTenantGroupId,
+                      json{{"name", "other-tenant-group"}});
+
+    const std::string body = R"({
+        "category_id": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "name": "cross-tenant-ref-item",
+        "price": {"amount": 1000, "currency": "USD"},
+        "status": "active",
+        "modifier_group_ids": [")" + kOtherTenantGroupId + R"("]
+    })";
+
+    const std::string result = Route("POST", kMenuItemsPath, body);
+    EXPECT_NE(result.find("INVALID_REFERENCE"), std::string::npos)
+        << "Expected INVALID_REFERENCE, got: " << result;
+    EXPECT_NE(result.find("another tenant"), std::string::npos)
+        << "Expected the cross-tenant message, got: " << result;
+
+    m_ctx.queryString = "";
+    EXPECT_EQ(ListAsJson(kMenuItemsPath).at("data").size(), 0)
+        << "Cross-tenant-referencing item must not persist";
+}
+
+///
 /// A kitchen ticket against a real order persists contract-shaped with ctx
 /// tenant stamps and round-trips through the generated dump-all list stub
 /// (dependency order: item -> order -> ticket — Pitfall 8).
@@ -779,6 +827,33 @@ TEST_F(PosHandlersTest, KitchenTicketCreateRejectsDanglingOrder)
     m_ctx.queryString = "";
     EXPECT_EQ(ListAsJson(kKitchenTicketsPath).at("data").size(), 0)
         << "Rejected ticket must not persist";
+}
+
+///
+/// An order that exists but belongs to ANOTHER tenant rejects the
+/// kitchen-ticket create with INVALID_REFERENCE — a tenant-A ticket must not
+/// link to a tenant-B order (WR-01).
+///
+TEST_F(PosHandlersTest, KitchenTicketCreateRejectsCrossTenantOrder)
+{
+    PutOtherTenantDoc("commerce", "orders", kOtherTenantOrderId,
+                      json{{"status", "draft"}});
+
+    const std::string body = R"({
+        "order_id": ")" + kOtherTenantOrderId + R"(",
+        "station": "grill",
+        "status": "queued"
+    })";
+
+    const std::string result = Route("POST", kKitchenTicketsPath, body);
+    EXPECT_NE(result.find("INVALID_REFERENCE"), std::string::npos)
+        << "Expected INVALID_REFERENCE, got: " << result;
+    EXPECT_NE(result.find("another tenant"), std::string::npos)
+        << "Expected the cross-tenant message, got: " << result;
+
+    m_ctx.queryString = "";
+    EXPECT_EQ(ListAsJson(kKitchenTicketsPath).at("data").size(), 0)
+        << "Cross-tenant ticket must not persist";
 }
 
 // ============================================================================
@@ -877,6 +952,44 @@ TEST_F(PosHandlersTest, OrderCreateRejectsUnknownProduct)
     m_ctx.queryString = "";
     EXPECT_EQ(ListAsJson(kOrdersPath).at("data").size(), 0)
         << "Rejected order must not persist";
+}
+
+///
+/// A menu item that exists but belongs to ANOTHER tenant rejects the order
+/// with INVALID_REFERENCE — otherwise the tenant-B item's price and currency
+/// would be used and echoed into a tenant-A order (cross-tenant disclosure,
+/// WR-01).
+///
+TEST_F(PosHandlersTest, OrderCreateRejectsCrossTenantProduct)
+{
+    json price;
+    price["amount"]   = kItemPrice;
+    price["currency"] = kUsdCurrency;
+    PutOtherTenantDoc("restaurant", "menu-items", kOtherTenantItemId,
+                      json{{"name", "other-tenant-latte"}, {"price", price}});
+
+    const std::string body = R"({
+        "status": "draft",
+        "channel": "pos",
+        "fulfillment_type": "pickup",
+        "total": {"amount": 2000, "currency": "USD"},
+        "lines": [{
+            "product_id": ")" + kOtherTenantItemId + R"(",
+            "quantity": 2,
+            "unit_price": {"amount": 1000, "currency": "USD"},
+            "line_total": {"amount": 2000, "currency": "USD"}
+        }]
+    })";
+
+    const std::string result = Route("POST", kOrdersPath, body);
+    EXPECT_NE(result.find("INVALID_REFERENCE"), std::string::npos)
+        << "Expected INVALID_REFERENCE, got: " << result;
+    EXPECT_NE(result.find("another tenant"), std::string::npos)
+        << "Expected the cross-tenant message, got: " << result;
+
+    m_ctx.queryString = "";
+    EXPECT_EQ(ListAsJson(kOrdersPath).at("data").size(), 0)
+        << "Cross-tenant-priced order must not persist";
 }
 
 ///
