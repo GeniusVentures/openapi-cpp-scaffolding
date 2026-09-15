@@ -51,7 +51,7 @@ static IStorageEngine* s_storage = nullptr;
 // ============================================================================
 
 static constexpr unsigned int kUuidHexLength = 32;   ///< Stored ids are 32 hex chars, no hyphens
-static constexpr uint8_t      kHexDigitMax   = 15;
+static constexpr int          kHexDigitMax   = 15;   ///< Largest index into kHexChars
 static constexpr const char*  kHexChars      = "0123456789abcdef";
 static constexpr unsigned int kDefaultListLimit = 50; ///< Matches generated kDefaultPaginationLimit + Dart client default
 
@@ -67,17 +67,19 @@ static constexpr double kMaxQuantity =
 /// Every nibble is drawn from std::random_device — the CSPRNG-backed source —
 /// instead of std::mt19937, whose 19937-bit state is recoverable from ~20
 /// observed ids, after which every future id minted on that thread (orders,
-/// items, tickets, across all tenants) would be predictable.
+/// items, tickets, across all tenants) would be predictable. The nibble
+/// index uses std::uniform_int_distribution<int> — a type on the standard's
+/// supported list — and is cast to size_t for indexing (IN-05).
 static std::string GenerateUuid() noexcept
 {
     static thread_local std::random_device randomDevice;
-    static thread_local std::uniform_int_distribution<uint8_t> dist(0, kHexDigitMax);
+    static thread_local std::uniform_int_distribution<int> dist(0, kHexDigitMax);
 
     std::string result;
     result.reserve(kUuidHexLength);
     for (unsigned int i = 0; i < kUuidHexLength; ++i)
     {
-        result += kHexChars[dist(randomDevice)];
+        result += kHexChars[static_cast<size_t>(dist(randomDevice))];
     }
     return result;
 }
