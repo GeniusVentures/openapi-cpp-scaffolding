@@ -65,6 +65,7 @@ static constexpr int32_t           kFractionalPrice    = 101;    ///< 101 x 0.5 
 static constexpr double            kHalfQuantity       = 0.5;    ///< Fractional order quantity
 static constexpr int32_t           kHalfUpLineTotal    = 51;     ///< llround(101 * 0.5)
 static constexpr int32_t           kMatchQty           = 2;      ///< Quantity for the recompute/mismatch tests
+static constexpr int32_t           kRecomputedTotal    = kItemPrice * kMatchQty;  ///< Server-recomputed order total
 static constexpr int32_t           kOverflowQty        = 2;      ///< INT32_MAX x 2 overflows int32
 static constexpr size_t            kUuidHexLength      = 32;     ///< Minted ids are 32 hex chars
 static constexpr unsigned int      kMaxTraversalPages  = kSeedCount;  ///< Safety bound for cursor loops
@@ -234,6 +235,16 @@ protected:
             PostJson(kModifierGroupsPath, R"({"name":"group-)" + suffix + R"("})");
             CreateMenuItem("item-" + suffix, kItemPrice, kUsdCurrency);
         }
+    }
+
+    ///
+    /// Create a bare modifier group (name only); returns the minted id
+    ///
+    std::string CreateModifierGroup(const std::string& name)
+    {
+        json body;
+        body["name"] = name;
+        return ParseId(PostJson(kModifierGroupsPath, body.dump()));
     }
 
     ///
@@ -553,4 +564,218 @@ TEST_F(PosHandlersTest, BearerRejectionOnAllOverrideRoutes)
             << "Expected UNAUTHORIZED envelope on " << route.first << " "
             << route.second << ", got: " << result;
     }
+}
+
+// ============================================================================
+// Task 2 — Menu round-trip + D-08/D-02 rejection + kitchen-ticket tests
+// ============================================================================
+
+///
+/// POST menu-categories stamps id/tenant/organization/timestamps and the
+/// created category round-trips through the list endpoint.
+///
+TEST_F(PosHandlersTest, MenuCategoryCreatePersistsAndRoundTrips)
+{
+    const std::string body = R"({
+        "menu_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "name": "drinks",
+        "status": "active"
+    })";
+
+    m_ctx.queryString = "";
+    const json doc = json::parse(PostJson(kMenuCategoriesPath, body));
+
+    const std::string id = doc.at("id").get<std::string>();
+    EXPECT_EQ(id.size(), kUuidHexLength);
+    EXPECT_EQ(doc.at("tenant_id").get<std::string>(), kDefaultTenant);
+    EXPECT_EQ(doc.at("organization_id").get<std::string>(), kDefaultTenant);
+    EXPECT_FALSE(doc.at("created_at").get<std::string>().empty());
+    EXPECT_FALSE(doc.at("updated_at").get<std::string>().empty());
+
+    const json page = ListAsJson(kMenuCategoriesPath);
+    ASSERT_EQ(page.at("data").size(), 1);
+    EXPECT_EQ(page.at("data")[0].at("id").get<std::string>(), id);
+    EXPECT_EQ(page.at("data")[0].at("name").get<std::string>(), "drinks");
+}
+
+///
+/// POST modifier-groups with ONE fully-formed inline modifier (complete D-08
+/// field set) persists and round-trips with the modifier inline.
+///
+TEST_F(PosHandlersTest, ModifierGroupCreatePersistsAndRoundTrips)
+{
+    json body;
+    body["name"]      = "milk-options";
+    body["modifiers"] = json::array({ FullModifier() });
+
+    m_ctx.queryString = "";
+    const json doc = json::parse(PostJson(kModifierGroupsPath, body.dump()));
+
+    const std::string id = doc.at("id").get<std::string>();
+    EXPECT_EQ(id.size(), kUuidHexLength);
+    EXPECT_EQ(doc.at("tenant_id").get<std::string>(), kDefaultTenant);
+    ASSERT_EQ(doc.at("modifiers").size(), 1);
+    EXPECT_EQ(doc.at("modifiers")[0].at("id").get<std::string>(), kInlineModifierId);
+
+    const json page = ListAsJson(kModifierGroupsPath);
+    ASSERT_EQ(page.at("data").size(), 1);
+    const json& stored = page.at("data")[0];
+    EXPECT_EQ(stored.at("id").get<std::string>(), id);
+    ASSERT_TRUE(stored.contains("modifiers"));
+    ASSERT_EQ(stored.at("modifiers").size(), 1);
+    EXPECT_EQ(stored.at("modifiers")[0].at("name").get<std::string>(), "extra-shot");
+    EXPECT_EQ(stored.at("modifiers")[0].at("price_delta").at("amount").get<int32_t>(),
+              kModifierDelta);
+}
+
+///
+/// POST menu-items referencing a real modifier group keeps the
+/// modifier_group_ids reference in the persisted document (dependency order:
+/// group before item — Pitfall 8).
+///
+TEST_F(PosHandlersTest, MenuItemCreatePersistsAndRoundTrips)
+{
+    const std::string groupId = CreateModifierGroup("size-options");
+    const std::string itemId =
+        CreateMenuItem("mocha", kItemPrice, kUsdCurrency, { groupId });
+
+    m_ctx.queryString = "";
+    const json page = ListAsJson(kMenuItemsPath);
+    ASSERT_EQ(page.at("data").size(), 1);
+    const json& stored = page.at("data")[0];
+    EXPECT_EQ(stored.at("id").get<std::string>(), itemId);
+    EXPECT_EQ(stored.at("name").get<std::string>(), "mocha");
+    EXPECT_EQ(stored.at("price").at("amount").get<int32_t>(), kItemPrice);
+    EXPECT_EQ(stored.at("price").at("currency").get<std::string>(), kUsdCurrency);
+    EXPECT_EQ(stored.at("status").get<std::string>(), kActiveStatus);
+    ASSERT_TRUE(stored.contains("modifier_group_ids"));
+    ASSERT_EQ(stored.at("modifier_group_ids").size(), 1);
+    EXPECT_EQ(stored.at("modifier_group_ids")[0].get<std::string>(), groupId);
+    EXPECT_EQ(stored.at("tenant_id").get<std::string>(), kDefaultTenant);
+}
+
+///
+/// A menu-item body missing the required price field is rejected with
+/// INVALID_REQUEST and nothing is persisted.
+///
+TEST_F(PosHandlersTest, MenuItemCreateRejectsMissingRequiredField)
+{
+    // Everything valid except price (the single violated field)
+    const std::string body = R"({
+        "category_id": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "name": "priceless-item",
+        "status": "active"
+    })";
+
+    const std::string result = Route("POST", kMenuItemsPath, body);
+    EXPECT_NE(result.find("INVALID_REQUEST"), std::string::npos)
+        << "Expected INVALID_REQUEST, got: " << result;
+
+    m_ctx.queryString = "";
+    EXPECT_EQ(ListAsJson(kMenuItemsPath).at("data").size(), 0)
+        << "Rejected item must not persist";
+}
+
+///
+/// An inline modifier carrying only name + price_delta (missing the D-08
+/// audit-field set) rejects the whole modifier-group create with
+/// INVALID_REQUEST — no server-side minting of modifier audit fields.
+///
+TEST_F(PosHandlersTest, ModifierGroupCreateRejectsModifierMissingAuditFields)
+{
+    const std::string body = R"({
+        "name": "incomplete-group",
+        "modifiers": [{
+            "name": "no-audit-fields",
+            "price_delta": {"amount": 50, "currency": "USD"}
+        }]
+    })";
+
+    const std::string result = Route("POST", kModifierGroupsPath, body);
+    EXPECT_NE(result.find("INVALID_REQUEST"), std::string::npos)
+        << "Expected INVALID_REQUEST, got: " << result;
+
+    m_ctx.queryString = "";
+    EXPECT_EQ(ListAsJson(kModifierGroupsPath).at("data").size(), 0)
+        << "Rejected group must not persist";
+}
+
+///
+/// A well-formed but non-existent modifier_group_id rejects the menu-item
+/// create with INVALID_REFERENCE and nothing is persisted (D-02).
+///
+TEST_F(PosHandlersTest, MenuItemCreateRejectsDanglingModifierGroup)
+{
+    const std::string body = R"({
+        "category_id": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "name": "dangling-ref-item",
+        "price": {"amount": 1000, "currency": "USD"},
+        "status": "active",
+        "modifier_group_ids": [")" + kMissingRefId + R"("]
+    })";
+
+    const std::string result = Route("POST", kMenuItemsPath, body);
+    EXPECT_NE(result.find("INVALID_REFERENCE"), std::string::npos)
+        << "Expected INVALID_REFERENCE, got: " << result;
+
+    m_ctx.queryString = "";
+    EXPECT_EQ(ListAsJson(kMenuItemsPath).at("data").size(), 0)
+        << "Rejected item must not persist";
+}
+
+///
+/// A kitchen ticket against a real order persists contract-shaped with ctx
+/// tenant stamps and round-trips through the generated dump-all list stub
+/// (dependency order: item -> order -> ticket — Pitfall 8).
+///
+TEST_F(PosHandlersTest, KitchenTicketCreatePersists)
+{
+    const std::string itemId  = CreateMenuItem("latte", kItemPrice, kUsdCurrency);
+    const std::string orderId = CreateOrder(itemId, kMatchQty, kRecomputedTotal, kUsdCurrency);
+
+    const std::string body = R"({
+        "order_id": ")" + orderId + R"(",
+        "station": "grill",
+        "status": "queued"
+    })";
+
+    m_ctx.queryString = "";
+    const json doc = json::parse(PostJson(kKitchenTicketsPath, body));
+
+    const std::string ticketId = doc.at("id").get<std::string>();
+    EXPECT_EQ(ticketId.size(), kUuidHexLength);
+    EXPECT_EQ(doc.at("tenant_id").get<std::string>(), kDefaultTenant);
+    EXPECT_EQ(doc.at("organization_id").get<std::string>(), kDefaultTenant);
+    EXPECT_FALSE(doc.at("created_at").get<std::string>().empty());
+    EXPECT_FALSE(doc.at("updated_at").get<std::string>().empty());
+    EXPECT_EQ(doc.at("order_id").get<std::string>(), orderId);
+    EXPECT_EQ(doc.at("station").get<std::string>(), kGrillStation);
+    EXPECT_EQ(doc.at("status").get<std::string>(), kQueuedStatus);
+
+    // Persistence proof through the generated kitchen-tickets list stub
+    const json page = ListAsJson(kKitchenTicketsPath);
+    ASSERT_EQ(page.at("data").size(), 1);
+    EXPECT_EQ(page.at("data")[0].at("id").get<std::string>(), ticketId);
+    EXPECT_EQ(page.at("data")[0].at("order_id").get<std::string>(), orderId);
+}
+
+///
+/// A well-formed but non-existent order_id rejects the kitchen-ticket create
+/// with INVALID_REFERENCE and nothing is persisted (D-02).
+///
+TEST_F(PosHandlersTest, KitchenTicketCreateRejectsDanglingOrder)
+{
+    const std::string body = R"({
+        "order_id": ")" + kMissingRefId + R"(",
+        "station": "grill",
+        "status": "queued"
+    })";
+
+    const std::string result = Route("POST", kKitchenTicketsPath, body);
+    EXPECT_NE(result.find("INVALID_REFERENCE"), std::string::npos)
+        << "Expected INVALID_REFERENCE, got: " << result;
+
+    m_ctx.queryString = "";
+    EXPECT_EQ(ListAsJson(kKitchenTicketsPath).at("data").size(), 0)
+        << "Rejected ticket must not persist";
 }
