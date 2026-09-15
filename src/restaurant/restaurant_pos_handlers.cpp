@@ -50,16 +50,21 @@ static constexpr uint8_t      kHexDigitMax      = 15;
 static constexpr const char*  kHexChars         = "0123456789abcdef";
 
 /// Generate a random UUID (32 hex characters, no hyphens)
+///
+/// Every nibble is drawn from std::random_device — the CSPRNG-backed source —
+/// instead of std::mt19937, whose 19937-bit state is recoverable from ~20
+/// observed ids, after which every future id minted on that thread (orders,
+/// items, tickets, across all tenants) would be predictable.
 static std::string GenerateUuid() noexcept
 {
-    static thread_local std::mt19937 rng(std::random_device{}());
+    static thread_local std::random_device randomDevice;
     static thread_local std::uniform_int_distribution<uint8_t> dist(0, kHexDigitMax);
 
     std::string result;
     result.reserve(kUuidHexLength);
     for (unsigned int i = 0; i < kUuidHexLength; ++i)
     {
-        result += kHexChars[dist(rng)];
+        result += kHexChars[dist(randomDevice)];
     }
     return result;
 }
