@@ -79,6 +79,8 @@ static const std::string kDefaultTenant  = "default";
 static const std::string kOtherTenant    = "other";
 static const std::string kUsdCurrency    = "USD";
 static const std::string kEuroCurrency   = "EUR";
+static const std::string kShortCurrency  = "US";    ///< 2 chars — violates the 3-char Money currency constraint
+static const std::string kLongCurrency   = "USDX";  ///< 4 chars — violates the 3-char Money currency constraint
 static const std::string kActiveStatus   = "active";
 static const std::string kDraftStatus    = "draft";
 static const std::string kPosChannel     = "pos";
@@ -1151,6 +1153,50 @@ TEST_F(PosHandlersTest, OrderCreateFoldsLineTaxAndDiscountIntoTotals)
     m_ctx.queryString = "";
     EXPECT_EQ(ListAsJson(kOrdersPath).at("data").size(), 1)
         << "Only the folded-total order may persist";
+}
+
+///
+/// Money currencies that violate the generated 3-character contract
+/// constraint (2-char order total currency, 4-char item price currency) are
+/// rejected with INVALID_REQUEST — the generated validate() now runs on the
+/// parsed create DTOs (WR-05).
+///
+TEST_F(PosHandlersTest, CreateHandlersRejectInvalidCurrencyLength)
+{
+    const std::string orderBody = R"({
+        "status": "draft",
+        "channel": "pos",
+        "fulfillment_type": "pickup",
+        "total": {"amount": 1000, "currency": ")" + kShortCurrency + R"("},
+        "lines": [{
+            "product_id": "cccccccccccccccccccccccccccccccc",
+            "quantity": 1,
+            "unit_price": {"amount": 1000, "currency": "USD"},
+            "line_total": {"amount": 1000, "currency": "USD"}
+        }]
+    })";
+
+    const std::string orderResult = Route("POST", kOrdersPath, orderBody);
+    EXPECT_NE(orderResult.find("INVALID_REQUEST"), std::string::npos)
+        << "Expected INVALID_REQUEST for 2-char total currency, got: " << orderResult;
+
+    m_ctx.queryString = "";
+    EXPECT_EQ(ListAsJson(kOrdersPath).at("data").size(), 0)
+        << "Order with invalid currency must not persist";
+
+    const std::string itemBody = R"({
+        "category_id": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "name": "bad-currency-item",
+        "price": {"amount": 1000, "currency": ")" + kLongCurrency + R"("},
+        "status": "active"
+    })";
+
+    const std::string itemResult = Route("POST", kMenuItemsPath, itemBody);
+    EXPECT_NE(itemResult.find("INVALID_REQUEST"), std::string::npos)
+        << "Expected INVALID_REQUEST for 4-char price currency, got: " << itemResult;
+
+    EXPECT_EQ(ListAsJson(kMenuItemsPath).at("data").size(), 0)
+        << "Item with invalid currency must not persist";
 }
 
 ///

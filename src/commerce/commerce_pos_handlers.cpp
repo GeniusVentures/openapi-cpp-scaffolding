@@ -391,6 +391,11 @@ static std::string orders_create(const RequestContext& ctx, const std::string& /
         requestData = json::parse(body);
         dto = requestData.get<org::openapitools::server::model::OrderCreate>();
 
+        // Generated contract constraints the parse does not enforce (e.g.
+        // Money currency must be exactly 3 characters) — validate() throws
+        // ValidationException on failure, caught below as INVALID_REQUEST
+        dto.validate();
+
         // D-01: an order with no lines has no server-derived pricing — the
         // generated model treats lines as optional, so reject an unset or
         // empty lines array before any money math (nothing persists)
@@ -484,8 +489,10 @@ static std::string orders_create(const RequestContext& ctx, const std::string& /
             requestData["lines"][i]["line_total"]["currency"] = itemCurrency;
         }
     }
-    catch (const json::exception&)
+    catch (const std::exception&)
     {
+        // json::exception (parse/DTO/referenced-doc) and ValidationException
+        // (generated contract constraints) both map to INVALID_REQUEST
         return R"({"error":{"code":"INVALID_REQUEST","message":"Invalid order request body"}})";
     }
 

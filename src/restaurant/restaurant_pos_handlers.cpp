@@ -420,15 +420,17 @@ static std::string menu_categories_create(const RequestContext& ctx, const std::
     try
     {
         // Strict contract validation — from_json throws json::out_of_range
-        // (missing required field) or json::type_error (mistyped field); the
-        // parsed DTO is not otherwise needed, the parse IS the check
+        // (missing required field) or json::type_error (mistyped field), and
+        // validate() throws ValidationException on contract constraints the
+        // parse does not enforce; both map to INVALID_REQUEST below
         json requestData = json::parse(body);
-        [[maybe_unused]] const org::openapitools::server::model::MenuCategoryCreate dto =
+        const org::openapitools::server::model::MenuCategoryCreate dto =
             requestData.get<org::openapitools::server::model::MenuCategoryCreate>();
+        dto.validate();
 
         return stamp_and_persist(ctx, "menu-categories", requestData);
     }
-    catch (const json::exception&)
+    catch (const std::exception&)
     {
         return R"({"error":{"code":"INVALID_REQUEST","message":"Invalid menu category request body"}})";
     }
@@ -460,10 +462,12 @@ static std::string menu_items_create(const RequestContext& ctx, const std::strin
 
     try
     {
-        // Strict contract validation — same json::exception discipline as above
+        // Strict contract validation — same discipline as above, plus the
+        // generated contract constraints via validate()
         json requestData = json::parse(body);
         const org::openapitools::server::model::MenuItemCreate dto =
             requestData.get<org::openapitools::server::model::MenuItemCreate>();
+        dto.validate();
 
         // D-02 referential integrity: every modifier_group_ids entry must
         // resolve to a stored restaurant/modifier-groups record
@@ -495,7 +499,7 @@ static std::string menu_items_create(const RequestContext& ctx, const std::strin
 
         return stamp_and_persist(ctx, "menu-items", requestData);
     }
-    catch (const json::exception&)
+    catch (const std::exception&)
     {
         return R"({"error":{"code":"INVALID_REQUEST","message":"Invalid menu item request body"}})";
     }
@@ -530,14 +534,16 @@ static std::string modifier_groups_create(const RequestContext& ctx, const std::
     try
     {
         // Strict contract-literal validation including the D-08 inline
-        // Modifier array — the parsed DTO is not otherwise needed
+        // Modifier array, plus the generated contract constraints via
+        // validate()
         json requestData = json::parse(body);
-        [[maybe_unused]] const org::openapitools::server::model::ModifierGroupCreate dto =
+        const org::openapitools::server::model::ModifierGroupCreate dto =
             requestData.get<org::openapitools::server::model::ModifierGroupCreate>();
+        dto.validate();
 
         return stamp_and_persist(ctx, "modifier-groups", requestData);
     }
-    catch (const json::exception&)
+    catch (const std::exception&)
     {
         return R"({"error":{"code":"INVALID_REQUEST","message":"Invalid modifier group request body"}})";
     }
@@ -570,10 +576,12 @@ static std::string kitchen_tickets_create(const RequestContext& ctx, const std::
 
     try
     {
-        // Strict contract validation — same json::exception discipline as above
+        // Strict contract validation — same discipline as above, plus the
+        // generated contract constraints via validate()
         json requestData = json::parse(body);
         const org::openapitools::server::model::KitchenTicketCreate dto =
             requestData.get<org::openapitools::server::model::KitchenTicketCreate>();
+        dto.validate();
 
         // D-02 referential integrity: the order must exist in commerce/orders
         // before anything is stamped or persisted
@@ -599,7 +607,7 @@ static std::string kitchen_tickets_create(const RequestContext& ctx, const std::
 
         return stamp_and_persist(ctx, "kitchen-tickets", requestData);
     }
-    catch (const json::exception&)
+    catch (const std::exception&)
     {
         return R"({"error":{"code":"INVALID_REQUEST","message":"Invalid kitchen ticket request body"}})";
     }
