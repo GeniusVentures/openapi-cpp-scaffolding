@@ -58,6 +58,8 @@ static constexpr unsigned int      kSeedCount          = 5;      ///< Entities s
 static constexpr unsigned int      kPageLimit          = 2;      ///< Explicit page size for paging tests
 static constexpr unsigned long long kDefaultListLimit  = 50;     ///< Handler default when limit is absent/zero/invalid
 static constexpr unsigned long long kLargeLimit        = 1000;   ///< D-09: honored verbatim, never clamped
+static constexpr unsigned long long kOrdersPageLimit   = 1;      ///< IN-06: explicit page size for the orders-list paging tests
+static constexpr unsigned int      kOrdersSeedCount    = 2;      ///< IN-06: orders created for the orders-list paging tests
 static constexpr int32_t           kItemPrice          = 1000;   ///< Minor units of the canonical seeded item
 static constexpr int32_t           kWrongClientUnitPrice = 1;    ///< Deliberately wrong client line money
 static constexpr int32_t           kWrongClientLineTotal = 1;    ///< Deliberately wrong client line money
@@ -985,6 +987,93 @@ TEST_F(PosHandlersTest, OrdersListInvalidCursorRejected)
         << "Expected INVALID_REQUEST, got: " << result;
     EXPECT_EQ(result.find("\"data\""), std::string::npos)
         << "Envelope must not carry data, got: " << result;
+}
+
+///
+/// GET /api/v1/orders honors an explicit limit and falls back to the default
+/// 50: limit=1 over two stored orders returns one row with has_more true and
+/// a non-empty next_cursor, while limit=0 and an absent query both return
+/// every order in a single default-sized page (IN-06, D-09).
+///
+TEST_F(PosHandlersTest, OrdersListHonorsExplicitLimitAndDefaultFallback)
+{
+    const std::string itemId = CreateMenuItem("latte", kItemPrice, kUsdCurrency);
+    CreateOrder(itemId, kMatchQty, kRecomputedTotal, kUsdCurrency);
+    CreateOrder(itemId, kMatchQty, kRecomputedTotal, kUsdCurrency);
+
+    m_ctx.queryString = "limit=" + std::to_string(kOrdersPageLimit);
+    const json page = ListAsJson(kOrdersPath);
+    EXPECT_EQ(page.at("data").size(), kOrdersPageLimit)
+        << "Explicit limit must be honored verbatim";
+    EXPECT_EQ(page.at("pagination").at("limit").get<unsigned long long>(),
+              kOrdersPageLimit);
+    EXPECT_TRUE(page.at("pagination").at("has_more").get<bool>())
+        << "A page cut short by the limit must report has_more";
+    EXPECT_FALSE(page.at("pagination").at("next_cursor").get<std::string>().empty())
+        << "A has_more page must carry a cursor for the next traversal step";
+
+    const std::vector<std::string> fallbackQueries = { "limit=0", "" };
+    for (const std::string& rawQuery : fallbackQueries)
+    {
+        m_ctx.queryString = rawQuery;
+        const json fullPage = ListAsJson(kOrdersPath);
+        EXPECT_EQ(fullPage.at("data").size(), kOrdersSeedCount)
+            << "query: '" << rawQuery << "'";
+        EXPECT_EQ(fullPage.at("pagination").at("limit").get<unsigned long long>(),
+                  kDefaultListLimit) << "query: '" << rawQuery << "'";
+        EXPECT_FALSE(fullPage.at("pagination").at("has_more").get<bool>())
+            << "query: '" << rawQuery << "'";
+        EXPECT_FALSE(fullPage.at("pagination").contains("next_cursor"))
+            << "query: '" << rawQuery << "'";
+    }
+}
+
+///
+/// Cursor traversal over GET /api/v1/orders in pages of 1 visits every order
+/// exactly once and terminates on a last page with has_more false and no
+/// next_cursor (IN-06 — the orders list is a separate copy of the paging
+/// core, not a shared call into the restaurant list_entity).
+///
+TEST_F(PosHandlersTest, OrdersListCursorTraversalReachesAllOrders)
+{
+    const std::string itemId = CreateMenuItem("latte", kItemPrice, kUsdCurrency);
+    const std::string firstOrderId =
+        CreateOrder(itemId, kMatchQty, kRecomputedTotal, kUsdCurrency);
+    const std::string secondOrderId =
+        CreateOrder(itemId, kMatchQty, kRecomputedTotal, kUsdCurrency);
+
+    std::set<std::string> seen;
+    std::string cursor;
+    unsigned int pages = 0;
+    while (pages < kMaxTraversalPages)
+    {
+        ++pages;
+        m_ctx.queryString = "limit=" + std::to_string(kOrdersPageLimit) +
+                            (cursor.empty() ? "" : "&cursor=" + cursor);
+        const json page = ListAsJson(kOrdersPath);
+        for (const std::string& id : DataIds(page))
+        {
+            seen.insert(id);
+        }
+
+        if (!page.at("pagination").at("has_more").get<bool>())
+        {
+            EXPECT_FALSE(page.at("pagination").contains("next_cursor"))
+                << "Terminal page must not carry a next_cursor";
+            break;
+        }
+        cursor = page.at("pagination").at("next_cursor").get<std::string>();
+        EXPECT_FALSE(cursor.empty());
+    }
+
+    EXPECT_EQ(pages, kOrdersSeedCount)
+        << "Two orders at limit=1 must traverse in exactly two pages";
+    EXPECT_EQ(seen.size(), kOrdersSeedCount)
+        << "Traversal must visit every order";
+    EXPECT_EQ(seen.count(firstOrderId), 1u)
+        << "Each order must be visited exactly once";
+    EXPECT_EQ(seen.count(secondOrderId), 1u)
+        << "Each order must be visited exactly once";
 }
 
 ///
