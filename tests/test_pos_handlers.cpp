@@ -1424,6 +1424,105 @@ TEST_F(PosHandlersTest, OrderCreateRejectsAdjustmentsExceedingAmount)
 }
 
 ///
+/// Line-level adjustment currencies that differ from the stored item's
+/// currency are rejected with INVALID_REQUEST and nothing persists — the
+/// WR-03 fold made tax_total/discount_total load-bearing, so their currency
+/// must be pinned to the item currency like unit_price, which the generated
+/// OrderLine::validate() never reaches (WR-06).
+///
+TEST_F(PosHandlersTest, OrderCreateRejectsLineAdjustmentCurrencyMismatch)
+{
+    const std::string itemId = CreateMenuItem("latte", kItemPrice, kUsdCurrency);
+
+    json baseLine;
+    baseLine["product_id"] = itemId;
+    baseLine["quantity"]   = kMatchQty;
+    baseLine["unit_price"] = json{{"amount", kWrongClientUnitPrice}, {"currency", kUsdCurrency}};
+    baseLine["line_total"] = json{{"amount", kWrongClientLineTotal}, {"currency", kUsdCurrency}};
+
+    // Adjustment amounts are ordinary values; only their currency is wrong,
+    // so the rejection can only come from the adjustment currency checks
+    json eurTaxLine = baseLine;
+    eurTaxLine["tax_total"] = json{{"amount", kLineTaxAmount}, {"currency", kEuroCurrency}};
+    json eurDiscountLine = baseLine;
+    eurDiscountLine["discount_total"] =
+        json{{"amount", kLineDiscountAmount}, {"currency", kEuroCurrency}};
+
+    const std::vector<std::pair<json, std::string>> mismatchCases =
+    {
+        { eurTaxLine,      "Line tax currency must match" },
+        { eurDiscountLine, "Line discount currency must match" },
+    };
+
+    for (const auto& mismatch : mismatchCases)
+    {
+        json body;
+        body["status"]           = kDraftStatus;
+        body["channel"]          = kPosChannel;
+        body["fulfillment_type"] = kPickupType;
+        body["total"]            = json{{"amount", kRecomputedTotal}, {"currency", kUsdCurrency}};
+        body["lines"]            = json::array({ mismatch.first });
+
+        const std::string result = Route("POST", kOrdersPath, body.dump());
+        EXPECT_NE(result.find("INVALID_REQUEST"), std::string::npos)
+            << "Expected INVALID_REQUEST for a line adjustment currency mismatch, got: " << result;
+        EXPECT_NE(result.find(mismatch.second), std::string::npos)
+            << "Expected the line-adjustment-currency message, got: " << result;
+    }
+
+    m_ctx.queryString = "";
+    EXPECT_EQ(ListAsJson(kOrdersPath).at("data").size(), 0)
+        << "Mixed-currency line adjustments must not persist";
+}
+
+///
+/// Order-level adjustment currencies that differ from the order total's
+/// currency are rejected with INVALID_REQUEST and nothing persists —
+/// tax_total/tip_total/discount_total fold into the recomputed total, so
+/// they must be denominated in the order currency, which the per-line check
+/// already pinned to the item currency (WR-06).
+///
+TEST_F(PosHandlersTest, OrderCreateRejectsOrderAdjustmentCurrencyMismatch)
+{
+    const std::string itemId = CreateMenuItem("latte", kItemPrice, kUsdCurrency);
+
+    json line;
+    line["product_id"] = itemId;
+    line["quantity"]   = kMatchQty;
+    line["unit_price"] = json{{"amount", kWrongClientUnitPrice}, {"currency", kUsdCurrency}};
+    line["line_total"] = json{{"amount", kWrongClientLineTotal}, {"currency", kUsdCurrency}};
+
+    const std::vector<std::string> adjustmentFields =
+    {
+        "tax_total",
+        "tip_total",
+        "discount_total",
+    };
+
+    for (const std::string& adjustmentField : adjustmentFields)
+    {
+        json body;
+        body["status"]            = kDraftStatus;
+        body["channel"]           = kPosChannel;
+        body["fulfillment_type"]  = kPickupType;
+        body["total"]             = json{{"amount", kRecomputedTotal}, {"currency", kUsdCurrency}};
+        body[adjustmentField]     = json{{"amount", kLineTaxAmount}, {"currency", kEuroCurrency}};
+        body["lines"]             = json::array({ line });
+
+        const std::string result = Route("POST", kOrdersPath, body.dump());
+        EXPECT_NE(result.find("INVALID_REQUEST"), std::string::npos)
+            << "Expected INVALID_REQUEST for an order-level " << adjustmentField
+            << " currency mismatch, got: " << result;
+        EXPECT_NE(result.find("Order adjustment currency must match"), std::string::npos)
+            << "Expected the order-adjustment-currency message, got: " << result;
+    }
+
+    m_ctx.queryString = "";
+    EXPECT_EQ(ListAsJson(kOrdersPath).at("data").size(), 0)
+        << "Mixed-currency order adjustments must not persist";
+}
+
+///
 /// A syntactically invalid JSON body returns the INVALID_REQUEST envelope —
 /// the override's json::exception discipline (Pitfall 5), and PARSE_ERROR is
 /// absent, proving the priority-200 override answered, not the stub (T-02-04).
