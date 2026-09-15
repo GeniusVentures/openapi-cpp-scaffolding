@@ -947,6 +947,49 @@ TEST_F(PosHandlersTest, OrderCreateRejectsMalformedBody)
 }
 
 ///
+/// An order with an absent or empty lines array is rejected with
+/// INVALID_REQUEST and nothing is persisted — a lineless order has no
+/// server-derived pricing, so its total would be fully client-controlled
+/// (CR-01, D-01/T-02-01).
+///
+TEST_F(PosHandlersTest, OrderCreateRejectsEmptyLines)
+{
+    const std::string itemId = CreateMenuItem("latte", kItemPrice, kUsdCurrency);
+    (void)itemId;
+
+    // Absent lines and an explicitly empty lines array are both rejected
+    const std::vector<std::string> linelessBodies =
+    {
+        R"({
+            "status": "draft",
+            "channel": "pos",
+            "fulfillment_type": "pickup",
+            "total": {"amount": 999999, "currency": "USD"}
+        })",
+        R"({
+            "status": "draft",
+            "channel": "pos",
+            "fulfillment_type": "pickup",
+            "total": {"amount": 999999, "currency": "USD"},
+            "lines": []
+        })",
+    };
+
+    for (const std::string& body : linelessBodies)
+    {
+        const std::string result = Route("POST", kOrdersPath, body);
+        EXPECT_NE(result.find("INVALID_REQUEST"), std::string::npos)
+            << "Expected INVALID_REQUEST, got: " << result;
+        EXPECT_NE(result.find("at least one line"), std::string::npos)
+            << "Expected the empty-lines message, got: " << result;
+    }
+
+    m_ctx.queryString = "";
+    EXPECT_EQ(ListAsJson(kOrdersPath).at("data").size(), 0)
+        << "Lineless orders must not persist";
+}
+
+///
 /// A stored item price at INT32_MAX with quantity 2 trips the int32 overflow
 /// guard and returns the INVALID_REQUEST envelope (D-01 overflow discipline).
 ///

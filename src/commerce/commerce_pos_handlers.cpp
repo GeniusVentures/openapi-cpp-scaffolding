@@ -100,7 +100,9 @@ static bool FitsInInt32(int64_t value) noexcept
 /**
  * @brief      Create an order with menu-authoritative totals (D-01 recompute)
  *
- * Never trusts client-sent unit_price/line_total/subtotal/total. Per line, the
+ * Never trusts client-sent unit_price/line_total/subtotal/total. A body with
+ * an absent or empty lines array is rejected up front (no server-derived
+ * pricing would exist). Per line, the
  * unit price is resolved by point-Get from restaurant/menu-items (shared
  * storage engine); unknown product_id is rejected with INVALID_REFERENCE (D-02)
  * and a line currency that differs from the stored item's currency is rejected.
@@ -136,6 +138,14 @@ static std::string orders_create(const RequestContext& ctx, const std::string& /
         // base exception covers both (Pitfall 5)
         requestData = json::parse(body);
         dto = requestData.get<org::openapitools::server::model::OrderCreate>();
+
+        // D-01: an order with no lines has no server-derived pricing — the
+        // generated model treats lines as optional, so reject an unset or
+        // empty lines array before any money math (nothing persists)
+        if (!dto.linesIsSet() || dto.getLines().empty())
+        {
+            return R"({"error":{"code":"INVALID_REQUEST","message":"Order must contain at least one line"}})";
+        }
 
         const auto& lines = dto.getLines();
         for (size_t i = 0; i < lines.size(); ++i)
