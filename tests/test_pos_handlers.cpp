@@ -5,11 +5,12 @@
  * @author     Kenneth L. Hurley
  *
  * One Google Test file (D-04) dispatching through PluginManager::Route() over
- * a fresh RocksDB temp-dir fixture, exercising the 8 override routes exactly
+ * a fresh RocksDB temp-dir fixture, exercising the 9 override routes exactly
  * as production dispatch does: the three restaurant menu lists (cursor paging
- * edges, D-07/D-09), the five create endpoints (POST -> list round-trip, D-02
- * INVALID_REFERENCE, D-08 strict inline modifiers, D-01 order recompute), the
- * D-03 tenant filter, and HANDLER-06 bearer rejection with an empty-userId
+ * edges, D-07/D-09), the orders list (D-03 tenant filter, D-07/D-09), the
+ * five create endpoints (POST -> list round-trip, D-02 INVALID_REFERENCE,
+ * D-08 strict inline modifiers, D-01 order recompute), the D-03 tenant
+ * filter, and HANDLER-06 bearer rejection with an empty-userId
  * RequestContext. Dispatch is synchronous — plain sequential asserts, no
  * condition variables, no sleeps.
  *
@@ -554,7 +555,7 @@ TEST_F(PosHandlersTest, ModifierGroupsListEmbedsModifiers)
 
 ///
 /// An empty-userId RequestContext gets the UNAUTHORIZED envelope from every
-/// one of the 8 override routes (HANDLER-06 — the evidence for success
+/// one of the 9 override routes (HANDLER-06 — the evidence for success
 /// criterion 5).
 ///
 TEST_F(PosHandlersTest, BearerRejectionOnAllOverrideRoutes)
@@ -573,6 +574,7 @@ TEST_F(PosHandlersTest, BearerRejectionOnAllOverrideRoutes)
         { "GET",  kModifierGroupsPath },
         { "POST", kModifierGroupsPath },
         { "POST", kKitchenTicketsPath },
+        { "GET",  kOrdersPath },
         { "POST", kOrdersPath },
     };
 
@@ -889,12 +891,53 @@ TEST_F(PosHandlersTest, OrderCreatePersistsWithServerRecomputedTotals)
     EXPECT_EQ(doc.at("total").at("currency").get<std::string>(), kUsdCurrency);
     EXPECT_EQ(doc.at("tenant_id").get<std::string>(), kDefaultTenant);
 
-    // Round-trip through the generated dump-all orders list stub (still live
-    // at GET /api/v1/orders — see the route note in the file header)
+    // Round-trip through the tenant-filtered orders list override at
+    // GET /api/v1/orders (see the route note in the file header)
     m_ctx.queryString = "";
     const json page = ListAsJson(kOrdersPath);
     ASSERT_EQ(page.at("data").size(), 1);
     EXPECT_EQ(page.at("data")[0].at("id").get<std::string>(), orderId);
+}
+
+///
+/// An order written by another tenant directly to storage is excluded from
+/// the tenant-default orders list — the GET /api/v1/orders override filters
+/// by ctx.tenantId like the restaurant lists (WR-02, D-03).
+///
+TEST_F(PosHandlersTest, OrdersListTenantFilterExcludesOtherTenant)
+{
+    const std::string itemId  = CreateMenuItem("latte", kItemPrice, kUsdCurrency);
+    const std::string orderId = CreateOrder(itemId, kMatchQty, kRecomputedTotal, kUsdCurrency);
+    PutOtherTenantDoc("commerce", "orders", kOtherTenantOrderId,
+                      json{{"status", "draft"}});
+
+    m_ctx.queryString = "";
+    const json page = ListAsJson(kOrdersPath);
+
+    ASSERT_EQ(page.at("data").size(), 1);
+    const std::vector<std::string> ids = DataIds(page);
+    EXPECT_EQ(ids[0], orderId)
+        << "The caller's own order must be listed";
+    EXPECT_EQ(std::find(ids.begin(), ids.end(), kOtherTenantOrderId), ids.end())
+        << "Cross-tenant order must not appear in tenant-default results";
+}
+
+///
+/// A malformed (non-32-hex) cursor on the orders list is rejected with
+/// INVALID_REQUEST (D-07 posture, matching the restaurant lists).
+///
+TEST_F(PosHandlersTest, OrdersListInvalidCursorRejected)
+{
+    const std::string itemId  = CreateMenuItem("latte", kItemPrice, kUsdCurrency);
+    CreateOrder(itemId, kMatchQty, kRecomputedTotal, kUsdCurrency);
+
+    m_ctx.queryString = "cursor=zz-not-hex";
+    const std::string result = Route("GET", kOrdersPath);
+
+    EXPECT_NE(result.find("INVALID_REQUEST"), std::string::npos)
+        << "Expected INVALID_REQUEST, got: " << result;
+    EXPECT_EQ(result.find("\"data\""), std::string::npos)
+        << "Envelope must not carry data, got: " << result;
 }
 
 ///
