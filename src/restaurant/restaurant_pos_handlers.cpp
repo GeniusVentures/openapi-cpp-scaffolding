@@ -358,6 +358,22 @@ static std::string modifier_groups_list(const RequestContext& ctx, const std::st
     return list_entity(ctx, "modifier-groups");
 }
 
+/**
+ * @brief      List kitchen tickets with keyset cursor paging
+ *
+ * Supersedes the generated dump-all kitchen-tickets list stub so ticket
+ * reads are tenant-filtered like the writes this phase added (Codex P1 —
+ * same WR-02 class as the orders list).
+ *
+ * @param      ctx    Request context (auth, tenant, query string)
+ *
+ * @return     JSON envelope string, or error envelope
+ */
+static std::string kitchen_tickets_list(const RequestContext& ctx, const std::string& /*method*/, const std::string& /*urlPath*/, const std::string& /*body*/)
+{
+    return list_entity(ctx, "kitchen-tickets");
+}
+
 // ============================================================================
 // Create Handlers
 // ============================================================================
@@ -663,6 +679,7 @@ void init_restaurant_pos_overrides(PluginManager* pm, IServiceLocator& locator)
     pm->RegisterHandler("GET", "/api/v1/restaurant/menu-categories", "list_menu_categories", menu_categories_list, "Restaurant", kOverrideHandlerPriority);
     pm->RegisterHandler("GET", "/api/v1/restaurant/menu-items", "list_menu_items", menu_items_list, "Restaurant", kOverrideHandlerPriority);
     pm->RegisterHandler("GET", "/api/v1/restaurant/modifier-groups", "list_modifier_groups", modifier_groups_list, "Restaurant", kOverrideHandlerPriority);
+    pm->RegisterHandler("GET", "/api/v1/restaurant/kitchen-tickets", "list_kitchen_tickets", kitchen_tickets_list, "Restaurant", kOverrideHandlerPriority);
 
     SPDLOG_INFO("Registering restaurant POS create override handlers");
     pm->RegisterHandler("POST", "/api/v1/restaurant/menu-categories", "menu_categories_create", menu_categories_create, "Restaurant", kOverrideHandlerPriority);
