@@ -351,8 +351,10 @@ static std::string orders_list(const RequestContext& ctx, const std::string& /*m
  * unit price is resolved by point-Get from restaurant/menu-items (shared
  * storage engine); unknown product_id is rejected with INVALID_REFERENCE (D-02)
  * and a line currency that differs from the stored item's currency is rejected.
- * lineTotal = llround(item price amount x quantity) — the single rounding point
- * (half-up; prices and quantities are non-negative) — then
+ * lineTotal = llround(item price amount x quantity) + line tax - line
+ * discount — the single rounding point applies to the price x quantity term
+ * (half-up; prices and quantities are non-negative) and the folded line
+ * adjustments are exact — then
  * subtotal = Sum(lineTotal), total = subtotal + tax + tip - discount, all in
  * int64 with an int32 overflow guard. The client's required total must equal
  * the recomputed total exactly (no epsilon) or the order is rejected with
@@ -446,10 +448,23 @@ static std::string orders_create(const RequestContext& ctx, const std::string& /
                 return R"({"error":{"code":"INVALID_REQUEST","message":"Order total currency must match the menu item currency"}})";
             }
 
+            // Line-level client adjustments (WR-03): optional tax_total /
+            // discount_total fold into the recomputed line total so the
+            // stored document stays internally consistent — the amounts
+            // contribute zero when unset (exact int64 arithmetic)
+            const int64_t lineTaxTotal = lines[i].taxTotalIsSet()
+                ? static_cast<int64_t>(lines[i].getTaxTotal().getAmount())
+                : 0;
+            const int64_t lineDiscountTotal = lines[i].discountTotalIsSet()
+                ? static_cast<int64_t>(lines[i].getDiscountTotal().getAmount())
+                : 0;
+
             // D-01 recompute — llround is the ONLY rounding point (half-up;
-            // prices and quantities are non-negative), int64 intermediates
+            // prices and quantities are non-negative), int64 intermediates:
+            // lineTotal = (price x qty) + line tax - line discount
             const int64_t lineTotal =
-                static_cast<int64_t>(std::llround(static_cast<double>(itemPriceAmount) * lines[i].getQuantity()));
+                static_cast<int64_t>(std::llround(static_cast<double>(itemPriceAmount) * lines[i].getQuantity()))
+                + lineTaxTotal - lineDiscountTotal;
             if (!FitsInInt32(lineTotal) || !FitsInInt32(subtotal + lineTotal))
             {
                 return R"({"error":{"code":"INVALID_REQUEST","message":"Amount overflow"}})";

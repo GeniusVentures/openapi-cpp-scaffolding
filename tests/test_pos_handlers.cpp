@@ -67,6 +67,9 @@ static constexpr double            kHalfQuantity       = 0.5;    ///< Fractional
 static constexpr int32_t           kHalfUpLineTotal    = 51;     ///< llround(101 * 0.5)
 static constexpr int32_t           kMatchQty           = 2;      ///< Quantity for the recompute/mismatch tests
 static constexpr int32_t           kRecomputedTotal    = kItemPrice * kMatchQty;  ///< Server-recomputed order total
+static constexpr int32_t           kLineTaxAmount      = 100;    ///< Minor units of line-level tax in the fold test
+static constexpr int32_t           kLineDiscountAmount = 50;     ///< Minor units of line-level discount in the fold test
+static constexpr int32_t           kFoldedLineTotal    = kItemPrice * kMatchQty + kLineTaxAmount - kLineDiscountAmount;  ///< price*qty + line tax - line discount
 static constexpr int32_t           kOverflowSeedPrice  = std::numeric_limits<int32_t>::max();  ///< Overflow-guard seed
 static constexpr int32_t           kOverflowQty        = 2;      ///< INT32_MAX x 2 overflows int32
 static constexpr size_t            kUuidHexLength      = 32;     ///< Minted ids are 32 hex chars
@@ -1085,6 +1088,69 @@ TEST_F(PosHandlersTest, OrderCreateRejectsCurrencyMismatch)
         << "Expected INVALID_REQUEST, got: " << result;
     EXPECT_NE(result.find("Currency mismatch"), std::string::npos)
         << "Expected the currency-mismatch message, got: " << result;
+}
+
+///
+/// Line-level tax_total/discount_total fold into the recomputed line_total
+/// (price x qty + tax - discount) and flow through subtotal/total, so the
+/// stored document is internally consistent; a client total that ignores the
+/// fold still rejects with TOTAL_MISMATCH (WR-03).
+///
+TEST_F(PosHandlersTest, OrderCreateFoldsLineTaxAndDiscountIntoTotals)
+{
+    const std::string itemId = CreateMenuItem("mocha", kItemPrice, kUsdCurrency);
+
+    json lineTax;
+    lineTax["amount"]   = kLineTaxAmount;
+    lineTax["currency"] = kUsdCurrency;
+    json lineDiscount;
+    lineDiscount["amount"]   = kLineDiscountAmount;
+    lineDiscount["currency"] = kUsdCurrency;
+    json total;
+    total["amount"]   = kFoldedLineTotal;
+    total["currency"] = kUsdCurrency;
+
+    json line;
+    line["product_id"]     = itemId;
+    line["quantity"]       = kMatchQty;
+    line["unit_price"]     = json{{"amount", kWrongClientUnitPrice}, {"currency", kUsdCurrency}};
+    line["line_total"]     = json{{"amount", kWrongClientLineTotal}, {"currency", kUsdCurrency}};
+    line["tax_total"]      = lineTax;
+    line["discount_total"] = lineDiscount;
+
+    json body;
+    body["status"]           = kDraftStatus;
+    body["channel"]          = kPosChannel;
+    body["fulfillment_type"] = kPickupType;
+    body["total"]            = total;
+    body["lines"]            = json::array({ line });
+
+    const std::string orderId = ParseId(PostJson(kOrdersPath, body.dump()));
+
+    auto keyResult = KeyBuilder::Build("commerce", "orders", orderId);
+    ASSERT_TRUE(keyResult.has_value());
+    std::string stored;
+    ASSERT_TRUE(m_engine->Get(keyResult.value(), stored));
+    const json doc = json::parse(stored);
+
+    ASSERT_EQ(doc.at("lines").size(), 1);
+    EXPECT_EQ(doc.at("lines")[0].at("line_total").at("amount").get<int32_t>(), kFoldedLineTotal)
+        << "line_total must fold price*qty + tax - discount (2000 + 100 - 50)";
+    EXPECT_EQ(doc.at("lines")[0].at("tax_total").at("amount").get<int32_t>(), kLineTaxAmount);
+    EXPECT_EQ(doc.at("lines")[0].at("discount_total").at("amount").get<int32_t>(), kLineDiscountAmount);
+    EXPECT_EQ(doc.at("subtotal").at("amount").get<int32_t>(), kFoldedLineTotal);
+    EXPECT_EQ(doc.at("total").at("amount").get<int32_t>(), kFoldedLineTotal);
+
+    // A client total that ignores the fold still rejects with TOTAL_MISMATCH
+    json mismatchBody = body;
+    mismatchBody["total"]["amount"] = kFoldedLineTotal - 1;
+    const std::string mismatchResult = Route("POST", kOrdersPath, mismatchBody.dump());
+    EXPECT_NE(mismatchResult.find("TOTAL_MISMATCH"), std::string::npos)
+        << "Expected TOTAL_MISMATCH for unfolded client total, got: " << mismatchResult;
+
+    m_ctx.queryString = "";
+    EXPECT_EQ(ListAsJson(kOrdersPath).at("data").size(), 1)
+        << "Only the folded-total order may persist";
 }
 
 ///
