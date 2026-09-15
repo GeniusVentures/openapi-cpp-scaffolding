@@ -514,9 +514,13 @@ static std::string menu_items_create(const RequestContext& ctx, const std::strin
  * (D-08): EVERY element must carry the full generated Modifier field set —
  * id, tenant_id, organization_id, created_at, updated_at, name, price_delta —
  * or from_json throws into the catch below (INVALID_REQUEST). No server-side
- * minting or lenient backfill of modifier audit fields. The group document is
- * stored as parsed, modifiers inline, so the list handler embeds them for
- * free.
+ * minting or lenient backfill of modifier audit fields. Each embedded
+ * modifier's tenant_id/organization_id is rewritten from the request context
+ * — the same D-03 server-authoritative overwrite the group document gets —
+ * so a stored group can never claim a tenant its modifiers contradict
+ * (IN-01); every other modifier field keeps its parsed client value. The
+ * group document is stored as parsed, modifiers inline, so the list handler
+ * embeds them for free.
  *
  * @param      ctx   Request context (auth, tenant, organization)
  * @param      body  Raw JSON request body (ModifierGroupCreate)
@@ -540,6 +544,21 @@ static std::string modifier_groups_create(const RequestContext& ctx, const std::
         const org::openapitools::server::model::ModifierGroupCreate dto =
             requestData.get<org::openapitools::server::model::ModifierGroupCreate>();
         dto.validate();
+
+        // D-03 tenancy for inline modifiers (IN-01): the group body-stamp
+        // below overwrites client tenant values, so the embedded modifiers
+        // get the same overwrite — otherwise a stored group could claim
+        // tenant "default" while its modifiers claim another tenant. Only
+        // the two tenancy fields are rewritten; id/created_at/updated_at/
+        // name/price_delta keep their parsed client values (D-08 untouched).
+        if (requestData.contains("modifiers"))
+        {
+            for (auto& modifier : requestData["modifiers"])
+            {
+                modifier["tenant_id"]       = ctx.tenantId;
+                modifier["organization_id"] = ctx.organizationId;
+            }
+        }
 
         return stamp_and_persist(ctx, "modifier-groups", requestData);
     }
