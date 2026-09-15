@@ -55,6 +55,13 @@ static constexpr uint8_t      kHexDigitMax   = 15;
 static constexpr const char*  kHexChars      = "0123456789abcdef";
 static constexpr unsigned int kDefaultListLimit = 50; ///< Matches generated kDefaultPaginationLimit + Dart client default
 
+/// WR-07: largest line quantity for which price x quantity stays inside
+/// std::llround's int64 domain for ANY int32 price (kMaxQuantity squared is
+/// below INT64_MAX), so llround never receives an argument whose rounded
+/// value it cannot represent — its return value is unspecified there
+static constexpr double kMaxQuantity =
+    static_cast<double>(std::numeric_limits<int32_t>::max());
+
 /// Generate a random UUID (32 hex characters, no hyphens)
 ///
 /// Every nibble is drawn from std::random_device — the CSPRNG-backed source —
@@ -366,7 +373,9 @@ static std::string orders_list(const RequestContext& ctx, const std::string& /*m
  * int64 with an int32 overflow guard. Adjustment amounts (line tax/discount,
  * order tax/tip/discount) must be non-negative and negative computed
  * line/order totals are rejected — this path never produces negative money
- * (CR-04). The client's required total must equal
+ * (CR-04). Quantity is additionally bounded (kMaxQuantity) so the
+ * price x quantity product never leaves llround's int64 domain (WR-07).
+ * The client's required total must equal
  * the recomputed total exactly (no epsilon) or the order is rejected with
  * TOTAL_MISMATCH and nothing is persisted. Persisted documents get
  * server-recomputed money plus id/tenant/organization/timestamps stamped from
@@ -419,6 +428,17 @@ static std::string orders_create(const RequestContext& ctx, const std::string& /
             if (lines[i].getQuantity() <= 0.0)
             {
                 return R"({"error":{"code":"INVALID_REQUEST","message":"Order line quantity must be positive"}})";
+            }
+
+            // WR-07: bound the quantity before the llround product — a huge
+            // or non-finite quantity pushes price x quantity past the int64
+            // range, where std::llround's return value is unspecified and
+            // the FitsInInt32 guard below would only judge that garbage
+            // value (business-range enforcement stays with the guard)
+            if (!std::isfinite(lines[i].getQuantity()) ||
+                lines[i].getQuantity() > kMaxQuantity)
+            {
+                return R"({"error":{"code":"INVALID_REQUEST","message":"Order line quantity out of range"}})";
             }
 
             // D-02: resolve the product from storage before anything is computed
