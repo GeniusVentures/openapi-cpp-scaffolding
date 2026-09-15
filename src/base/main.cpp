@@ -72,6 +72,7 @@ std::string ReadFile(const std::string& path);
 /// Load the JWT signing secret from environment variable or config file.
 /// Priority: GENIUS_JWT_SECRET env var > ./data/jwt_secret file > generate and persist.
 /// Validates that the secret is at least 32 characters (256 bits).
+/// A newly generated secret file is restricted to owner read/write (0600).
 ///
 void LoadJwtSecret()
 {
@@ -131,6 +132,20 @@ void LoadJwtSecret()
     {
         out << g_jwtSecret;
         out.close();
+        // IN-04: restrict to owner read/write — umask-default perms
+        // (typically 0644) leave the token-signing secret readable by other
+        // local users, and anyone who reads it can mint tokens for any
+        // tenant/user
+        std::error_code permsError;
+        std::filesystem::permissions(secretPath,
+            std::filesystem::perms::owner_read | std::filesystem::perms::owner_write,
+            std::filesystem::perm_options::replace,
+            permsError);
+        if (permsError)
+        {
+            SPDLOG_WARN("Could not restrict permissions on {}: {}",
+                        secretPath, permsError.message());
+        }
         SPDLOG_INFO("JWT secret generated and saved to {}", secretPath);
     }
     else
