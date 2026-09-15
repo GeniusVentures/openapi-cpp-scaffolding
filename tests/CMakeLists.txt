@@ -125,6 +125,49 @@ target_include_directories(test_archive_handlers PRIVATE
 )
 add_test(NAME test_archive_handlers COMMAND test_archive_handlers)
 
+# POS override handler behavior tests (Phase 2 plan 02-04, D-04)
+# Compiles the handler sources + generated models directly into the test
+# executable (NEVER links the plugin dylibs). The generated plugin base
+# classes are header-inline. Shared models (Money/Pagination/Helpers) compile
+# exactly once — restaurant's copies — to avoid duplicate symbols; commerce's
+# copies are API-identical (comment-only diffs, same include guards).
+add_executable(test_pos_handlers
+    test_pos_handlers.cpp
+    "${CMAKE_CURRENT_SOURCE_DIR}/../src/restaurant/restaurant_pos_handlers.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/../src/commerce/commerce_pos_handlers.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/../src/restaurant/generated/model/MenuCategory.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/../src/restaurant/generated/model/MenuCategoryCreate.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/../src/restaurant/generated/model/MenuItem.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/../src/restaurant/generated/model/MenuItemCreate.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/../src/restaurant/generated/model/ModifierGroup.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/../src/restaurant/generated/model/ModifierGroupCreate.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/../src/restaurant/generated/model/Modifier.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/../src/restaurant/generated/model/KitchenTicket.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/../src/restaurant/generated/model/KitchenTicketCreate.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/../src/restaurant/generated/model/Money.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/../src/restaurant/generated/model/Pagination.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/../src/restaurant/generated/model/Helpers.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/../src/commerce/generated/model/Order.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/../src/commerce/generated/model/OrderCreate.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/../src/commerce/generated/model/OrderLine.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/../src/commerce/generated/model/OrderDiscount.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/../src/commerce/generated/model/ServiceCharge.cpp"
+)
+target_link_libraries(test_pos_handlers PRIVATE
+    component_factory
+    storage
+    GTest::gtest_main
+    Boost::headers
+    nlohmann_json::nlohmann_json
+    spdlog::spdlog
+)
+target_include_directories(test_pos_handlers PRIVATE
+    "${CMAKE_CURRENT_SOURCE_DIR}/../src"
+    "${CMAKE_CURRENT_SOURCE_DIR}/../src/restaurant/generated"
+    "${CMAKE_CURRENT_SOURCE_DIR}/../src/commerce/generated"
+)
+add_test(NAME test_pos_handlers COMMAND test_pos_handlers)
+
 # Tunnel setup wizard handler integration tests
 add_executable(test_tunnel_setup
     test_tunnel_setup.cpp
