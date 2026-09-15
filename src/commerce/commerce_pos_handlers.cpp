@@ -175,6 +175,14 @@ static std::string orders_create(const RequestContext& ctx, const std::string& /
                 return R"({"error":{"code":"INVALID_REQUEST","message":"Currency mismatch between order line and menu item"}})";
             }
 
+            // The order-level (total/subtotal) currency is client-controlled —
+            // pin it to the item currency too, or a USD-priced order could be
+            // persisted with EUR/JPY-labeled money (mixed-currency document)
+            if (dto.getTotal().getCurrency() != itemCurrency)
+            {
+                return R"({"error":{"code":"INVALID_REQUEST","message":"Order total currency must match the menu item currency"}})";
+            }
+
             // D-01 recompute — llround is the ONLY rounding point (half-up;
             // prices and quantities are non-negative), int64 intermediates
             const int64_t lineTotal =
