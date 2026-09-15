@@ -932,6 +932,38 @@ TEST_F(PosHandlersTest, OrderCreateRejectsCurrencyMismatch)
 }
 
 ///
+/// An order whose line money matches the stored item currency but whose
+/// order-level total carries a different currency is rejected with
+/// INVALID_REQUEST — mixed-currency money documents must not persist (CR-02).
+///
+TEST_F(PosHandlersTest, OrderCreateRejectsTotalCurrencyMismatch)
+{
+    const std::string itemId = CreateMenuItem("usd-latte", kItemPrice, kUsdCurrency);
+    const std::string body = R"({
+        "status": "draft",
+        "channel": "pos",
+        "fulfillment_type": "pickup",
+        "total": {"amount": 2000, "currency": ")" + kEuroCurrency + R"("},
+        "lines": [{
+            "product_id": ")" + itemId + R"(",
+            "quantity": 2,
+            "unit_price": {"amount": 1000, "currency": "USD"},
+            "line_total": {"amount": 2000, "currency": "USD"}
+        }]
+    })";
+
+    const std::string result = Route("POST", kOrdersPath, body);
+    EXPECT_NE(result.find("INVALID_REQUEST"), std::string::npos)
+        << "Expected INVALID_REQUEST, got: " << result;
+    EXPECT_NE(result.find("total currency must match"), std::string::npos)
+        << "Expected the order-currency message, got: " << result;
+
+    m_ctx.queryString = "";
+    EXPECT_EQ(ListAsJson(kOrdersPath).at("data").size(), 0)
+        << "Mixed-currency order must not persist";
+}
+
+///
 /// A syntactically invalid JSON body returns the INVALID_REQUEST envelope —
 /// the override's json::exception discipline (Pitfall 5), and PARSE_ERROR is
 /// absent, proving the priority-200 override answered, not the stub (T-02-04).
