@@ -150,6 +150,15 @@ static std::string orders_create(const RequestContext& ctx, const std::string& /
         const auto& lines = dto.getLines();
         for (size_t i = 0; i < lines.size(); ++i)
         {
+            // Quantities must be positive before any money math — a negative
+            // quantity would persist negative money (a refund document) and a
+            // zero quantity persists zero-priced lines; refund flows are out
+            // of phase scope, so this path must never produce either
+            if (lines[i].getQuantity() <= 0.0)
+            {
+                return R"({"error":{"code":"INVALID_REQUEST","message":"Order line quantity must be positive"}})";
+            }
+
             // D-02: resolve the product from storage before anything is computed
             auto itemKeyResult = KeyBuilder::Build("restaurant", "menu-items", lines[i].getProductId());
             if (!itemKeyResult.has_value())

@@ -964,6 +964,43 @@ TEST_F(PosHandlersTest, OrderCreateRejectsTotalCurrencyMismatch)
 }
 
 ///
+/// Negative and zero line quantities are rejected with INVALID_REQUEST and
+/// nothing is persisted — this path must never produce negative (refund) or
+/// zero-priced money (CR-03).
+///
+TEST_F(PosHandlersTest, OrderCreateRejectsNonPositiveQuantity)
+{
+    const std::string itemId = CreateMenuItem("latte", kItemPrice, kUsdCurrency);
+    const std::vector<double> invalidQuantities = { -1.0, 0.0 };
+
+    for (const double quantity : invalidQuantities)
+    {
+        const std::string body = R"({
+            "status": "draft",
+            "channel": "pos",
+            "fulfillment_type": "pickup",
+            "total": {"amount": )" + std::to_string(kRecomputedTotal) + R"(, "currency": "USD"},
+            "lines": [{
+                "product_id": ")" + itemId + R"(",
+                "quantity": )" + std::to_string(quantity) + R"(,
+                "unit_price": {"amount": 1000, "currency": "USD"},
+                "line_total": {"amount": )" + std::to_string(kRecomputedTotal) + R"(, "currency": "USD"}
+            }]
+        })";
+
+        const std::string result = Route("POST", kOrdersPath, body);
+        EXPECT_NE(result.find("INVALID_REQUEST"), std::string::npos)
+            << "Expected INVALID_REQUEST for quantity " << quantity << ", got: " << result;
+        EXPECT_NE(result.find("quantity must be positive"), std::string::npos)
+            << "Expected the quantity message for quantity " << quantity << ", got: " << result;
+    }
+
+    m_ctx.queryString = "";
+    EXPECT_EQ(ListAsJson(kOrdersPath).at("data").size(), 0)
+        << "Non-positive-quantity orders must not persist";
+}
+
+///
 /// A syntactically invalid JSON body returns the INVALID_REQUEST envelope —
 /// the override's json::exception discipline (Pitfall 5), and PARSE_ERROR is
 /// absent, proving the priority-200 override answered, not the stub (T-02-04).
