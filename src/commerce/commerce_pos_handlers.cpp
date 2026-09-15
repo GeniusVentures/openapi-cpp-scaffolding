@@ -361,7 +361,10 @@ static std::string orders_list(const RequestContext& ctx, const std::string& /*m
  * (half-up; prices and quantities are non-negative) and the folded line
  * adjustments are exact — then
  * subtotal = Sum(lineTotal), total = subtotal + tax + tip - discount, all in
- * int64 with an int32 overflow guard. The client's required total must equal
+ * int64 with an int32 overflow guard. Adjustment amounts (line tax/discount,
+ * order tax/tip/discount) must be non-negative and negative computed
+ * line/order totals are rejected — this path never produces negative money
+ * (CR-04). The client's required total must equal
  * the recomputed total exactly (no epsilon) or the order is rejected with
  * TOTAL_MISMATCH and nothing is persisted. Persisted documents get
  * server-recomputed money plus id/tenant/organization/timestamps stamped from
@@ -469,12 +472,28 @@ static std::string orders_create(const RequestContext& ctx, const std::string& /
                 ? static_cast<int64_t>(lines[i].getDiscountTotal().getAmount())
                 : 0;
 
+            // CR-04: adjustments are semantically non-negative money — a
+            // negative line tax persists negative money (the refund document
+            // this path must never produce) and a negative line discount
+            // acts as a hidden surcharge; reject before any arithmetic
+            // (unset fields extract 0, which passes)
+            if (lineTaxTotal < 0 || lineDiscountTotal < 0)
+            {
+                return R"({"error":{"code":"INVALID_REQUEST","message":"Line adjustments must be non-negative"}})";
+            }
+
             // D-01 recompute — llround is the ONLY rounding point (half-up;
             // prices and quantities are non-negative), int64 intermediates:
             // lineTotal = (price x qty) + line tax - line discount
             const int64_t lineTotal =
                 static_cast<int64_t>(std::llround(static_cast<double>(itemPriceAmount) * lines[i].getQuantity()))
                 + lineTaxTotal - lineDiscountTotal;
+            // CR-04: even all-non-negative inputs can drive the fold
+            // negative (discount exceeding the price x qty term)
+            if (lineTotal < 0)
+            {
+                return R"({"error":{"code":"INVALID_REQUEST","message":"Line adjustments exceed the line amount"}})";
+            }
             if (!FitsInInt32(lineTotal) || !FitsInInt32(subtotal + lineTotal))
             {
                 return R"({"error":{"code":"INVALID_REQUEST","message":"Amount overflow"}})";
@@ -501,11 +520,26 @@ static std::string orders_create(const RequestContext& ctx, const std::string& /
     const int64_t tipTotal      = dto.tipTotalIsSet()      ? static_cast<int64_t>(dto.getTipTotal().getAmount())      : 0;
     const int64_t discountTotal = dto.discountTotalIsSet() ? static_cast<int64_t>(dto.getDiscountTotal().getAmount()) : 0;
 
+    // CR-04: order-level adjustments are semantically non-negative money —
+    // a negative tax/tip/discount enters the total formula as negative
+    // money or a hidden surcharge; reject before any arithmetic (unset
+    // fields extract 0, which passes)
+    if (taxTotal < 0 || tipTotal < 0 || discountTotal < 0)
+    {
+        return R"({"error":{"code":"INVALID_REQUEST","message":"Order adjustments must be non-negative"}})";
+    }
+
     if (!FitsInInt32(subtotal))
     {
         return R"({"error":{"code":"INVALID_REQUEST","message":"Amount overflow"}})";
     }
     const int64_t total = subtotal + taxTotal + tipTotal - discountTotal;
+    // CR-04: an order discount exceeding the order amount drives the
+    // computed total negative even with all-non-negative inputs
+    if (total < 0)
+    {
+        return R"({"error":{"code":"INVALID_REQUEST","message":"Order total must be non-negative"}})";
+    }
     if (!FitsInInt32(total))
     {
         return R"({"error":{"code":"INVALID_REQUEST","message":"Amount overflow"}})";
