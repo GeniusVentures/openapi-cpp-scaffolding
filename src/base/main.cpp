@@ -24,6 +24,7 @@
 #include "singleton/fnv1a.hpp"
 #include "storage/RocksDBEngine.hpp"
 #include "storage/KeyBuilder.hpp"
+#include "nlohmann/json.hpp"
 #include "identity/auth_utils.hpp"
 #include "logging.hpp"
 
@@ -352,8 +353,12 @@ private:
             if (result.empty())
             {
                 m_response.result(http::status::not_found);
+                // IN-02: build the body through nlohmann so the request
+                // target is JSON-escaped — raw interpolation breaks the
+                // document on '"' or '\' in the path and reflects raw
+                // path bytes into the response
                 m_response.body() =
-                    "{\"error\":\"no handler found for path: " + target + "\"}";
+                    nlohmann::json{{"error", "no handler found for path: " + target}}.dump();
             }
             else
             {
