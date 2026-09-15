@@ -25,6 +25,7 @@ struct RequestContext
     std::string userId;
     std::string locationId;
     bool        authenticated = false;
+    std::string queryString;   ///< Raw query string after '?', empty when absent
 };
 
 ///
