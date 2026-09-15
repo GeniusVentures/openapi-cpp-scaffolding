@@ -72,6 +72,9 @@ static constexpr int32_t           kLineDiscountAmount = 50;     ///< Minor unit
 static constexpr int32_t           kFoldedLineTotal    = kItemPrice * kMatchQty + kLineTaxAmount - kLineDiscountAmount;  ///< price*qty + line tax - line discount
 static constexpr int32_t           kOverflowSeedPrice  = std::numeric_limits<int32_t>::max();  ///< Overflow-guard seed
 static constexpr int32_t           kOverflowQty        = 2;      ///< INT32_MAX x 2 overflows int32
+static constexpr int32_t           kNegativeAdjustmentAmount = 5000;  ///< CR-04 attack: -5000 tax against price x qty 2000
+static constexpr int32_t           kNegativeTipAmount  = 100;    ///< Negative order tip variant (CR-04)
+static constexpr int32_t           kExcessAdjustmentAmount = 9000;  ///< CR-04: exceeds the 2000 line/order amount it adjusts
 static constexpr size_t            kUuidHexLength      = 32;     ///< Minted ids are 32 hex chars
 static constexpr unsigned int      kMaxTraversalPages  = kSeedCount;  ///< Safety bound for cursor loops
 
@@ -1266,6 +1269,158 @@ TEST_F(PosHandlersTest, OrderCreateRejectsNonPositiveQuantity)
     m_ctx.queryString = "";
     EXPECT_EQ(ListAsJson(kOrdersPath).at("data").size(), 0)
         << "Non-positive-quantity orders must not persist";
+}
+
+///
+/// Negative line-level adjustment amounts (line tax_total or line
+/// discount_total) are rejected with INVALID_REQUEST and nothing persists —
+/// a negative line tax persists negative line/subtotal/total money (the
+/// refund document this path must never produce) and a negative line
+/// discount acts as a hidden surcharge; adjustment amounts are semantically
+/// non-negative money (CR-04).
+///
+TEST_F(PosHandlersTest, OrderCreateRejectsNegativeLineAdjustments)
+{
+    const std::string itemId = CreateMenuItem("latte", kItemPrice, kUsdCurrency);
+
+    json baseLine;
+    baseLine["product_id"] = itemId;
+    baseLine["quantity"]   = kMatchQty;
+    baseLine["unit_price"] = json{{"amount", kWrongClientUnitPrice}, {"currency", kUsdCurrency}};
+    baseLine["line_total"] = json{{"amount", kWrongClientLineTotal}, {"currency", kUsdCurrency}};
+
+    // The CR-04 attack shape: line tax -5000 on price x qty = 2000 (the
+    // finding persisted total -4000), plus the negative-discount surcharge
+    json negativeTaxLine = baseLine;
+    negativeTaxLine["tax_total"] =
+        json{{"amount", -kNegativeAdjustmentAmount}, {"currency", kUsdCurrency}};
+    json negativeDiscountLine = baseLine;
+    negativeDiscountLine["discount_total"] =
+        json{{"amount", -kLineDiscountAmount}, {"currency", kUsdCurrency}};
+
+    for (const json& line : { negativeTaxLine, negativeDiscountLine })
+    {
+        json body;
+        body["status"]           = kDraftStatus;
+        body["channel"]          = kPosChannel;
+        body["fulfillment_type"] = kPickupType;
+        body["total"]            = json{{"amount", kRecomputedTotal}, {"currency", kUsdCurrency}};
+        body["lines"]            = json::array({ line });
+
+        const std::string result = Route("POST", kOrdersPath, body.dump());
+        EXPECT_NE(result.find("INVALID_REQUEST"), std::string::npos)
+            << "Expected INVALID_REQUEST for a negative line adjustment, got: " << result;
+        EXPECT_NE(result.find("Line adjustments must be non-negative"), std::string::npos)
+            << "Expected the negative-line-adjustment message, got: " << result;
+    }
+
+    m_ctx.queryString = "";
+    EXPECT_EQ(ListAsJson(kOrdersPath).at("data").size(), 0)
+        << "Negative-line-adjustment orders must not persist";
+}
+
+///
+/// Negative order-level adjustment amounts (tax_total, tip_total, or
+/// discount_total) are rejected with INVALID_REQUEST and nothing persists —
+/// e.g. subtotal 2000 + tax -5000 would persist a total of -3000 (CR-04).
+///
+TEST_F(PosHandlersTest, OrderCreateRejectsNegativeOrderAdjustments)
+{
+    const std::string itemId = CreateMenuItem("latte", kItemPrice, kUsdCurrency);
+
+    json line;
+    line["product_id"] = itemId;
+    line["quantity"]   = kMatchQty;
+    line["unit_price"] = json{{"amount", kWrongClientUnitPrice}, {"currency", kUsdCurrency}};
+    line["line_total"] = json{{"amount", kWrongClientLineTotal}, {"currency", kUsdCurrency}};
+
+    const std::vector<std::pair<std::string, int32_t>> negativeAdjustments =
+    {
+        { "tax_total",      -kNegativeAdjustmentAmount },
+        { "tip_total",      -kNegativeTipAmount },
+        { "discount_total", -kLineDiscountAmount },
+    };
+
+    for (const auto& adjustment : negativeAdjustments)
+    {
+        json body;
+        body["status"]           = kDraftStatus;
+        body["channel"]          = kPosChannel;
+        body["fulfillment_type"] = kPickupType;
+        body["total"]            = json{{"amount", kRecomputedTotal}, {"currency", kUsdCurrency}};
+        body[adjustment.first]   =
+            json{{"amount", adjustment.second}, {"currency", kUsdCurrency}};
+        body["lines"]            = json::array({ line });
+
+        const std::string result = Route("POST", kOrdersPath, body.dump());
+        EXPECT_NE(result.find("INVALID_REQUEST"), std::string::npos)
+            << "Expected INVALID_REQUEST for a negative order-level "
+            << adjustment.first << ", got: " << result;
+        EXPECT_NE(result.find("Order adjustments must be non-negative"), std::string::npos)
+            << "Expected the negative-order-adjustment message, got: " << result;
+    }
+
+    m_ctx.queryString = "";
+    EXPECT_EQ(ListAsJson(kOrdersPath).at("data").size(), 0)
+        << "Negative-order-adjustment orders must not persist";
+}
+
+///
+/// Adjustments exceeding the amount they adjust are rejected even though
+/// every input amount is non-negative: a line discount larger than the
+/// price x quantity term and an order discount larger than the order amount
+/// both drive the computed money negative, which this path must never
+/// persist (CR-04).
+///
+TEST_F(PosHandlersTest, OrderCreateRejectsAdjustmentsExceedingAmount)
+{
+    const std::string itemId = CreateMenuItem("latte", kItemPrice, kUsdCurrency);
+
+    json plainLine;
+    plainLine["product_id"] = itemId;
+    plainLine["quantity"]   = kMatchQty;
+    plainLine["unit_price"] = json{{"amount", kWrongClientUnitPrice}, {"currency", kUsdCurrency}};
+    plainLine["line_total"] = json{{"amount", kWrongClientLineTotal}, {"currency", kUsdCurrency}};
+
+    // Line-level: discount 9000 against a price x qty term of 2000
+    json excessiveLine = plainLine;
+    excessiveLine["discount_total"] =
+        json{{"amount", kExcessAdjustmentAmount}, {"currency", kUsdCurrency}};
+
+    json lineBody;
+    lineBody["status"]           = kDraftStatus;
+    lineBody["channel"]          = kPosChannel;
+    lineBody["fulfillment_type"] = kPickupType;
+    lineBody["total"]            = json{{"amount", kRecomputedTotal}, {"currency", kUsdCurrency}};
+    lineBody["lines"]            = json::array({ excessiveLine });
+
+    const std::string lineResult = Route("POST", kOrdersPath, lineBody.dump());
+    EXPECT_NE(lineResult.find("INVALID_REQUEST"), std::string::npos)
+        << "Expected INVALID_REQUEST for a line discount exceeding the line amount, got: "
+        << lineResult;
+    EXPECT_NE(lineResult.find("Line adjustments exceed the line amount"), std::string::npos)
+        << "Expected the excessive-line-adjustment message, got: " << lineResult;
+
+    // Order-level: discount 9000 against subtotal 2000 (no line adjustments)
+    json orderBody;
+    orderBody["status"]           = kDraftStatus;
+    orderBody["channel"]          = kPosChannel;
+    orderBody["fulfillment_type"] = kPickupType;
+    orderBody["total"]            = json{{"amount", kRecomputedTotal}, {"currency", kUsdCurrency}};
+    orderBody["discount_total"]   =
+        json{{"amount", kExcessAdjustmentAmount}, {"currency", kUsdCurrency}};
+    orderBody["lines"]            = json::array({ plainLine });
+
+    const std::string orderResult = Route("POST", kOrdersPath, orderBody.dump());
+    EXPECT_NE(orderResult.find("INVALID_REQUEST"), std::string::npos)
+        << "Expected INVALID_REQUEST for an order discount exceeding the order amount, got: "
+        << orderResult;
+    EXPECT_NE(orderResult.find("Order total must be non-negative"), std::string::npos)
+        << "Expected the negative-order-total message, got: " << orderResult;
+
+    m_ctx.queryString = "";
+    EXPECT_EQ(ListAsJson(kOrdersPath).at("data").size(), 0)
+        << "Excessive-adjustment orders must not persist";
 }
 
 ///
