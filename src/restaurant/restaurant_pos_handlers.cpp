@@ -476,6 +476,15 @@ static std::string menu_items_create(const RequestContext& ctx, const std::strin
                 {
                     return R"({"error":{"code":"INVALID_REFERENCE","message":"Unknown modifier_group_id reference"}})";
                 }
+
+                // D-02 tenant scoping — the referenced group must belong to
+                // the caller's tenant (legacy rows without tenant_id count as
+                // "default"); corrupt rows throw into the catch below
+                const json refItem = json::parse(refDoc);
+                if (refItem.value("tenant_id", "default") != ctx.tenantId)
+                {
+                    return R"({"error":{"code":"INVALID_REFERENCE","message":"modifier_group_id belongs to another tenant"}})";
+                }
             }
         }
 
@@ -572,6 +581,15 @@ static std::string kitchen_tickets_create(const RequestContext& ctx, const std::
         if (!s_storage->Get(orderKeyResult.value(), orderDoc))
         {
             return R"({"error":{"code":"INVALID_REFERENCE","message":"Unknown order_id reference"}})";
+        }
+
+        // D-02 tenant scoping — the referenced order must belong to the
+        // caller's tenant (legacy rows without tenant_id count as "default");
+        // corrupt rows throw into the catch below
+        const json referencedOrder = json::parse(orderDoc);
+        if (referencedOrder.value("tenant_id", "default") != ctx.tenantId)
+        {
+            return R"({"error":{"code":"INVALID_REFERENCE","message":"order_id belongs to another tenant"}})";
         }
 
         return stamp_and_persist(ctx, "kitchen-tickets", requestData);
