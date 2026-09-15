@@ -5,9 +5,10 @@
  * @author     Kenneth L. Hurley
  *
  * One Google Test file (D-04) dispatching through PluginManager::Route() over
- * a fresh RocksDB temp-dir fixture, exercising the 9 override routes exactly
+ * a fresh RocksDB temp-dir fixture, exercising the 10 override routes exactly
  * as production dispatch does: the three restaurant menu lists (cursor paging
- * edges, D-07/D-09), the orders list (D-03 tenant filter, D-07/D-09), the
+ * edges, D-07/D-09), the orders and kitchen-tickets lists (D-03 tenant
+ * filter, D-07/D-09), the
  * five create endpoints (POST -> list round-trip, D-02 INVALID_REFERENCE,
  * D-08 strict inline modifiers, D-01 order recompute), the D-03 tenant
  * filter, and HANDLER-06 bearer rejection with an empty-userId
@@ -104,6 +105,7 @@ static const std::string kMissingRefId        = "ccccccccccccccccccccccccccccccc
 static const std::string kOtherTenantItemId   = "dddddddddddddddddddddddddddddddd";
 static const std::string kOtherTenantGroupId  = "88888888888888888888888888888888";
 static const std::string kOtherTenantOrderId  = "77777777777777777777777777777777";
+static const std::string kOtherTenantTicketId = "66666666666666666666666666666666";
 static const std::string kInlineModifierId    = "ffffffffffffffffffffffffffffffff";
 static const std::string kTestUserId          = "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee";
 
@@ -567,7 +569,7 @@ TEST_F(PosHandlersTest, ModifierGroupsListEmbedsModifiers)
 
 ///
 /// An empty-userId RequestContext gets the UNAUTHORIZED envelope from every
-/// one of the 9 override routes (HANDLER-06 — the evidence for success
+/// one of the 10 override routes (HANDLER-06 — the evidence for success
 /// criterion 5).
 ///
 TEST_F(PosHandlersTest, BearerRejectionOnAllOverrideRoutes)
@@ -585,6 +587,7 @@ TEST_F(PosHandlersTest, BearerRejectionOnAllOverrideRoutes)
         { "POST", kMenuItemsPath },
         { "GET",  kModifierGroupsPath },
         { "POST", kModifierGroupsPath },
+        { "GET",  kKitchenTicketsPath },
         { "POST", kKitchenTicketsPath },
         { "GET",  kOrdersPath },
         { "POST", kOrdersPath },
@@ -825,7 +828,7 @@ TEST_F(PosHandlersTest, MenuItemCreateRejectsCrossTenantModifierGroup)
 
 ///
 /// A kitchen ticket against a real order persists contract-shaped with ctx
-/// tenant stamps and round-trips through the generated dump-all list stub
+/// tenant stamps and round-trips through the tenant-filtered list override
 /// (dependency order: item -> order -> ticket — Pitfall 8).
 ///
 TEST_F(PosHandlersTest, KitchenTicketCreatePersists)
@@ -852,7 +855,7 @@ TEST_F(PosHandlersTest, KitchenTicketCreatePersists)
     EXPECT_EQ(doc.at("station").get<std::string>(), kGrillStation);
     EXPECT_EQ(doc.at("status").get<std::string>(), kQueuedStatus);
 
-    // Persistence proof through the generated kitchen-tickets list stub
+    // Persistence proof through the tenant-filtered kitchen-tickets override
     const json page = ListAsJson(kKitchenTicketsPath);
     ASSERT_EQ(page.at("data").size(), 1);
     EXPECT_EQ(page.at("data")[0].at("id").get<std::string>(), ticketId);
@@ -878,6 +881,76 @@ TEST_F(PosHandlersTest, KitchenTicketCreateRejectsDanglingOrder)
     m_ctx.queryString = "";
     EXPECT_EQ(ListAsJson(kKitchenTicketsPath).at("data").size(), 0)
         << "Rejected ticket must not persist";
+}
+
+///
+/// The kitchen-tickets list override honors the paging contract and excludes
+/// other tenants' tickets (Codex P1 — the route must not leak the dump-all
+/// stub now that writes are tenant-stamped).
+///
+TEST_F(PosHandlersTest, KitchenTicketsListTenantFilterAndLimit)
+{
+    const std::string itemId  = CreateMenuItem("latte", kItemPrice, kUsdCurrency);
+    const std::string orderId = CreateOrder(itemId, kMatchQty, kRecomputedTotal, kUsdCurrency);
+    PostJson(kKitchenTicketsPath, json{{"order_id", orderId}, {"station", kGrillStation}, {"status", kQueuedStatus}}.dump());
+    PostJson(kKitchenTicketsPath, json{{"order_id", orderId}, {"station", kGrillStation}, {"status", kQueuedStatus}}.dump());
+    PutOtherTenantDoc("restaurant", "kitchen-tickets", kOtherTenantTicketId,
+                      json{{"status", kQueuedStatus}});
+
+    m_ctx.queryString = "limit=1";
+    const json page = ListAsJson(kKitchenTicketsPath);
+    ASSERT_EQ(page.at("data").size(), 1);
+    EXPECT_EQ(page.at("pagination").at("limit").get<unsigned long long>(), 1);
+    EXPECT_TRUE(page.at("pagination").at("has_more").get<bool>());
+    EXPECT_FALSE(page.at("pagination").at("next_cursor").get<std::string>().empty());
+
+    m_ctx.queryString = "";
+    const json fullPage = ListAsJson(kKitchenTicketsPath);
+    ASSERT_EQ(fullPage.at("data").size(), 2)
+        << "Both own-tenant tickets plus the foreign one would be 3 — the "
+           "foreign ticket must be excluded by the tenant filter";
+    const std::vector<std::string> ids = DataIds(fullPage);
+    EXPECT_EQ(std::find(ids.begin(), ids.end(), kOtherTenantTicketId), ids.end())
+        << "Cross-tenant kitchen ticket must not appear in tenant-default results";
+}
+
+///
+/// Cursor traversal over GET /api/v1/restaurant/kitchen-tickets in pages of 1
+/// visits every own-tenant ticket exactly once and terminates with a last
+/// page that has has_more false and no next_cursor.
+///
+TEST_F(PosHandlersTest, KitchenTicketsListCursorTraversalReachesAllTickets)
+{
+    const std::string itemId  = CreateMenuItem("latte", kItemPrice, kUsdCurrency);
+    const std::string orderId = CreateOrder(itemId, kMatchQty, kRecomputedTotal, kUsdCurrency);
+    const std::string firstId =
+        ParseId(PostJson(kKitchenTicketsPath, json{{"order_id", orderId}, {"station", kGrillStation}, {"status", kQueuedStatus}}.dump()));
+    const std::string secondId =
+        ParseId(PostJson(kKitchenTicketsPath, json{{"order_id", orderId}, {"station", kGrillStation}, {"status", kQueuedStatus}}.dump()));
+
+    std::vector<std::string> seen;
+    std::string cursor;
+    for (unsigned int page = 0; page < kMaxTraversalPages; ++page)
+    {
+        m_ctx.queryString = "limit=1" + (cursor.empty() ? "" : "&cursor=" + cursor);
+        const json result = ListAsJson(kKitchenTicketsPath);
+        const json data = result.at("data");
+        ASSERT_FALSE(data.empty()) << "Traversal must not return an empty data page";
+        seen.push_back(data[0].at("id").get<std::string>());
+
+        const json pagination = result.at("pagination");
+        if (!pagination.at("has_more").get<bool>())
+        {
+            EXPECT_FALSE(pagination.contains("next_cursor"))
+                << "Terminal page must not carry a cursor";
+            break;
+        }
+        cursor = pagination.at("next_cursor").get<std::string>();
+    }
+
+    EXPECT_EQ(seen.size(), 2) << "Both tickets must be visited exactly once";
+    EXPECT_EQ(std::find(seen.begin(), seen.end(), firstId) != seen.end(), true);
+    EXPECT_EQ(std::find(seen.begin(), seen.end(), secondId) != seen.end(), true);
 }
 
 ///
