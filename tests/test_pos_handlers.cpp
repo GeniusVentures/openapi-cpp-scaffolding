@@ -66,6 +66,7 @@ static constexpr double            kHalfQuantity       = 0.5;    ///< Fractional
 static constexpr int32_t           kHalfUpLineTotal    = 51;     ///< llround(101 * 0.5)
 static constexpr int32_t           kMatchQty           = 2;      ///< Quantity for the recompute/mismatch tests
 static constexpr int32_t           kRecomputedTotal    = kItemPrice * kMatchQty;  ///< Server-recomputed order total
+static constexpr int32_t           kOverflowSeedPrice  = std::numeric_limits<int32_t>::max();  ///< Overflow-guard seed
 static constexpr int32_t           kOverflowQty        = 2;      ///< INT32_MAX x 2 overflows int32
 static constexpr size_t            kUuidHexLength      = 32;     ///< Minted ids are 32 hex chars
 static constexpr unsigned int      kMaxTraversalPages  = kSeedCount;  ///< Safety bound for cursor loops
@@ -778,4 +779,200 @@ TEST_F(PosHandlersTest, KitchenTicketCreateRejectsDanglingOrder)
     m_ctx.queryString = "";
     EXPECT_EQ(ListAsJson(kKitchenTicketsPath).at("data").size(), 0)
         << "Rejected ticket must not persist";
+}
+
+// ============================================================================
+// Task 3 — D-01 order recompute tests
+// ============================================================================
+
+///
+/// An order with deliberately wrong client line money and the CORRECT total
+/// persists with server-recomputed values: stored unit_price equals the
+/// stored menu price, and line_total/subtotal/total equal the recomputation
+/// (client money is never stored as-is — D-01, T-02-01).
+///
+TEST_F(PosHandlersTest, OrderCreatePersistsWithServerRecomputedTotals)
+{
+    const std::string itemId  = CreateMenuItem("latte", kItemPrice, kUsdCurrency);
+    const std::string orderId = CreateOrder(itemId, kMatchQty, kRecomputedTotal, kUsdCurrency);
+    EXPECT_EQ(orderId.size(), kUuidHexLength);
+
+    // Direct engine read of the persisted document on the flat KeyBuilder key
+    auto keyResult = KeyBuilder::Build("commerce", "orders", orderId);
+    ASSERT_TRUE(keyResult.has_value());
+    std::string stored;
+    ASSERT_TRUE(m_engine->Get(keyResult.value(), stored));
+    const json doc = json::parse(stored);
+
+    ASSERT_EQ(doc.at("lines").size(), 1);
+    EXPECT_EQ(doc.at("lines")[0].at("unit_price").at("amount").get<int32_t>(), kItemPrice)
+        << "Stored unit price must be the menu price, not the client's";
+    EXPECT_EQ(doc.at("lines")[0].at("unit_price").at("currency").get<std::string>(), kUsdCurrency);
+    EXPECT_EQ(doc.at("lines")[0].at("line_total").at("amount").get<int32_t>(), kRecomputedTotal);
+    EXPECT_EQ(doc.at("subtotal").at("amount").get<int32_t>(), kRecomputedTotal);
+    EXPECT_EQ(doc.at("total").at("amount").get<int32_t>(), kRecomputedTotal);
+    EXPECT_EQ(doc.at("total").at("currency").get<std::string>(), kUsdCurrency);
+    EXPECT_EQ(doc.at("tenant_id").get<std::string>(), kDefaultTenant);
+
+    // Round-trip through the generated dump-all orders list stub (still live
+    // at GET /api/v1/orders — see the route note in the file header)
+    m_ctx.queryString = "";
+    const json page = ListAsJson(kOrdersPath);
+    ASSERT_EQ(page.at("data").size(), 1);
+    EXPECT_EQ(page.at("data")[0].at("id").get<std::string>(), orderId);
+}
+
+///
+/// A client total off by one minor unit rejects the order with TOTAL_MISMATCH
+/// and nothing is persisted (D-01 exact-equality check, T-02-01).
+///
+TEST_F(PosHandlersTest, OrderCreateRejectsTotalMismatch)
+{
+    const std::string itemId = CreateMenuItem("latte", kItemPrice, kUsdCurrency);
+    const std::string body = R"({
+        "status": "draft",
+        "channel": "pos",
+        "fulfillment_type": "pickup",
+        "total": {"amount": )" + std::to_string(kRecomputedTotal + 1) + R"(, "currency": "USD"},
+        "lines": [{
+            "product_id": ")" + itemId + R"(",
+            "quantity": 2,
+            "unit_price": {"amount": 1000, "currency": "USD"},
+            "line_total": {"amount": 2000, "currency": "USD"}
+        }]
+    })";
+
+    const std::string result = Route("POST", kOrdersPath, body);
+    EXPECT_NE(result.find("TOTAL_MISMATCH"), std::string::npos)
+        << "Expected TOTAL_MISMATCH, got: " << result;
+
+    m_ctx.queryString = "";
+    EXPECT_EQ(ListAsJson(kOrdersPath).at("data").size(), 0)
+        << "Mismatched order must not persist";
+}
+
+///
+/// A well-formed but non-existent product_id rejects the order with
+/// INVALID_REFERENCE (D-01/D-02) and nothing is persisted.
+///
+TEST_F(PosHandlersTest, OrderCreateRejectsUnknownProduct)
+{
+    const std::string body = R"({
+        "status": "draft",
+        "channel": "pos",
+        "fulfillment_type": "pickup",
+        "total": {"amount": 1000, "currency": "USD"},
+        "lines": [{
+            "product_id": ")" + kMissingRefId + R"(",
+            "quantity": 1,
+            "unit_price": {"amount": 1000, "currency": "USD"},
+            "line_total": {"amount": 1000, "currency": "USD"}
+        }]
+    })";
+
+    const std::string result = Route("POST", kOrdersPath, body);
+    EXPECT_NE(result.find("INVALID_REFERENCE"), std::string::npos)
+        << "Expected INVALID_REFERENCE, got: " << result;
+
+    m_ctx.queryString = "";
+    EXPECT_EQ(ListAsJson(kOrdersPath).at("data").size(), 0)
+        << "Rejected order must not persist";
+}
+
+///
+/// A fractional quantity rounds half-up at the single llround point: stored
+/// price 101 minor units x quantity 0.5 = 50.5 -> stored line total 51.
+///
+TEST_F(PosHandlersTest, OrderCreateFractionalQuantityRoundsHalfUp)
+{
+    const std::string itemId =
+        CreateMenuItem("cheap-cookie", kFractionalPrice, kUsdCurrency);
+    const std::string orderId =
+        CreateOrder(itemId, kHalfQuantity, kHalfUpLineTotal, kUsdCurrency);
+
+    auto keyResult = KeyBuilder::Build("commerce", "orders", orderId);
+    ASSERT_TRUE(keyResult.has_value());
+    std::string stored;
+    ASSERT_TRUE(m_engine->Get(keyResult.value(), stored));
+    const json doc = json::parse(stored);
+
+    ASSERT_EQ(doc.at("lines").size(), 1);
+    EXPECT_EQ(doc.at("lines")[0].at("line_total").at("amount").get<int32_t>(),
+              kHalfUpLineTotal)
+        << "101 x 0.5 = 50.5 must round half-up to 51";
+    EXPECT_EQ(doc.at("subtotal").at("amount").get<int32_t>(), kHalfUpLineTotal);
+    EXPECT_EQ(doc.at("total").at("amount").get<int32_t>(), kHalfUpLineTotal);
+}
+
+///
+/// A line priced in a currency different from the stored item's currency is
+/// rejected with INVALID_REQUEST (currency agreement, D-01).
+///
+TEST_F(PosHandlersTest, OrderCreateRejectsCurrencyMismatch)
+{
+    const std::string itemId = CreateMenuItem("euro-latte", kItemPrice, kUsdCurrency);
+    const std::string body = R"({
+        "status": "draft",
+        "channel": "pos",
+        "fulfillment_type": "pickup",
+        "total": {"amount": 2000, "currency": "USD"},
+        "lines": [{
+            "product_id": ")" + itemId + R"(",
+            "quantity": 2,
+            "unit_price": {"amount": 1000, "currency": "EUR"},
+            "line_total": {"amount": 2000, "currency": "EUR"}
+        }]
+    })";
+
+    const std::string result = Route("POST", kOrdersPath, body);
+    EXPECT_NE(result.find("INVALID_REQUEST"), std::string::npos)
+        << "Expected INVALID_REQUEST, got: " << result;
+    EXPECT_NE(result.find("Currency mismatch"), std::string::npos)
+        << "Expected the currency-mismatch message, got: " << result;
+}
+
+///
+/// A syntactically invalid JSON body returns the INVALID_REQUEST envelope —
+/// the override's json::exception discipline (Pitfall 5), and PARSE_ERROR is
+/// absent, proving the priority-200 override answered, not the stub (T-02-04).
+///
+TEST_F(PosHandlersTest, OrderCreateRejectsMalformedBody)
+{
+    const std::string result = Route("POST", kOrdersPath, "not-json");
+
+    EXPECT_NE(result.find("INVALID_REQUEST"), std::string::npos)
+        << "Expected INVALID_REQUEST, got: " << result;
+    EXPECT_EQ(result.find("PARSE_ERROR"), std::string::npos)
+        << "The override (not the generated stub) must answer this route";
+}
+
+///
+/// A stored item price at INT32_MAX with quantity 2 trips the int32 overflow
+/// guard and returns the INVALID_REQUEST envelope (D-01 overflow discipline).
+///
+TEST_F(PosHandlersTest, OrderCreateRejectsOverflowingAmount)
+{
+    const std::string itemId = CreateMenuItem("golden-soup", kOverflowSeedPrice, kUsdCurrency);
+    const std::string body = R"({
+        "status": "draft",
+        "channel": "pos",
+        "fulfillment_type": "pickup",
+        "total": {"amount": 1, "currency": "USD"},
+        "lines": [{
+            "product_id": ")" + itemId + R"(",
+            "quantity": 2,
+            "unit_price": {"amount": 1, "currency": "USD"},
+            "line_total": {"amount": 1, "currency": "USD"}
+        }]
+    })";
+
+    const std::string result = Route("POST", kOrdersPath, body);
+    EXPECT_NE(result.find("INVALID_REQUEST"), std::string::npos)
+        << "Expected INVALID_REQUEST from the overflow guard, got: " << result;
+    EXPECT_NE(result.find("Amount overflow"), std::string::npos)
+        << "Expected the overflow-guard message, got: " << result;
+
+    m_ctx.queryString = "";
+    EXPECT_EQ(ListAsJson(kOrdersPath).at("data").size(), 0)
+        << "Overflowing order must not persist";
 }
