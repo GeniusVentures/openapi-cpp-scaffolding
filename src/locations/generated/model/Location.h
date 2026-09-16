@@ -133,6 +133,13 @@ public:
     std::string getStatus() const;
     void setStatus(std::string const& value);
     /// <summary>
+    /// Sales tax rate as a percentage (0-100); e.g. 9.25 means 9.25%. Fractional precision supported (e.g. 9.254). Null when no tax rate is configured.
+    /// </summary>
+    double getTaxRate() const;
+    void setTaxRate(double const value);
+    bool taxRateIsSet() const;
+    void unsetTax_rate();
+    /// <summary>
     /// 
     /// </summary>
     org::openapitools::server::model::Address getAddress() const;
@@ -188,6 +195,8 @@ protected:
 
     std::string m_Status;
 
+    double m_Tax_rate;
+    bool m_Tax_rateIsSet;
     org::openapitools::server::model::Address m_Address;
     bool m_AddressIsSet;
     org::openapitools::server::model::ContactPoint m_Contact;
