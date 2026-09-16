@@ -168,6 +168,35 @@ target_include_directories(test_pos_handlers PRIVATE
 )
 add_test(NAME test_pos_handlers COMMAND test_pos_handlers)
 
+# Locations setup contract tests (Phase 3 plan 03-03, TAX-01..03)
+# Consumes the committed parent-repo dev setup JSON as its expected-values
+# source via the SETUP_DEV_JSON compile definition (same parent-repo coupling
+# precedent as src/CMakeLists.txt and test_order_entry_store's repo root).
+# Generated model sources compile directly into the executable (NEVER links
+# the plugin dylibs); the LocationsPlugin base class is header-inline.
+add_executable(test_locations_setup
+    test_locations_setup.cpp
+    "${CMAKE_CURRENT_SOURCE_DIR}/../src/locations/generated/model/Location.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/../src/locations/generated/model/Address.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/../src/locations/generated/model/ContactPoint.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/../src/locations/generated/model/Location_hours_inner.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/../src/locations/generated/model/Helpers.cpp"
+)
+target_link_libraries(test_locations_setup PRIVATE
+    component_factory
+    storage
+    GTest::gtest_main
+    nlohmann_json::nlohmann_json
+)
+target_include_directories(test_locations_setup PRIVATE
+    "${CMAKE_CURRENT_SOURCE_DIR}/../src"
+    "${CMAKE_CURRENT_SOURCE_DIR}/../src/locations/generated"
+)
+target_compile_definitions(test_locations_setup PRIVATE
+    SETUP_DEV_JSON="${CMAKE_CURRENT_SOURCE_DIR}/../../../setup/environments/dev.json"
+)
+add_test(NAME test_locations_setup COMMAND test_locations_setup)
+
 # Tunnel setup wizard handler integration tests
 add_executable(test_tunnel_setup
     test_tunnel_setup.cpp
