@@ -36,6 +36,8 @@ Location::Location()
     m_CodeIsSet = false;
     m_Type = "";
     m_Status = "";
+    m_Tax_rate = 0.0;
+    m_Tax_rateIsSet = false;
     m_AddressIsSet = false;
     m_ContactIsSet = false;
     m_Timezone = "";
@@ -65,7 +67,26 @@ bool Location::validate(std::stringstream& msg, const std::string& pathPrefix) c
     bool success = true;
     const std::string _pathPrefix = pathPrefix.empty() ? "Location" : pathPrefix;
 
-                                                                     
+                                                         
+    if (taxRateIsSet())
+    {
+        const double& value = m_Tax_rate;
+        const std::string currentValuePath = _pathPrefix + ".taxRate";
+                
+        
+        if (value < 0)
+        {
+            success = false;
+            msg << currentValuePath << ": must be greater than or equal to 0;";
+        }
+        if (value > 100)
+        {
+            success = false;
+            msg << currentValuePath << ": must be less than or equal to 100;";
+        }
+
+    }
+                     
     if (hoursIsSet())
     {
         const std::vector<org::openapitools::server::model::Location_hours_inner>& value = m_Hours;
@@ -132,6 +153,9 @@ bool Location::operator==(const Location& rhs) const
      &&
     
     
+    ((!taxRateIsSet() && !rhs.taxRateIsSet()) || (taxRateIsSet() && rhs.taxRateIsSet() && getTaxRate() == rhs.getTaxRate())) &&
+    
+    
     ((!addressIsSet() && !rhs.addressIsSet()) || (addressIsSet() && rhs.addressIsSet() && getAddress() == rhs.getAddress())) &&
     
     
@@ -170,6 +194,8 @@ void to_json(nlohmann::json& j, const Location& o)
         j["code"] = o.m_Code;
     j["type"] = o.m_Type;
     j["status"] = o.m_Status;
+    if(o.taxRateIsSet())
+        j["tax_rate"] = o.m_Tax_rate;
     if(o.addressIsSet())
         j["address"] = o.m_Address;
     if(o.contactIsSet())
@@ -211,6 +237,11 @@ void from_json(const nlohmann::json& j, Location& o)
     } 
     j.at("type").get_to(o.m_Type);
     j.at("status").get_to(o.m_Status);
+    if(j.find("tax_rate") != j.end())
+    {
+        j.at("tax_rate").get_to(o.m_Tax_rate);
+        o.m_Tax_rateIsSet = true;
+    } 
     if(j.find("address") != j.end())
     {
         j.at("address").get_to(o.m_Address);
@@ -365,6 +396,23 @@ std::string Location::getStatus() const
 void Location::setStatus(std::string const& value)
 {
     m_Status = value;
+}
+double Location::getTaxRate() const
+{
+    return m_Tax_rate;
+}
+void Location::setTaxRate(double const value)
+{
+    m_Tax_rate = value;
+    m_Tax_rateIsSet = true;
+}
+bool Location::taxRateIsSet() const
+{
+    return m_Tax_rateIsSet;
+}
+void Location::unsetTax_rate()
+{
+    m_Tax_rateIsSet = false;
 }
 org::openapitools::server::model::Address Location::getAddress() const
 {
