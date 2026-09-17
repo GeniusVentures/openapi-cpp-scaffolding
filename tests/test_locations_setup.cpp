@@ -148,14 +148,21 @@ protected:
     }
 
     ///
-    /// POST a JSON body and assert the response is not an error envelope
+    /// POST a JSON body; fails the test and returns false when the response
+    /// carries an error envelope — callers must check the result before
+    /// reading the response
     ///
-    std::string PostJson(const std::string& path, const std::string& body)
+    [[nodiscard]] bool PostJson(const std::string& path,
+                                const std::string& body,
+                                std::string&       response)
     {
-        const std::string result = Route("POST", path, body);
-        EXPECT_EQ(result.find("\"error\""), std::string::npos)
-            << "Expected create success, got: " << result;
-        return result;
+        response = Route("POST", path, body);
+        if (response.find("\"error\"") != std::string::npos)
+        {
+            ADD_FAILURE() << "Expected create success, got: " << response;
+            return false;
+        }
+        return true;
     }
 
     ///
@@ -168,25 +175,39 @@ protected:
 
     ///
     /// Parse the committed dev setup JSON (T-03-09: the stream open is
-    /// asserted before anything about its contents)
+    /// checked — and reported — before anything about its contents is read;
+    /// a gtest fatal assert in a void helper only returns from the helper,
+    /// so the caller must check this result before using doc)
     ///
-    static void LoadDevJson(json& doc)
+    [[nodiscard]] static bool LoadDevJson(json& doc)
     {
         std::ifstream stream(SETUP_DEV_JSON);
-        ASSERT_TRUE(stream.is_open())
-            << "Cannot open committed dev setup JSON: " << SETUP_DEV_JSON;
+        if (!stream.is_open())
+        {
+            ADD_FAILURE() << "Cannot open committed dev setup JSON: " << SETUP_DEV_JSON;
+            return false;
+        }
         doc = json::parse(stream);
+        return true;
     }
 
     ///
     /// The single declared location row from dev.json (D-03)
     ///
-    static void LoadDeclaredLocation(json& declared)
+    [[nodiscard]] static bool LoadDeclaredLocation(json& declared)
     {
         json doc;
-        LoadDevJson(doc);
-        ASSERT_TRUE(doc.at("locations").is_array());
+        if (!LoadDevJson(doc))
+        {
+            return false;
+        }
+        if (!doc.at("locations").is_array())
+        {
+            ADD_FAILURE() << "dev setup JSON 'locations' is not an array";
+            return false;
+        }
         declared = doc.at("locations").front();
+        return true;
     }
 
     ///
@@ -245,7 +266,10 @@ protected:
     size_t ApplyDeclaredLocations(std::vector<std::string>& createdIds)
     {
         json doc;
-        LoadDevJson(doc);
+        if (!LoadDevJson(doc))
+        {
+            return 0;
+        }
         const json page = ListAsJson(kLocationsPath);
         size_t createdCount = 0;
         for (const auto& declared : doc.at("locations"))
@@ -253,7 +277,12 @@ protected:
             const std::string code = declared.at("code").get<std::string>();
             if (!ListContainsCode(page, code))
             {
-                const json created = json::parse(PostJson(kLocationsPath, declared.dump()));
+                std::string createResponse;
+                if (!PostJson(kLocationsPath, declared.dump(), createResponse))
+                {
+                    return createdCount;
+                }
+                const json created = json::parse(createResponse);
                 createdIds.push_back(created.at("id").get<std::string>());
                 ++createdCount;
             }
@@ -265,16 +294,20 @@ protected:
     /// Body carrying every from_json-required key: the declared dev.json row
     /// plus the storage stamps the create handler would have added
     ///
-    void MakeModelBody(json& body)
+    [[nodiscard]] bool MakeModelBody(json& body)
     {
         json declared;
-        LoadDeclaredLocation(declared);
+        if (!LoadDeclaredLocation(declared))
+        {
+            return false;
+        }
         body = declared;
         body["id"]              = kModelFixtureId;
         body["tenant_id"]       = kDefaultTenant;
         body["organization_id"] = kDefaultTenant;
         body["created_at"]      = kTestTimestamp;
         body["updated_at"]      = kTestTimestamp;
+        return true;
     }
 };
 
@@ -289,7 +322,10 @@ protected:
 TEST_F(LocationsSetupTest, DevJsonDeclaresOneActiveCaliforniaLocation)
 {
     json doc;
-    LoadDevJson(doc);
+    if (!LoadDevJson(doc))
+    {
+        return;
+    }
 
     ASSERT_TRUE(doc.at("locations").is_array());
     ASSERT_EQ(doc.at("locations").size(), kExpectedLocationCount);
@@ -324,7 +360,10 @@ TEST_F(LocationsSetupTest, DevJsonDeclaresOneActiveCaliforniaLocation)
 TEST_F(LocationsSetupTest, DeclaredLocationAppliesIdempotently)
 {
     json declared;
-    LoadDeclaredLocation(declared);
+    if (!LoadDeclaredLocation(declared))
+    {
+        return;
+    }
     const std::string code = declared.at("code").get<std::string>();
 
     std::vector<std::string> firstIds;
@@ -360,11 +399,19 @@ TEST_F(LocationsSetupTest, DeclaredLocationAppliesIdempotently)
 TEST_F(LocationsSetupTest, RawDuplicatePostMintsFreshId)
 {
     json declared;
-    LoadDeclaredLocation(declared);
+    if (!LoadDeclaredLocation(declared))
+    {
+        return;
+    }
     const std::string code = declared.at("code").get<std::string>();
 
-    const json first = json::parse(PostJson(kLocationsPath, declared.dump()));
-    const json second = json::parse(PostJson(kLocationsPath, declared.dump()));
+    std::string firstResponse;
+    ASSERT_TRUE(PostJson(kLocationsPath, declared.dump(), firstResponse));
+    std::string secondResponse;
+    ASSERT_TRUE(PostJson(kLocationsPath, declared.dump(), secondResponse));
+
+    const json first  = json::parse(firstResponse);
+    const json second = json::parse(secondResponse);
 
     const std::string firstId = first.at("id").get<std::string>();
     const std::string secondId = second.at("id").get<std::string>();
@@ -387,7 +434,10 @@ TEST_F(LocationsSetupTest, RawDuplicatePostMintsFreshId)
 TEST_F(LocationsSetupTest, LocationModelRoundTripsTaxRate)
 {
     json body;
-    MakeModelBody(body);
+    if (!MakeModelBody(body))
+    {
+        return;
+    }
     ASSERT_TRUE(body.contains("tax_rate"));
 
     const model::Location location = body.get<model::Location>();
@@ -406,7 +456,10 @@ TEST_F(LocationsSetupTest, LocationModelRoundTripsTaxRate)
 TEST_F(LocationsSetupTest, LocationModelLeavesTaxRateUnsetWhenKeyAbsent)
 {
     json body;
-    MakeModelBody(body);
+    if (!MakeModelBody(body))
+    {
+        return;
+    }
     ASSERT_EQ(body.erase("tax_rate"), kErasedKeyCount);
 
     const model::Location location = body.get<model::Location>();
