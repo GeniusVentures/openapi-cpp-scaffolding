@@ -25,8 +25,6 @@ class MockPlugin : public IPlugin
     bool                       m_initialized = false;
     bool                       m_shutdown    = false;
     bool                       m_deinit      = false;
-    int                        m_initOrder   = -1;
-    int                        m_shutdownOrder = -1;
 
 public:
     explicit MockPlugin(std::string name, unsigned int priority = 100)
@@ -63,11 +61,6 @@ public:
     bool IsInitialized() const { return m_initialized; }
     bool IsShutdown()    const { return m_shutdown; }
     bool IsDeInit()      const { return m_deinit; }
-
-    void SetInitOrder(int order)    { m_initOrder = order; }
-    int  GetInitOrder() const       { return m_initOrder; }
-    void SetShutdownOrder(int order) { m_shutdownOrder = order; }
-    int  GetShutdownOrder() const   { return m_shutdownOrder; }
 };
 
 // ============================================================================
@@ -114,7 +107,7 @@ TEST_F(PluginManagerTest, RegisterPlugin_IncrementsCount)
     EXPECT_EQ(pm.GetPluginCount(), 2);
 }
 
-TEST_F(PluginManagerTest, RegisterPlugin_SetsUrlRoutes)
+TEST_F(PluginManagerTest, RegisterPlugin_DuplicateName_Rejected)
 {
     auto plugin = MakeMock("HrmPlugin");
     std::vector<std::string> paths = {"/api/hrm", "/api/employees"};
