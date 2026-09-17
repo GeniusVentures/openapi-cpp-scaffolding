@@ -137,6 +137,7 @@ void PluginManager::LoadAllPlugins(const std::string& pluginDir)
         DllHandle handle = LoadDll(fullPath.c_str());
         if (handle == nullptr)
         {
+            SPDLOG_ERROR("Failed to load plugin library '{}'", fullPath);
             continue;
         }
 
@@ -144,12 +145,16 @@ void PluginManager::LoadAllPlugins(const std::string& pluginDir)
             GetSymbol(handle, "CreatePlugin"));
         if (createFn == nullptr)
         {
+            SPDLOG_WARN("Plugin library '{}' has no CreatePlugin symbol — skipped",
+                        fullPath);
             continue;
         }
 
         IPlugin* rawPlugin = createFn();
         if (rawPlugin == nullptr)
         {
+            SPDLOG_ERROR("CreatePlugin() returned null for plugin library '{}'",
+                         fullPath);
             continue;
         }
 
