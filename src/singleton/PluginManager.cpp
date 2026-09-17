@@ -84,8 +84,25 @@ void PluginManager::RegisterHandler(const std::string& method,
     std::string key = method + " " + urlPath;
     m_handlers[key][priority] = entry;
 
-    // Also store in pattern list for fallback matching
-    m_patternHandlers.push_back({method, urlPath, priority, entry});
+    // Also store in the pattern list for fallback matching. A re-registration
+    // of the same method+pattern+priority replaces the existing entry so a
+    // pattern-dispatched request ({param} routes) serves the newest handler,
+    // exactly like the exact-match map above.
+    auto patternIt = std::find_if(m_patternHandlers.begin(), m_patternHandlers.end(),
+                                  [&](const PatternEntry& candidate)
+                                  {
+                                      return candidate.method == method
+                                          && candidate.pattern == urlPath
+                                          && candidate.priority == priority;
+                                  });
+    if (patternIt != m_patternHandlers.end())
+    {
+        patternIt->handler = entry;
+    }
+    else
+    {
+        m_patternHandlers.push_back({method, urlPath, priority, entry});
+    }
 
     SPDLOG_DEBUG("Registered handler {} {} -> {} (priority {}, owner: {})",
                  method, urlPath, functionName, priority, ownerPluginName);
