@@ -10,6 +10,8 @@
 #include <nlohmann/json.hpp>
 
 #include <chrono>
+#include <cstddef>
+#include <cstdint>
 #include <condition_variable>
 #include <mutex>
 #include <stdexcept>
@@ -53,6 +55,106 @@ constexpr const char* const kInvalidCurrency = "EURO";
 /// Decimal amount paired with the currency fields above.
 constexpr double kTotalAmount = 12.50;
 
+/// Valid currency different from kValidCurrency (mismatch rejection).
+constexpr const char* const kOtherValidCurrency = "EUR";
+
+/// Canonical menu-item line unit price (Classic Burger, minor units).
+constexpr int32_t kBurgerUnitAmount = 1250;
+
+/// Canonical line quantity for the burger line.
+constexpr int64_t kBurgerQuantity = 2;
+
+/// Single-item quantity for the fries line in the derived-formula case.
+constexpr int64_t kSingleQuantity = 1;
+
+/// Extra-pickle modifier delta on the canonical burger line (minor units).
+constexpr int32_t kPickleDeltaAmount = 50;
+
+/// Doubled modifier delta used by the set_modifiers recompute case.
+constexpr int32_t kDoublePickleDeltaAmount = 100;
+
+/// Computed total of the canonical burger line: (1250 + 50) x 2.
+constexpr int32_t kBurgerLineTotalAmount = 2600;
+
+/// Recomputed burger total after the doubled delta: (1250 + 100) x 2.
+constexpr int32_t kUpdatedBurgerLineTotalAmount = 2700;
+
+/// Unit price of the cheap line used by the CR-04 negative-total case.
+constexpr int32_t kCheapUnitAmount = 100;
+
+/// Negative delta exceeding the cheap unit price (CR-04 parity).
+constexpr int32_t kOversizedNegativeDelta = -200;
+
+/// Unit price of the fries line in the derived-formula case.
+constexpr int32_t kFriesUnitAmount = 800;
+
+/// Unit price of the soda line in the derived-formula case.
+constexpr int32_t kSodaUnitAmount = 500;
+
+/// Quantity of the soda line in the derived-formula case.
+constexpr int64_t kSodaQuantity = 3;
+
+/// Unit price of the client-only custom line (excluded from derived money).
+constexpr int32_t kCustomItemAmount = 999;
+
+/// Expected derived subtotal of the formula case: 2500 + 800 + 1650.
+constexpr int32_t kDerivedFormulaSubtotal = 4950;
+
+/// Client-minted line ids used across the command-table cases.
+constexpr const char* const kFirstLineId = "line-1";
+constexpr const char* const kSecondLineId = "line-2";
+constexpr const char* const kThirdLineId = "line-3";
+constexpr const char* const kCustomLineId = "line-custom";
+
+/// Menu item ids referenced by the command-table lines.
+constexpr const char* const kBurgerProductId = "menu-burger";
+constexpr const char* const kFriesProductId = "menu-fries";
+constexpr const char* const kSodaProductId = "menu-soda";
+
+/// Per-line send-state literals mirrored from the store's client extension.
+constexpr const char* const kLineStateUnsent = "unsent";
+constexpr const char* const kLineStateSending = "sending";
+constexpr const char* const kLineStateSent = "sent";
+
+/// Send-failure banner code carried by the failed end_send case.
+constexpr const char* const kSendErrorTotalMismatch = "TOTAL_MISMATCH";
+
+/// Hold mark applied by the successful end_send case.
+constexpr const char* const kMarkHold = "hold";
+
+/// API-sourced California tax rate in basis points (9.25 percent, Q1).
+constexpr int64_t kCaliforniaTaxRateBps = 925;
+
+/// Expected tax on subtotal 2600 at 925 bps (round half up): 241.
+constexpr int32_t kExpectedTaxAmount = 241;
+
+/// Expected total and balance_due with tax on subtotal 2600.
+constexpr int32_t kExpectedTotalWithTax = 2841;
+
+/// Out-of-range quantities flanking the store's [1, 99] bound.
+constexpr int64_t kTooSmallQuantity = 0;
+constexpr int64_t kTooLargeQuantity = 100;
+
+/// Kitchen-note length exactly at the store's 140-character cap.
+constexpr std::size_t kMaxLengthNote = 140;
+
+/// Kitchen-note length one past the cap.
+constexpr std::size_t kOverlongNoteLength = 141;
+
+/// Out-of-range guest counts flanking the store's [1, 20] bound.
+constexpr int64_t kTooSmallGuestCount = 0;
+constexpr int64_t kTooLargeGuestCount = 21;
+
+/// In-range guest count accepted by set_guest_count.
+constexpr int64_t kValidGuestCount = 2;
+
+/// Out-of-range tax rates flanking the store's [0, 10000] bps bound.
+constexpr int64_t kNegativeTaxRateBps = -1;
+constexpr int64_t kTooLargeTaxRateBps = 10001;
+
+/// Non-integral tax rate rejected by set_tax_rate.
+constexpr double kFractionalTaxRateBps = 925.5;
+
 ///
 /// Builds a minimal-but-valid Order wire payload: every field from_json
 /// reads with j.at() (the required set) plus a Money total that passes
@@ -83,6 +185,46 @@ org::openapitools::server::model::Order MakeTypedOrder(const std::string& id)
     org::openapitools::server::model::Order order;
     order.setId(id);
     return order;
+}
+
+///
+/// Builds a minimal-but-valid add-line envelope in the locked Phase-2
+/// command-table shape (camelCase keys): every field the store's command
+/// codec reads except the optional modifiers and lineTotal.
+///
+nlohmann::json MakeValidLinePayload(const std::string& id, const std::string& productId,
+                                     int32_t unitAmount, int64_t quantity)
+{
+    nlohmann::json line;
+    line["id"] = id;
+    line["productId"] = productId;
+    line["description"] = "Classic Burger";
+    line["quantity"] = quantity;
+    line["unitPrice"] = {{"amount", unitAmount}, {"currency", kValidCurrency}};
+    return line;
+}
+
+///
+/// Builds a one-modifier array whose priceDelta carries the given amount.
+///
+nlohmann::json MakeModifierArray(int32_t deltaAmount)
+{
+    nlohmann::json modifier;
+    modifier["groupId"] = "group-pickles";
+    modifier["modifierId"] = "modifier-extra-pickle";
+    modifier["name"] = "Extra pickle";
+    modifier["priceDelta"] = {{"amount", deltaAmount}, {"currency", kValidCurrency}};
+    nlohmann::json modifiers = nlohmann::json::array();
+    modifiers.push_back(modifier);
+    return modifiers;
+}
+
+///
+/// Builds an add_item / add_custom_item command envelope around a line.
+///
+nlohmann::json MakeAddLineCommand(const char* const kind, const nlohmann::json& line)
+{
+    return {{"kind", kind}, {"line", line}};
 }
 
 // ============================================================================
@@ -359,6 +501,444 @@ TEST(OrderEntryImporterTest, ImportCommitsBeforeSubscriberExceptionPropagates)
     EXPECT_THROW(importer.Import(store, MakeValidOrderPayload(kReplacedOrderId)), std::runtime_error);
     EXPECT_EQ(kReplacedOrderId, store.Snapshot().at("id").get<std::string>());
     EXPECT_EQ(kSingleMutationInvocations, recorder.InvocationCount());
+}
+
+// ============================================================================
+// Phase-2 command table (add_item .. clear_send_error) -- additive coverage
+// ============================================================================
+
+TEST(OrderEntryStoreTest, AddItemComputesLineTotalLikeBackend)
+{
+    genius::stores::OrderEntryStore store;
+    nlohmann::json line =
+        MakeValidLinePayload(kFirstLineId, kBurgerProductId, kBurgerUnitAmount, kBurgerQuantity);
+    line["modifiers"] = MakeModifierArray(kPickleDeltaAmount);
+
+    EXPECT_TRUE(store.ApplyCommand(MakeAddLineCommand("add_item", line)));
+
+    const nlohmann::json snapshot = store.Snapshot();
+    ASSERT_TRUE(snapshot.contains("lines"));
+    ASSERT_EQ(1u, snapshot.at("lines").size());
+    // (1250 + 50) x 2 == 2600: unitPrice x qty + deltaUnitSum x qty in int64.
+    EXPECT_EQ(kBurgerLineTotalAmount,
+              snapshot.at("lines").at(0).at("line_total").at("amount").get<int32_t>());
+    EXPECT_EQ(kBurgerLineTotalAmount,
+              snapshot.at("client").at("derived").at("subtotal").at("amount").get<int32_t>());
+}
+
+TEST(OrderEntryStoreTest, AddItemRejectsInconsistentDeclaredLineTotal)
+{
+    genius::stores::OrderEntryStore store;
+    nlohmann::json line =
+        MakeValidLinePayload(kFirstLineId, kBurgerProductId, kBurgerUnitAmount, kBurgerQuantity);
+    line["lineTotal"] = {{"amount", kBurgerLineTotalAmount + 1}, {"currency", kValidCurrency}};
+
+    EXPECT_FALSE(store.ApplyCommand(MakeAddLineCommand("add_item", line)));
+
+    // Rejected before the commit window: nothing was mutated.
+    const nlohmann::json snapshot = store.Snapshot();
+    EXPECT_FALSE(snapshot.at("client").at("lines").contains(kFirstLineId));
+    EXPECT_EQ(0, snapshot.at("client").at("derived").at("subtotal").at("amount").get<int32_t>());
+}
+
+TEST(OrderEntryStoreTest, AddItemRejectsCurrencyMismatch)
+{
+    genius::stores::OrderEntryStore store;
+    nlohmann::json first =
+        MakeValidLinePayload(kFirstLineId, kBurgerProductId, kBurgerUnitAmount, kBurgerQuantity);
+    EXPECT_TRUE(store.ApplyCommand(MakeAddLineCommand("add_item", first)));
+
+    nlohmann::json second =
+        MakeValidLinePayload(kSecondLineId, kFriesProductId, kFriesUnitAmount, kBurgerQuantity);
+    second["unitPrice"]["currency"] = kOtherValidCurrency;
+
+    EXPECT_FALSE(store.ApplyCommand(MakeAddLineCommand("add_item", second)));
+    EXPECT_FALSE(store.Snapshot().at("client").at("lines").contains(kSecondLineId));
+}
+
+TEST(OrderEntryStoreTest, AddItemRejectsDuplicateLineId)
+{
+    genius::stores::OrderEntryStore store;
+    nlohmann::json line =
+        MakeValidLinePayload(kFirstLineId, kBurgerProductId, kBurgerUnitAmount, kBurgerQuantity);
+    ASSERT_TRUE(store.ApplyCommand(MakeAddLineCommand("add_item", line)));
+
+    EXPECT_FALSE(store.ApplyCommand(MakeAddLineCommand("add_item", line)));
+    EXPECT_EQ(1u, store.Snapshot().at("lines").size());
+}
+
+TEST(OrderEntryStoreTest, AddItemRejectsNegativeComputedLineTotal)
+{
+    genius::stores::OrderEntryStore store;
+    nlohmann::json line =
+        MakeValidLinePayload(kFirstLineId, kBurgerProductId, kCheapUnitAmount, kBurgerQuantity);
+    line["modifiers"] = MakeModifierArray(kOversizedNegativeDelta);
+
+    // (100 - 200) x 2 == -200: CR-04 parity -- negative money never commits.
+    EXPECT_FALSE(store.ApplyCommand(MakeAddLineCommand("add_item", line)));
+
+    const nlohmann::json snapshot = store.Snapshot();
+    EXPECT_FALSE(snapshot.at("client").at("lines").contains(kFirstLineId));
+    EXPECT_EQ(0, snapshot.at("client").at("derived").at("subtotal").at("amount").get<int32_t>());
+}
+
+TEST(OrderEntryStoreTest, AddCustomItemAcceptedAndMarkedCustomAndExcludedFromDerived)
+{
+    genius::stores::OrderEntryStore store;
+    const nlohmann::json line = MakeValidLinePayload(kCustomLineId, "", kCustomItemAmount, kBurgerQuantity);
+
+    EXPECT_TRUE(store.ApplyCommand(MakeAddLineCommand("add_custom_item", line)));
+
+    const nlohmann::json snapshot = store.Snapshot();
+    const nlohmann::json& clientLines = snapshot.at("client").at("lines");
+    ASSERT_TRUE(clientLines.contains(kCustomLineId));
+    EXPECT_TRUE(clientLines.at(kCustomLineId).at("custom").get<bool>());
+    EXPECT_EQ(kLineStateUnsent, clientLines.at(kCustomLineId).at("state").get<std::string>());
+    // Custom lines are visible on the check but never server-billable (Q2).
+    EXPECT_EQ(0, snapshot.at("client").at("derived").at("subtotal").at("amount").get<int32_t>());
+}
+
+TEST(OrderEntryStoreTest, SetQuantityRejectedOnSentLine)
+{
+    genius::stores::OrderEntryStore store;
+    const nlohmann::json line =
+        MakeValidLinePayload(kFirstLineId, kBurgerProductId, kBurgerUnitAmount, kBurgerQuantity);
+    ASSERT_TRUE(store.ApplyCommand(MakeAddLineCommand("add_item", line)));
+    ASSERT_TRUE(store.ApplyCommand(
+        {{"kind", "begin_send"}, {"line_ids", nlohmann::json::array({kFirstLineId})}}));
+    ASSERT_TRUE(store.ApplyCommand({{"kind", "end_send"},
+                                    {"line_ids", nlohmann::json::array({kFirstLineId})},
+                                    {"outcome", "sent"}}));
+
+    EXPECT_FALSE(store.ApplyCommand(
+        {{"kind", "set_quantity"}, {"line_id", kFirstLineId}, {"quantity", kSodaQuantity}}));
+    EXPECT_EQ(kBurgerQuantity,
+              store.Snapshot().at("lines").at(0).at("quantity").get<int64_t>());
+}
+
+TEST(OrderEntryStoreTest, SetQuantityRejectsOutOfRange)
+{
+    genius::stores::OrderEntryStore store;
+    const nlohmann::json line =
+        MakeValidLinePayload(kFirstLineId, kBurgerProductId, kBurgerUnitAmount, kBurgerQuantity);
+    ASSERT_TRUE(store.ApplyCommand(MakeAddLineCommand("add_item", line)));
+
+    EXPECT_FALSE(store.ApplyCommand(
+        {{"kind", "set_quantity"}, {"line_id", kFirstLineId}, {"quantity", kTooSmallQuantity}}));
+    EXPECT_FALSE(store.ApplyCommand(
+        {{"kind", "set_quantity"}, {"line_id", kFirstLineId}, {"quantity", kTooLargeQuantity}}));
+
+    // Both rejections left the line untouched.
+    EXPECT_EQ(kBurgerQuantity,
+              store.Snapshot().at("lines").at(0).at("quantity").get<int64_t>());
+}
+
+TEST(OrderEntryStoreTest, SetNoteEnforcesMaxLength)
+{
+    genius::stores::OrderEntryStore store;
+    const nlohmann::json line =
+        MakeValidLinePayload(kFirstLineId, kBurgerProductId, kBurgerUnitAmount, kBurgerQuantity);
+    ASSERT_TRUE(store.ApplyCommand(MakeAddLineCommand("add_item", line)));
+
+    const std::string overlongNote(kOverlongNoteLength, 'x');
+    EXPECT_FALSE(store.ApplyCommand(
+        {{"kind", "set_note"}, {"line_id", kFirstLineId}, {"note", overlongNote}}));
+
+    const std::string maxLengthNote(kMaxLengthNote, 'x');
+    EXPECT_TRUE(store.ApplyCommand(
+        {{"kind", "set_note"}, {"line_id", kFirstLineId}, {"note", maxLengthNote}}));
+    EXPECT_EQ(maxLengthNote,
+              store.Snapshot().at("client").at("lines").at(kFirstLineId).at("note").get<std::string>());
+}
+
+TEST(OrderEntryStoreTest, SetNoteRejectedOnSentLine)
+{
+    genius::stores::OrderEntryStore store;
+    const nlohmann::json line =
+        MakeValidLinePayload(kFirstLineId, kBurgerProductId, kBurgerUnitAmount, kBurgerQuantity);
+    ASSERT_TRUE(store.ApplyCommand(MakeAddLineCommand("add_item", line)));
+    ASSERT_TRUE(store.ApplyCommand(
+        {{"kind", "begin_send"}, {"line_ids", nlohmann::json::array({kFirstLineId})}}));
+    ASSERT_TRUE(store.ApplyCommand({{"kind", "end_send"},
+                                    {"line_ids", nlohmann::json::array({kFirstLineId})},
+                                    {"outcome", "sent"}}));
+
+    const std::string note(kMaxLengthNote, 'x');
+    EXPECT_FALSE(store.ApplyCommand({{"kind", "set_note"}, {"line_id", kFirstLineId}, {"note", note}}));
+}
+
+TEST(OrderEntryStoreTest, SetModifiersRecomputesLineTotal)
+{
+    genius::stores::OrderEntryStore store;
+    nlohmann::json line =
+        MakeValidLinePayload(kFirstLineId, kBurgerProductId, kBurgerUnitAmount, kBurgerQuantity);
+    line["modifiers"] = MakeModifierArray(kPickleDeltaAmount);
+    ASSERT_TRUE(store.ApplyCommand(MakeAddLineCommand("add_item", line)));
+    ASSERT_EQ(kBurgerLineTotalAmount,
+              store.Snapshot().at("client").at("derived").at("subtotal").at("amount").get<int32_t>());
+
+    EXPECT_TRUE(store.ApplyCommand({{"kind", "set_modifiers"},
+                                    {"line_id", kFirstLineId},
+                                    {"modifiers", MakeModifierArray(kDoublePickleDeltaAmount)}}));
+
+    const nlohmann::json snapshot = store.Snapshot();
+    EXPECT_EQ(kUpdatedBurgerLineTotalAmount,
+              snapshot.at("lines").at(0).at("line_total").at("amount").get<int32_t>());
+    EXPECT_EQ(kUpdatedBurgerLineTotalAmount,
+              snapshot.at("client").at("derived").at("subtotal").at("amount").get<int32_t>());
+}
+
+TEST(OrderEntryStoreTest, RemoveLineUnsentOnly)
+{
+    genius::stores::OrderEntryStore store;
+    const nlohmann::json first =
+        MakeValidLinePayload(kFirstLineId, kBurgerProductId, kBurgerUnitAmount, kBurgerQuantity);
+    const nlohmann::json second =
+        MakeValidLinePayload(kSecondLineId, kFriesProductId, kFriesUnitAmount, kBurgerQuantity);
+    ASSERT_TRUE(store.ApplyCommand(MakeAddLineCommand("add_item", first)));
+    ASSERT_TRUE(store.ApplyCommand(MakeAddLineCommand("add_item", second)));
+
+    // Unsent lines remove cleanly: typed line and client entry both drop.
+    EXPECT_TRUE(store.ApplyCommand({{"kind", "remove_line"}, {"line_id", kFirstLineId}}));
+    const nlohmann::json snapshot = store.Snapshot();
+    EXPECT_EQ(1u, snapshot.at("lines").size());
+    EXPECT_FALSE(snapshot.at("client").at("lines").contains(kFirstLineId));
+
+    // Sent lines no longer remove.
+    ASSERT_TRUE(store.ApplyCommand(
+        {{"kind", "begin_send"}, {"line_ids", nlohmann::json::array({kSecondLineId})}}));
+    ASSERT_TRUE(store.ApplyCommand({{"kind", "end_send"},
+                                    {"line_ids", nlohmann::json::array({kSecondLineId})},
+                                    {"outcome", "sent"}}));
+    EXPECT_FALSE(store.ApplyCommand({{"kind", "remove_line"}, {"line_id", kSecondLineId}}));
+}
+
+TEST(OrderEntryStoreTest, VoidAndCompLineMarkClientStateAndDropFromDerived)
+{
+    genius::stores::OrderEntryStore store;
+    const nlohmann::json first =
+        MakeValidLinePayload(kFirstLineId, kBurgerProductId, kBurgerUnitAmount, kBurgerQuantity);
+    const nlohmann::json second =
+        MakeValidLinePayload(kSecondLineId, kFriesProductId, kFriesUnitAmount, kBurgerQuantity);
+    ASSERT_TRUE(store.ApplyCommand(MakeAddLineCommand("add_item", first)));
+    ASSERT_TRUE(store.ApplyCommand(MakeAddLineCommand("add_item", second)));
+
+    EXPECT_TRUE(store.ApplyCommand({{"kind", "void_line"}, {"line_id", kFirstLineId}}));
+    EXPECT_TRUE(store.ApplyCommand({{"kind", "comp_line"}, {"line_id", kSecondLineId}}));
+
+    const nlohmann::json snapshot = store.Snapshot();
+    const nlohmann::json& clientLines = snapshot.at("client").at("lines");
+    EXPECT_TRUE(clientLines.at(kFirstLineId).at("voided").get<bool>());
+    EXPECT_TRUE(clientLines.at(kSecondLineId).at("comped").get<bool>());
+    // void_line / comp_line leave the send state untouched.
+    EXPECT_EQ(kLineStateUnsent, clientLines.at(kFirstLineId).at("state").get<std::string>());
+    // Both lines left the billable set: the derived subtotal is now zero.
+    EXPECT_EQ(0, snapshot.at("client").at("derived").at("subtotal").at("amount").get<int32_t>());
+}
+
+TEST(OrderEntryStoreTest, BeginSendMarksSendingAndRejectsNonUnsentIds)
+{
+    genius::stores::OrderEntryStore store;
+    const nlohmann::json first =
+        MakeValidLinePayload(kFirstLineId, kBurgerProductId, kBurgerUnitAmount, kBurgerQuantity);
+    const nlohmann::json second =
+        MakeValidLinePayload(kSecondLineId, kFriesProductId, kFriesUnitAmount, kBurgerQuantity);
+    ASSERT_TRUE(store.ApplyCommand(MakeAddLineCommand("add_item", first)));
+    ASSERT_TRUE(store.ApplyCommand(MakeAddLineCommand("add_item", second)));
+
+    EXPECT_TRUE(store.ApplyCommand(
+        {{"kind", "begin_send"}, {"line_ids", nlohmann::json::array({kFirstLineId})}}));
+    EXPECT_EQ(kLineStateSending,
+              store.Snapshot().at("client").at("lines").at(kFirstLineId).at("state").get<std::string>());
+
+    // An already-sending id rejects the batch...
+    EXPECT_FALSE(store.ApplyCommand(
+        {{"kind", "begin_send"}, {"line_ids", nlohmann::json::array({kFirstLineId})}}));
+    // ...and a mixed batch rejects WHOLE, leaving the unsent member untouched.
+    EXPECT_FALSE(store.ApplyCommand({{"kind", "begin_send"},
+                                     {"line_ids", nlohmann::json::array({kFirstLineId, kSecondLineId})}}));
+    EXPECT_EQ(kLineStateUnsent,
+              store.Snapshot().at("client").at("lines").at(kSecondLineId).at("state").get<std::string>());
+
+    // Voided lines left service and never fire.
+    ASSERT_TRUE(store.ApplyCommand({{"kind", "void_line"}, {"line_id", kSecondLineId}}));
+    EXPECT_FALSE(store.ApplyCommand(
+        {{"kind", "begin_send"}, {"line_ids", nlohmann::json::array({kSecondLineId})}}));
+}
+
+TEST(OrderEntryStoreTest, EndSendFailedRevertsAndSetsSendError)
+{
+    genius::stores::OrderEntryStore store;
+    const nlohmann::json line =
+        MakeValidLinePayload(kFirstLineId, kBurgerProductId, kBurgerUnitAmount, kBurgerQuantity);
+    ASSERT_TRUE(store.ApplyCommand(MakeAddLineCommand("add_item", line)));
+    ASSERT_TRUE(store.ApplyCommand(
+        {{"kind", "begin_send"}, {"line_ids", nlohmann::json::array({kFirstLineId})}}));
+    ASSERT_TRUE(store.ApplyCommand({{"kind", "end_send"},
+                                    {"outcome", "failed"},
+                                    {"line_ids", nlohmann::json::array({kFirstLineId})},
+                                    {"error", kSendErrorTotalMismatch}}));
+
+    const nlohmann::json snapshot = store.Snapshot();
+    const nlohmann::json& clientLine = snapshot.at("client").at("lines").at(kFirstLineId);
+    EXPECT_EQ(kLineStateUnsent, clientLine.at("state").get<std::string>());
+    EXPECT_TRUE(clientLine.at("mark").is_null());
+    EXPECT_EQ(kSendErrorTotalMismatch,
+              snapshot.at("client").at("send_error").get<std::string>());
+}
+
+TEST(OrderEntryStoreTest, EndSendSentClearsSendError)
+{
+    genius::stores::OrderEntryStore store;
+    const nlohmann::json line =
+        MakeValidLinePayload(kFirstLineId, kBurgerProductId, kBurgerUnitAmount, kBurgerQuantity);
+    ASSERT_TRUE(store.ApplyCommand(MakeAddLineCommand("add_item", line)));
+    ASSERT_TRUE(store.ApplyCommand(
+        {{"kind", "begin_send"}, {"line_ids", nlohmann::json::array({kFirstLineId})}}));
+    ASSERT_TRUE(store.ApplyCommand({{"kind", "end_send"},
+                                    {"outcome", "failed"},
+                                    {"line_ids", nlohmann::json::array({kFirstLineId})},
+                                    {"error", kSendErrorTotalMismatch}}));
+    ASSERT_EQ(kSendErrorTotalMismatch,
+              store.Snapshot().at("client").at("send_error").get<std::string>());
+
+    // Manual re-Send after the failure (D-07), then resolve with a mark.
+    ASSERT_TRUE(store.ApplyCommand(
+        {{"kind", "begin_send"}, {"line_ids", nlohmann::json::array({kFirstLineId})}}));
+    EXPECT_TRUE(store.ApplyCommand({{"kind", "end_send"},
+                                    {"outcome", "sent"},
+                                    {"mark", kMarkHold},
+                                    {"line_ids", nlohmann::json::array({kFirstLineId})}}));
+
+    const nlohmann::json snapshot = store.Snapshot();
+    const nlohmann::json& clientLine = snapshot.at("client").at("lines").at(kFirstLineId);
+    EXPECT_EQ(kLineStateSent, clientLine.at("state").get<std::string>());
+    EXPECT_EQ(kMarkHold, clientLine.at("mark").get<std::string>());
+    EXPECT_TRUE(snapshot.at("client").at("send_error").is_null());
+}
+
+TEST(OrderEntryStoreTest, ClearSendErrorNullsBanner)
+{
+    genius::stores::OrderEntryStore store;
+    const nlohmann::json line =
+        MakeValidLinePayload(kFirstLineId, kBurgerProductId, kBurgerUnitAmount, kBurgerQuantity);
+    ASSERT_TRUE(store.ApplyCommand(MakeAddLineCommand("add_item", line)));
+    ASSERT_TRUE(store.ApplyCommand(
+        {{"kind", "begin_send"}, {"line_ids", nlohmann::json::array({kFirstLineId})}}));
+    ASSERT_TRUE(store.ApplyCommand({{"kind", "end_send"},
+                                    {"outcome", "failed"},
+                                    {"line_ids", nlohmann::json::array({kFirstLineId})},
+                                    {"error", kSendErrorTotalMismatch}}));
+
+    EXPECT_TRUE(store.ApplyCommand({{"kind", "clear_send_error"}}));
+    EXPECT_TRUE(store.Snapshot().at("client").at("send_error").is_null());
+}
+
+TEST(OrderEntryStoreTest, SetGuestCountRejectsOutOfRange)
+{
+    genius::stores::OrderEntryStore store;
+
+    EXPECT_FALSE(store.ApplyCommand(
+        {{"kind", "set_guest_count"}, {"guests", kTooSmallGuestCount}}));
+    EXPECT_FALSE(store.ApplyCommand(
+        {{"kind", "set_guest_count"}, {"guests", kTooLargeGuestCount}}));
+    // The fresh-check default guest count survives both rejections.
+    EXPECT_EQ(1, store.Snapshot().at("client").at("guest_count").get<int64_t>());
+
+    EXPECT_TRUE(store.ApplyCommand({{"kind", "set_guest_count"}, {"guests", kValidGuestCount}}));
+    EXPECT_EQ(kValidGuestCount,
+              store.Snapshot().at("client").at("guest_count").get<int64_t>());
+}
+
+TEST(OrderEntryStoreTest, SetTaxRateComputesTaxOnBillableSubtotal)
+{
+    genius::stores::OrderEntryStore store;
+    nlohmann::json line =
+        MakeValidLinePayload(kFirstLineId, kBurgerProductId, kBurgerUnitAmount, kBurgerQuantity);
+    line["modifiers"] = MakeModifierArray(kPickleDeltaAmount);
+    ASSERT_TRUE(store.ApplyCommand(MakeAddLineCommand("add_item", line)));
+
+    EXPECT_TRUE(store.ApplyCommand({{"kind", "set_tax_rate"}, {"bps", kCaliforniaTaxRateBps}}));
+
+    const nlohmann::json snapshot = store.Snapshot();
+    const nlohmann::json& derived = snapshot.at("client").at("derived");
+    // (2600 x 925 + 5000) / 10000 == 241 -- integer math, round half up (Q1).
+    EXPECT_EQ(kExpectedTaxAmount, derived.at("tax").at("amount").get<int32_t>());
+    EXPECT_EQ(kExpectedTotalWithTax, derived.at("total").at("amount").get<int32_t>());
+    EXPECT_EQ(kExpectedTotalWithTax, derived.at("balance_due").at("amount").get<int32_t>());
+    EXPECT_EQ(kCaliforniaTaxRateBps,
+              snapshot.at("client").at("tax_rate_bps").get<int64_t>());
+}
+
+TEST(OrderEntryStoreTest, SetTaxRateRejectsOutOfRange)
+{
+    genius::stores::OrderEntryStore store;
+
+    EXPECT_FALSE(store.ApplyCommand({{"kind", "set_tax_rate"}, {"bps", kNegativeTaxRateBps}}));
+    EXPECT_FALSE(store.ApplyCommand({{"kind", "set_tax_rate"}, {"bps", kTooLargeTaxRateBps}}));
+    EXPECT_FALSE(store.ApplyCommand({{"kind", "set_tax_rate"}, {"bps", kFractionalTaxRateBps}}));
+
+    // The fresh-check default rate (0, tax 0 until the API provides one) survives.
+    const nlohmann::json snapshot = store.Snapshot();
+    EXPECT_EQ(0, snapshot.at("client").at("tax_rate_bps").get<int64_t>());
+    EXPECT_EQ(0, snapshot.at("client").at("derived").at("tax").at("amount").get<int32_t>());
+}
+
+TEST(OrderEntryStoreTest, DerivedTotalsMirrorBackendFormula)
+{
+    genius::stores::OrderEntryStore store;
+    const nlohmann::json burger =
+        MakeValidLinePayload(kFirstLineId, kBurgerProductId, kBurgerUnitAmount, kBurgerQuantity);
+    const nlohmann::json fries =
+        MakeValidLinePayload(kSecondLineId, kFriesProductId, kFriesUnitAmount, kSingleQuantity);
+    nlohmann::json soda =
+        MakeValidLinePayload(kThirdLineId, kSodaProductId, kSodaUnitAmount, kSodaQuantity);
+    soda["modifiers"] = MakeModifierArray(kPickleDeltaAmount);
+    const nlohmann::json custom = MakeValidLinePayload(kCustomLineId, "", kCustomItemAmount, kBurgerQuantity);
+
+    ASSERT_TRUE(store.ApplyCommand(MakeAddLineCommand("add_item", burger)));
+    ASSERT_TRUE(store.ApplyCommand(MakeAddLineCommand("add_item", fries)));
+    ASSERT_TRUE(store.ApplyCommand(MakeAddLineCommand("add_item", soda)));
+    ASSERT_TRUE(store.ApplyCommand(MakeAddLineCommand("add_custom_item", custom)));
+
+    // Billable subtotal: 2500 + 800 + 1650 -- the custom line never counts.
+    const nlohmann::json snapshot = store.Snapshot();
+    const nlohmann::json& derived = snapshot.at("client").at("derived");
+    EXPECT_EQ(kDerivedFormulaSubtotal, derived.at("subtotal").at("amount").get<int32_t>());
+    EXPECT_EQ(0, derived.at("tax").at("amount").get<int32_t>());
+    EXPECT_EQ(0, derived.at("discount").at("amount").get<int32_t>());
+    EXPECT_EQ(0, derived.at("service").at("amount").get<int32_t>());
+    EXPECT_EQ(kDerivedFormulaSubtotal, derived.at("total").at("amount").get<int32_t>());
+    EXPECT_EQ(kDerivedFormulaSubtotal, derived.at("balance_due").at("amount").get<int32_t>());
+}
+
+TEST(OrderEntryStoreTest, SnapshotIsAppendOnly)
+{
+    genius::stores::OrderEntryStore store;
+    store.SetState(MakeTypedOrder(kSnapshotOrderId));
+    const nlohmann::json line =
+        MakeValidLinePayload(kFirstLineId, kBurgerProductId, kBurgerUnitAmount, kBurgerQuantity);
+    ASSERT_TRUE(store.ApplyCommand(MakeAddLineCommand("add_item", line)));
+
+    // Bare Order keys still resolve BESIDE the reserved client key (Pitfall 5).
+    const nlohmann::json snapshot = store.Snapshot();
+    ASSERT_TRUE(snapshot.is_object());
+    EXPECT_TRUE(snapshot.contains("id"));
+    EXPECT_EQ(kSnapshotOrderId, snapshot.at("id").get<std::string>());
+    EXPECT_TRUE(snapshot.contains("status"));
+    EXPECT_TRUE(snapshot.contains("total"));
+    ASSERT_TRUE(snapshot.contains("client"));
+    ASSERT_TRUE(snapshot.at("client").contains("derived"));
+
+    // A replace round-trip of a snapshot-shaped payload (which now carries
+    // the reserved client key) still parses and commits: the model codec
+    // ignores unknown keys.
+    nlohmann::json payload = MakeValidOrderPayload(kReplacedOrderId);
+    payload["client"] = snapshot.at("client");
+    const nlohmann::json replaceCommand = {{"kind", "replace"}, {"state", payload}};
+    EXPECT_TRUE(store.ApplyCommand(replaceCommand));
+    EXPECT_EQ(kReplacedOrderId, store.Snapshot().at("id").get<std::string>());
+    EXPECT_TRUE(store.Snapshot().contains("client"));
 }
 
 }  // namespace
