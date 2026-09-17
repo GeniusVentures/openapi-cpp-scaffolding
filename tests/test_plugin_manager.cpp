@@ -171,6 +171,25 @@ TEST_F(PluginManagerTest, RegisterHandler_SamePathSamePluginOverwrites)
     EXPECT_EQ(pm.Route(RequestContext{}, "POST", "/api/overwrite/data", "{}"), "second");
 }
 
+TEST_F(PluginManagerTest, RegisterHandler_ReregisteredPatternHandlerWinsViaPatternRoute)
+{
+    auto plugin = MakeMock("ReregisterPlugin");
+    pm.RegisterPlugin(plugin, 100, {"/api/reregister"});
+
+    HandlerFn stale = [](const RequestContext& /*ctx*/, const std::string&, const std::string&, const std::string&) -> std::string { return "stale"; };
+    HandlerFn fresh = [](const RequestContext& /*ctx*/, const std::string&, const std::string&, const std::string&) -> std::string { return "fresh"; };
+
+    pm.RegisterHandler("GET", "/api/reregister/items/{id}", "get_item", stale, "ReregisterPlugin", kStubHandlerPriority);
+    pm.RegisterHandler("GET", "/api/reregister/items/{id}", "get_item", fresh, "ReregisterPlugin", kStubHandlerPriority);
+
+    // A concrete id path dispatches through the {param} pattern fallback, so
+    // the re-registered handler must win there too — not only on the exact
+    // map (regression: the pattern list kept the stale first entry, and
+    // first-wins dispatch served the old handler forever).
+    EXPECT_EQ(pm.GetHandlerCount(), 1);
+    EXPECT_EQ(pm.Route(RequestContext{}, "GET", "/api/reregister/items/item-42", "{}"), "fresh");
+}
+
 TEST_F(PluginManagerTest, RegisterHandler_SamePathDifferentPriority)
 {
     auto plugin = MakeMock("PriorityPlugin");
