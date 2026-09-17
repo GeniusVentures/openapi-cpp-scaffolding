@@ -89,7 +89,10 @@ static const std::string kLocationsPath = "/api/v1/locations";
  * per test, a service locator carrying PluginManager + StorageEngine, and
  * the generated LocationsPlugin registered and initialized — there is NO
  * derived/override class for locations; LocationsPlugin IS the served
- * handler (stubs registered at the generated plugin's priority 100).
+ * handler (plugin registered at its priority, 100 —
+ * kDefaultPluginPriority; its handlers registered at
+ * kStubHandlerPriority, 0 — the distinct plugin/handler priority spaces
+ * that caused the c8dd45e routing bug).
  */
 class LocationsSetupTest : public ::testing::Test
 {
