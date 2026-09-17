@@ -47,11 +47,6 @@ void PluginManager::RegisterPlugin(std::shared_ptr<IPlugin>       plugin,
 
     m_plugins[pluginName] = entry;
 
-    for (const auto& path : urlPaths)
-    {
-        m_routes[path] = pluginName;
-    }
-
     m_initQueue.insert({priority, pluginName});
     m_registrationOrder.push_back(pluginName);
 
@@ -225,7 +220,6 @@ void PluginManager::ShutdownAll()
     }
 
     m_plugins.clear();
-    m_routes.clear();
     m_handlers.clear();
     m_patternHandlers.clear();
     m_initQueue.clear();

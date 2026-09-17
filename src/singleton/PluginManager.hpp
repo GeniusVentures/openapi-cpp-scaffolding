@@ -58,7 +58,6 @@ private:
     };
 
     std::unordered_map<std::string, PluginEntry>          m_plugins;
-    std::unordered_map<std::string, std::string>          m_routes;
     /// Key: "METHOD /path" for exact match lookup
     /// Value: ordered map of handlers by priority (highest wins)
     std::unordered_map<std::string, std::map<unsigned int, HandlerEntry>> m_handlers;
