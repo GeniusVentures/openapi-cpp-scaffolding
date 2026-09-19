@@ -141,6 +141,14 @@ constexpr std::size_t kMaxLengthNote = 140;
 /// Kitchen-note length one past the cap.
 constexpr std::size_t kOverlongNoteLength = 141;
 
+/// One four-byte astral emoji (U+1F600) — one CODE POINT, the unit the
+/// note cap counts (Utf8CodePointCount), four UTF-8 bytes.
+constexpr const char* kAstralEmoji = "\xF0\x9F\x98\x80";
+
+/// Emoji count whose UTF-8 byte length (4x) far exceeds the cap while
+/// the code-point count stays inside it.
+constexpr std::size_t kEmojiNoteCount = 71;
+
 /// Out-of-range guest counts flanking the store's [1, 20] bound.
 constexpr int64_t kTooSmallGuestCount = 0;
 constexpr int64_t kTooLargeGuestCount = 21;
@@ -649,6 +657,28 @@ TEST(OrderEntryStoreTest, SetNoteEnforcesMaxLength)
         {{"kind", "set_note"}, {"line_id", kFirstLineId}, {"note", maxLengthNote}}));
     EXPECT_EQ(maxLengthNote,
               store.Snapshot().at("client").at("lines").at(kFirstLineId).at("note").get<std::string>());
+
+    // Code points, not bytes: an astral emoji is ONE code point (four
+    // UTF-8 bytes) — 71 fit the 140-character cap even though the old
+    // byte count said 284 (codex PR review, P2; the Dart twin counts
+    // runes — 142 UTF-16 units — for the same acceptance).
+    std::string emojiNote;
+    for (std::size_t i = 0; i < kEmojiNoteCount; ++i)
+    {
+        emojiNote += kAstralEmoji;
+    }
+    EXPECT_TRUE(store.ApplyCommand(
+        {{"kind", "set_note"}, {"line_id", kFirstLineId}, {"note", emojiNote}}));
+    EXPECT_EQ(emojiNote,
+              store.Snapshot().at("client").at("lines").at(kFirstLineId).at("note").get<std::string>());
+
+    std::string overlongEmojiNote;
+    for (std::size_t i = 0; i < kOverlongNoteLength; ++i)
+    {
+        overlongEmojiNote += kAstralEmoji;
+    }
+    EXPECT_FALSE(store.ApplyCommand(
+        {{"kind", "set_note"}, {"line_id", kFirstLineId}, {"note", overlongEmojiNote}}));
 }
 
 TEST(OrderEntryStoreTest, SetNoteRejectedOnSentLine)
