@@ -200,6 +200,62 @@ target_compile_definitions(test_locations_setup PRIVATE
 )
 add_test(NAME test_locations_setup COMMAND test_locations_setup)
 
+# Table handler behavior tests (Phase 3.1 plan 03.1-04, TBL-03..06)
+# Same discipline as test_pos_handlers: handler sources + generated models
+# compile directly into the executable (NEVER links the plugin dylibs; the
+# generated plugin base classes are header-inline; NEVER includes the
+# *_plugin_impl.cpp files). Shared models (Money/Pagination/Helpers) compile
+# exactly once — restaurant's copies. The FULL test_pos_handlers model list
+# is cloned because the handler TUs reference the menu models, and
+# nested-model serializer calls are link-required even for absent keys
+# (03-03 lesson), PLUS the table read/write models Table/TablePage. The
+# SETUP_DEV_JSON compile definition couples the suite to the committed
+# parent-repo dev setup JSON (test_locations_setup precedent).
+add_executable(test_table_handlers
+    test_table_handlers.cpp
+    "${CMAKE_CURRENT_SOURCE_DIR}/../src/restaurant/restaurant_pos_handlers.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/../src/commerce/commerce_pos_handlers.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/../src/restaurant/generated/model/MenuCategory.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/../src/restaurant/generated/model/MenuCategoryCreate.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/../src/restaurant/generated/model/MenuItem.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/../src/restaurant/generated/model/MenuItemCreate.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/../src/restaurant/generated/model/ModifierGroup.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/../src/restaurant/generated/model/ModifierGroupCreate.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/../src/restaurant/generated/model/Modifier.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/../src/restaurant/generated/model/KitchenTicket.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/../src/restaurant/generated/model/KitchenTicketCreate.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/../src/restaurant/generated/model/SeatTable_request.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/../src/restaurant/generated/model/Table.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/../src/restaurant/generated/model/TableCreate.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/../src/restaurant/generated/model/TableUpdate.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/../src/restaurant/generated/model/TablePage.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/../src/restaurant/generated/model/Money.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/../src/restaurant/generated/model/Pagination.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/../src/restaurant/generated/model/Helpers.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/../src/commerce/generated/model/Order.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/../src/commerce/generated/model/OrderCreate.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/../src/commerce/generated/model/OrderLine.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/../src/commerce/generated/model/OrderDiscount.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/../src/commerce/generated/model/ServiceCharge.cpp"
+)
+target_link_libraries(test_table_handlers PRIVATE
+    component_factory
+    storage
+    GTest::gtest_main
+    Boost::headers
+    nlohmann_json::nlohmann_json
+    spdlog::spdlog
+)
+target_include_directories(test_table_handlers PRIVATE
+    "${CMAKE_CURRENT_SOURCE_DIR}/../src"
+    "${CMAKE_CURRENT_SOURCE_DIR}/../src/restaurant/generated"
+    "${CMAKE_CURRENT_SOURCE_DIR}/../src/commerce/generated"
+)
+target_compile_definitions(test_table_handlers PRIVATE
+    SETUP_DEV_JSON="${CMAKE_CURRENT_SOURCE_DIR}/../../../setup/environments/dev.json"
+)
+add_test(NAME test_table_handlers COMMAND test_table_handlers)
+
 # Tunnel setup wizard handler integration tests
 add_executable(test_tunnel_setup
     test_tunnel_setup.cpp
