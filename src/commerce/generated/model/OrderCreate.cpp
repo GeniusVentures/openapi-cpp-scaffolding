@@ -24,6 +24,8 @@ OrderCreate::OrderCreate()
     m_Customer_id = "";
     m_Customer_idIsSet = false;
     m_Status = "";
+    m_Table_id = "";
+    m_Table_idIsSet = false;
     m_Channel = "";
     m_Fulfillment_type = "";
     m_SubtotalIsSet = false;
@@ -55,7 +57,7 @@ bool OrderCreate::validate(std::stringstream& msg, const std::string& pathPrefix
     bool success = true;
     const std::string _pathPrefix = pathPrefix.empty() ? "OrderCreate" : pathPrefix;
 
-                                        
+                                            
     if (!m_Total.validate(msg, _pathPrefix + ".total")) {
         msg << _pathPrefix << ": Total is invalid;";
         success = false;
@@ -95,6 +97,9 @@ bool OrderCreate::operator==(const OrderCreate& rhs) const
     (getStatus() == rhs.getStatus())
      &&
     
+    
+    ((!tableIdIsSet() && !rhs.tableIdIsSet()) || (tableIdIsSet() && rhs.tableIdIsSet() && getTableId() == rhs.getTableId())) &&
+    
     (getChannel() == rhs.getChannel())
      &&
     
@@ -133,6 +138,8 @@ void to_json(nlohmann::json& j, const OrderCreate& o)
     if(o.customerIdIsSet())
         j["customer_id"] = o.m_Customer_id;
     j["status"] = o.m_Status;
+    if(o.tableIdIsSet())
+        j["table_id"] = o.m_Table_id;
     j["channel"] = o.m_Channel;
     j["fulfillment_type"] = o.m_Fulfillment_type;
     if(o.subtotalIsSet())
@@ -157,6 +164,11 @@ void from_json(const nlohmann::json& j, OrderCreate& o)
         o.m_Customer_idIsSet = true;
     } 
     j.at("status").get_to(o.m_Status);
+    if(j.find("table_id") != j.end())
+    {
+        j.at("table_id").get_to(o.m_Table_id);
+        o.m_Table_idIsSet = true;
+    } 
     j.at("channel").get_to(o.m_Channel);
     j.at("fulfillment_type").get_to(o.m_Fulfillment_type);
     if(j.find("subtotal") != j.end())
@@ -212,6 +224,23 @@ std::string OrderCreate::getStatus() const
 void OrderCreate::setStatus(std::string const& value)
 {
     m_Status = value;
+}
+std::string OrderCreate::getTableId() const
+{
+    return m_Table_id;
+}
+void OrderCreate::setTableId(std::string const& value)
+{
+    m_Table_id = value;
+    m_Table_idIsSet = true;
+}
+bool OrderCreate::tableIdIsSet() const
+{
+    return m_Table_idIsSet;
+}
+void OrderCreate::unsetTable_id()
+{
+    m_Table_idIsSet = false;
 }
 std::string OrderCreate::getChannel() const
 {
