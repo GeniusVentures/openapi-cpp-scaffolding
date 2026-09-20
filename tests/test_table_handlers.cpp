@@ -24,7 +24,9 @@
  * proves the null-tolerance contract: an explicit JSON null asset_id or
  * table_id is accepted as absent, per the spec language this phase published.
  * Group 9 (WR-02) proves the write-value gate: out-of-enum status, blank
- * name, and sub-1 capacity reject with nothing persisted.
+ * name, and sub-1 capacity reject with nothing persisted. Group 10 (WR-03)
+ * proves the empty-string table_id erasure: the stored order never carries
+ * table_id "".
  *
  * Route note (deferred-items.md): the orders create override lives at
  * /api/v1/orders (commerce spec paths carry no /commerce segment);
@@ -1370,4 +1372,31 @@ TEST_F(TableHandlersTest, UpdateRejectsValuesOutsideContract)
     ASSERT_TRUE(ReadStoredTable(id, after));
     EXPECT_EQ(after.dump(), before.dump())
         << "Rejected patches must leave storage unchanged";
+}
+
+// ============================================================================
+// GROUP 10 — WR-03 empty-string table_id erasure
+// ============================================================================
+
+///
+/// An order carrying table_id as an empty string is accepted (treated as
+/// absent for linkage) and the STORED document carries no table_id key — the
+/// field's contract is uuid-or-null, never "" (WR-03).
+///
+TEST_F(TableHandlersTest, OrderEmptyStringTableIdErasedFromStoredDoc)
+{
+    SeedOrderMenuItem();
+
+    json body = MakeOrderBody(kMissingTableId);
+    body["table_id"] = "";
+
+    const std::string orderId = ParseId(PostJson(kOrdersPath, body.dump()));
+
+    auto keyResult = KeyBuilder::Build("commerce", "orders", orderId);
+    ASSERT_TRUE(keyResult.has_value());
+    std::string storedOrder;
+    ASSERT_TRUE(m_engine->Get(keyResult.value(), storedOrder));
+    const json orderDoc = json::parse(storedOrder);
+    EXPECT_FALSE(orderDoc.contains("table_id"))
+        << "An empty-string table_id must be erased before persisting";
 }
