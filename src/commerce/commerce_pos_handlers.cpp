@@ -19,6 +19,11 @@
  * The override is registered at that exact route key so the priority-200
  * handler supersedes the priority-0 stub per PluginManager semantics
  * (overrides are keyed by "METHOD /path").
+ *
+ * Phase 3.1 adds the TBL-02 table linkage inside orders_create: a set
+ * table_id is reference-validated against restaurant/tables (same tenant)
+ * before the order persists, and drives the linked table's open_order_ids/
+ * pos_status transition after it — server-side events only.
  */
 
 #include "commerce/commerce_pos_handlers.hpp"
@@ -31,6 +36,7 @@
 #include "commerce/generated/model/OrderCreate.h"
 #include "nlohmann/json.hpp"
 #include <spdlog/spdlog.h>
+#include <algorithm>
 #include <chrono>
 #include <cmath>
 #include <cstdint>
@@ -383,6 +389,18 @@ static std::string orders_list(const RequestContext& ctx, const std::string& /*m
  * server-recomputed money plus id/tenant/organization/timestamps stamped from
  * the request context (D-03 body-stamp tenancy, overwriting client values).
  *
+ * TBL-02 table linkage (Phase 3.1): when the body's table_id is set and
+ * non-empty, the referenced restaurant/tables row is point-Get and
+ * tenant-checked BEFORE anything is computed or persisted — a dangling or
+ * other-tenant table_id rejects with INVALID_REFERENCE and nothing persists
+ * (the D-02 KitchenTicket.order_id precedent extended to Order.table_id).
+ * After the order Put succeeds, the linked table transitions server-side:
+ * the order id is appended to open_order_ids (deduped) and pos_status
+ * becomes "order_placed" unconditionally — a new check on a served table
+ * genuinely returns it to order_placed. An explicit JSON null table_id
+ * throws from OrderCreate::from_json into the shared catch (INVALID_REQUEST,
+ * WR-03 accepted posture); an empty string parses and is treated as absent.
+ *
  * @param      ctx   Request context (auth, tenant, organization)
  * @param      body  Raw JSON request body (OrderCreate)
  *
@@ -399,6 +417,14 @@ static std::string orders_create(const RequestContext& ctx, const std::string& /
     json requestData;
     org::openapitools::server::model::OrderCreate dto;
     int64_t subtotal = 0;
+
+    // TBL-02 table-linkage locals — captured during the pre-persist reference
+    // validation inside the try, consumed by the post-persist transition. An
+    // order whose table_id is unset leaves tableLinked false and this handler
+    // never touches the restaurant/tables prefix (tableless flows unchanged).
+    json linkedTableDoc;
+    std::string linkedTableKey;
+    bool tableLinked = false;
     try
     {
         // Parse + contract-validate: model from_json throws out_of_range
@@ -418,6 +444,38 @@ static std::string orders_create(const RequestContext& ctx, const std::string& /
         if (!dto.linesIsSet() || dto.getLines().empty())
         {
             return R"({"error":{"code":"INVALID_REQUEST","message":"Order must contain at least one line"}})";
+        }
+
+        // TBL-02: pre-persist table reference validation — the table must
+        // exist and belong to the caller's tenant before anything is computed
+        // or persisted. A null table_id never reaches this guard (from_json
+        // throws type_error into the shared catch); an empty string is absent.
+        if (dto.tableIdIsSet() && !dto.getTableId().empty())
+        {
+            auto tableKeyResult = KeyBuilder::Build("restaurant", "tables", dto.getTableId());
+            if (!tableKeyResult.has_value())
+            {
+                return R"({"error":{"code":"INVALID_KEY","message":"Failed to build table key"}})";
+            }
+            std::string tableDoc;
+            if (!s_storage->Get(tableKeyResult.value(), tableDoc))
+            {
+                return R"({"error":{"code":"INVALID_REFERENCE","message":"Unknown table_id reference"}})";
+            }
+
+            // Corrupt stored rows surface through the shared json-exception
+            // discipline below (INVALID_REQUEST)
+            linkedTableDoc = json::parse(tableDoc);
+
+            // D-02 tenant scoping — the referenced table must belong to the
+            // caller's tenant (legacy rows without tenant_id count as
+            // "default")
+            if (linkedTableDoc.value("tenant_id", "default") != ctx.tenantId)
+            {
+                return R"({"error":{"code":"INVALID_REFERENCE","message":"table_id belongs to another tenant"}})";
+            }
+            linkedTableKey = tableKeyResult.value();
+            tableLinked = true;
         }
 
         const auto& lines = dto.getLines();
@@ -628,6 +686,35 @@ static std::string orders_create(const RequestContext& ctx, const std::string& /
     }
 
     SPDLOG_INFO("Order created: {}", id);
+
+    // TBL-02 post-persist transition: append the order id to the linked
+    // table's open_order_ids (deduped — initialize the array when the doc
+    // lacks it or carries a corrupt non-array value) and set pos_status to
+    // "order_placed" unconditionally — a table with newly fired items IS
+    // order_placed, even one previously order_served. Not atomic with the
+    // order Put (T-03.1-07 accepted): a failure here surfaces STORAGE_ERROR
+    // and logs both ids as the reconciliation trail.
+    if (tableLinked)
+    {
+        if (!linkedTableDoc.contains("open_order_ids") ||
+            !linkedTableDoc["open_order_ids"].is_array())
+        {
+            linkedTableDoc["open_order_ids"] = json::array();
+        }
+        auto& openOrderIds = linkedTableDoc["open_order_ids"];
+        const json orderIdValue(id);
+        if (std::find(openOrderIds.begin(), openOrderIds.end(), orderIdValue) == openOrderIds.end())
+        {
+            openOrderIds.push_back(orderIdValue);
+        }
+        linkedTableDoc["pos_status"]  = "order_placed";
+        linkedTableDoc["updated_at"]  = GetCurrentTimestamp();
+        if (!s_storage->Put(linkedTableKey, linkedTableDoc.dump()))
+        {
+            SPDLOG_ERROR("Order {} persisted but the linked table {} transition failed", id, dto.getTableId());
+            return R"({"error":{"code":"STORAGE_ERROR","message":"Failed to update linked table"}})";
+        }
+    }
     return requestData.dump();
 }
 
