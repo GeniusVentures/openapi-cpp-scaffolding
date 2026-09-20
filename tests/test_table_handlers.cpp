@@ -35,6 +35,7 @@
 #include <chrono>
 #include <cstdint>
 #include <filesystem>
+#include <fstream>
 #include <memory>
 #include <set>
 #include <string>
@@ -83,6 +84,14 @@ static constexpr unsigned int kMaxTraversalPages = 6; ///< Safety bound for curs
 static constexpr size_t  kOpenOrderIdsFirstCount  = 1;  ///< open_order_ids after the first linked order
 static constexpr size_t  kOpenOrderIdsSecondCount = 2;  ///< open_order_ids after the second linked order
 static constexpr size_t  kStoredTableCountOne = 1;    ///< Table rows after one create
+static constexpr size_t  kExpectedDevTables  = 8;   ///< dev.json declares exactly 8 positioned tables (TBL-06)
+static constexpr int32_t kMinTableCapacity  = 1;   ///< Contract floor for every declared capacity
+static constexpr size_t  kExpectedSections  = 2;   ///< dev.json declares exactly Main + Patio
+static constexpr double  kPositionMin       = 0.0; ///< Normalized floor-plan lower bound
+static constexpr double  kPositionMax       = 1.0; ///< Normalized floor-plan upper bound
+static constexpr unsigned long long kTablesListLimit = 1000; ///< The applier's match-GET page size (K_TABLES_LIST_LIMIT)
+static constexpr size_t  kZeroCreatedRows    = 0;   ///< Apply creates nothing when every name already matches
+static constexpr size_t  kSecondApplyCreated = 0;   ///< Idempotent second apply creates nothing
 
 static const std::string kDefaultTenant   = "default";
 static const std::string kOtherTenant     = "other";
@@ -99,6 +108,8 @@ static const std::string kPosStatusSeated      = "seated";       ///< SEAT-event
 static const std::string kPosStatusOrderPlaced = "order_placed"; ///< ORDER-CREATE pos_status
 static const std::string kPatchedName     = "renamed-table";    ///< Contract-field PATCH name
 static const std::string kPatchedSection  = "Terrace";          ///< Contract-field PATCH section
+static const std::string kMainSection     = "Main";             ///< dev.json floor-plan section
+static const std::string kPatioSection    = "Patio";            ///< dev.json floor-plan section
 static const std::string kOldTimestamp    = "2020-01-01T00:00:00Z";  ///< Deterministic stored created_at for the updated_at-advance proof
 static const std::string kEmptyJsonObject = "{}";
 
@@ -376,6 +387,71 @@ protected:
     size_t CountStoredOrders()
     {
         return m_engine->Scan(KeyBuilder::MakePrefix("commerce", "orders")).size();
+    }
+
+    ///
+    /// Parse the committed dev setup JSON (the stream open is checked — and
+    /// reported — before anything about its contents is read; a gtest fatal
+    /// assert in a void helper only returns from the helper, so the caller
+    /// must check this result before using doc — test_locations precedent)
+    ///
+    [[nodiscard]] static bool LoadDevJson(json& doc)
+    {
+        std::ifstream stream(SETUP_DEV_JSON);
+        if (!stream.is_open())
+        {
+            ADD_FAILURE() << "Cannot open committed dev setup JSON: " << SETUP_DEV_JSON;
+            return false;
+        }
+        doc = json::parse(stream);
+        return true;
+    }
+
+    ///
+    /// True when the list envelope's data array carries a row with the name
+    ///
+    static bool PageContainsTableName(const json& page, const std::string& name)
+    {
+        for (const auto& row : page.at("data"))
+        {
+            if (row.contains("name") && row.at("name").get<std::string>() == name)
+            {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    ///
+    /// Replicate the applier's client-side algorithm (scripts/apply_setup.sh
+    /// ensure_table_row): per declared row, GET the list with the applier's
+    /// page size (?limit=1000), match .data[] on the declared name, POST the
+    /// declared row — re-serialized from dev.json, never re-typed — ONLY when
+    /// absent. Returns the number of rows POSTed.
+    ///
+    size_t ApplyDeclaredTables()
+    {
+        json doc;
+        if (!LoadDevJson(doc))
+        {
+            return kZeroCreatedRows;
+        }
+        size_t createdCount = 0;
+        for (const auto& declared : doc.at("tables"))
+        {
+            m_ctx.queryString = "limit=" + std::to_string(kTablesListLimit);
+            const json page = ListAsJson(kTablesPath);
+            const std::string name = declared.at("name").get<std::string>();
+            if (!PageContainsTableName(page, name))
+            {
+                const std::string response = Route("POST", kTablesPath, declared.dump());
+                EXPECT_EQ(response.find("\"error\""), std::string::npos)
+                    << "Expected table seed create success, got: " << response;
+                ++createdCount;
+            }
+        }
+        m_ctx.queryString = "";
+        return createdCount;
     }
 };
 
@@ -954,4 +1030,119 @@ TEST_F(TableHandlersTest, OrderOtherTenantTableIdRejected)
     ASSERT_TRUE(ReadStoredTable(kOtherTenantTableId, foreignAfter));
     EXPECT_EQ(foreignAfter.dump(), foreignBefore.dump())
         << "The referenced other-tenant table must be untouched";
+}
+
+// ============================================================================
+// GROUP 6 — dev.json seed expectations + applier idempotency (TBL-06)
+// ============================================================================
+
+///
+/// The committed dev setup JSON declares exactly 8 tables, every one
+/// available with capacity >= 1, unique names, and sections exactly
+/// {Main, Patio} (TBL-06 seed contract).
+///
+TEST_F(TableHandlersTest, DevJsonTablesMatchContract)
+{
+    json doc;
+    if (!LoadDevJson(doc))
+    {
+        return;
+    }
+
+    ASSERT_TRUE(doc.at("tables").is_array());
+    const json& tables = doc.at("tables");
+    ASSERT_EQ(tables.size(), kExpectedDevTables);
+
+    std::set<std::string> names;
+    std::set<std::string> sections;
+    for (const auto& row : tables)
+    {
+        EXPECT_EQ(row.at("status").get<std::string>(), kAvailableStatus);
+        EXPECT_GE(row.at("capacity").get<int32_t>(), kMinTableCapacity);
+        const std::string name = row.at("name").get<std::string>();
+        EXPECT_FALSE(name.empty());
+        names.insert(name);
+        sections.insert(row.at("section").get<std::string>());
+    }
+
+    EXPECT_EQ(names.size(), kExpectedDevTables)
+        << "Declared table names must be unique";
+    EXPECT_EQ(sections.size(), kExpectedSections);
+    EXPECT_EQ(sections.count(kMainSection), 1u);
+    EXPECT_EQ(sections.count(kPatioSection), 1u);
+}
+
+///
+/// Every declared table position is a normalized floor-plan coordinate:
+/// numeric x and y each within [0.0, 1.0].
+///
+TEST_F(TableHandlersTest, DevJsonPositionsNormalized)
+{
+    json doc;
+    if (!LoadDevJson(doc))
+    {
+        return;
+    }
+
+    const json& tables = doc.at("tables");
+    ASSERT_EQ(tables.size(), kExpectedDevTables);
+    for (const auto& row : tables)
+    {
+        const json& position = row.at("metadata").at("position");
+        ASSERT_TRUE(position.at("x").is_number());
+        ASSERT_TRUE(position.at("y").is_number());
+        const double x = position.at("x").get<double>();
+        const double y = position.at("y").get<double>();
+        EXPECT_GE(x, kPositionMin);
+        EXPECT_LE(x, kPositionMax);
+        EXPECT_GE(y, kPositionMin);
+        EXPECT_LE(y, kPositionMax);
+    }
+}
+
+///
+/// The applier's match-POST algorithm is idempotent against the REAL plugin
+/// + override handlers: applying the declared tables creates exactly 8 rows,
+/// and a second apply of the same match-on-name logic creates nothing —
+/// exactly 8 stored restaurant/tables rows remain, their names matching the
+/// declaration with no duplicates (the Phase 3 test_locations_setup
+/// idempotency pattern applied to tables).
+///
+TEST_F(TableHandlersTest, ApplyAlgorithmIdempotentTwoRunsEightRows)
+{
+    json doc;
+    if (!LoadDevJson(doc))
+    {
+        return;
+    }
+    std::set<std::string> declaredNames;
+    for (const auto& declared : doc.at("tables"))
+    {
+        declaredNames.insert(declared.at("name").get<std::string>());
+    }
+    ASSERT_EQ(declaredNames.size(), kExpectedDevTables);
+
+    const size_t createdFirst = ApplyDeclaredTables();
+    ASSERT_EQ(createdFirst, kExpectedDevTables);
+    EXPECT_EQ(CountStoredTables(), kExpectedDevTables);
+
+    const size_t createdSecond = ApplyDeclaredTables();
+    EXPECT_EQ(createdSecond, kSecondApplyCreated)
+        << "The second apply must find every declared name and POST nothing";
+    EXPECT_EQ(CountStoredTables(), kExpectedDevTables)
+        << "Two apply loops must leave exactly 8 rows — no duplicates";
+
+    // The stored rows ARE the declaration — same name set, no duplicates
+    const auto rows = m_engine->Scan(KeyBuilder::MakePrefix("restaurant", "tables"));
+    ASSERT_EQ(rows.size(), kExpectedDevTables);
+    std::set<std::string> storedNames;
+    for (const auto& [key, value] : rows)
+    {
+        const json row = json::parse(value);
+        storedNames.insert(row.at("name").get<std::string>());
+    }
+    EXPECT_EQ(storedNames.size(), kExpectedDevTables)
+        << "Stored table names must be unique";
+    EXPECT_EQ(storedNames, declaredNames)
+        << "Stored names must match the declaration exactly";
 }
