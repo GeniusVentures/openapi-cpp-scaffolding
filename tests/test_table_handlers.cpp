@@ -17,7 +17,10 @@
  * orders_create table linkage (open_order_ids append + order_placed, second
  * order append, dangling/other-tenant table_id rejection). Group 6 (TBL-06)
  * asserts the committed dev.json table seeds and the applier's match-POST
- * idempotency through the real handlers.
+ * idempotency through the real handlers. Group 7 (CR-01) proves the
+ * tables_delete override: a cross-tenant DELETE is indistinguishable from a
+ * missing id and leaves the row stored, while the owning tenant's DELETE
+ * succeeds with the generated stub shape and removes the row.
  *
  * Route note (deferred-items.md): the orders create override lives at
  * /api/v1/orders (commerce spec paths carry no /commerce segment);
@@ -112,6 +115,7 @@ static const std::string kMainSection     = "Main";             ///< dev.json fl
 static const std::string kPatioSection    = "Patio";            ///< dev.json floor-plan section
 static const std::string kOldTimestamp    = "2020-01-01T00:00:00Z";  ///< Deterministic stored created_at for the updated_at-advance proof
 static const std::string kEmptyJsonObject = "{}";
+static const std::string kDeletedTrueJson = "{\"deleted\":true}";  ///< Generated delete-stub success shape
 
 // Well-formed 32-hex fixture ids (unknown refs are NOT stored anywhere)
 static const std::string kMissingTableId       = "cccccccccccccccccccccccccccccccc";  ///< Well-formed but unstored
@@ -1145,4 +1149,48 @@ TEST_F(TableHandlersTest, ApplyAlgorithmIdempotentTwoRunsEightRows)
         << "Stored table names must be unique";
     EXPECT_EQ(storedNames, declaredNames)
         << "Stored names must match the declaration exactly";
+}
+
+// ============================================================================
+// GROUP 7 — deleteTable (CR-01 tenant isolation)
+// ============================================================================
+
+///
+/// A DELETE from another tenant returns the SAME NOT_FOUND envelope as a
+/// missing id (byte-equality) and leaves the row stored — cross-tenant
+/// deletes are indistinguishable from absence (T-03.1-05) — while the owning
+/// tenant's DELETE succeeds with the generated stub success shape and the
+/// row is gone afterwards (follow-up GET is NOT_FOUND). This is the CR-01
+/// regression: the route must never fall through to the tenant-blind
+/// priority-0 stub.
+///
+TEST_F(TableHandlersTest, DeleteOtherTenantNotFoundThenOwnerSucceeds)
+{
+    const std::string id = CreateTable("t-delete-tenant", kFixtureCapacity);
+
+    // Tenant B: the foreign delete is indistinguishable from a missing id
+    m_ctx.tenantId       = kOtherTenant;
+    m_ctx.organizationId = kOtherTenant;
+    const std::string missingResult     = Route("DELETE", TablePath(kMissingTableId));
+    const std::string otherTenantResult = Route("DELETE", TablePath(id));
+    EXPECT_NE(otherTenantResult.find("NOT_FOUND"), std::string::npos)
+        << "Expected NOT_FOUND, got: " << otherTenantResult;
+    EXPECT_EQ(otherTenantResult, missingResult)
+        << "Other-tenant delete must be indistinguishable from a missing table";
+    m_ctx.tenantId       = kDefaultTenant;
+    m_ctx.organizationId = kDefaultTenant;
+
+    // The rejected delete left the row readable through the real GET route
+    EXPECT_EQ(GetTableAsJson(id).at("id").get<std::string>(), id)
+        << "A rejected cross-tenant delete must leave the row stored";
+
+    // The owning tenant's delete succeeds with the stub contract shape
+    const std::string deleteResult = Route("DELETE", TablePath(id));
+    EXPECT_EQ(deleteResult, kDeletedTrueJson)
+        << "Delete must return the generated stub success shape";
+
+    // The row is gone — the by-id GET is now NOT_FOUND
+    const std::string getResult = Route("GET", TablePath(id));
+    EXPECT_NE(getResult.find("NOT_FOUND"), std::string::npos)
+        << "Expected NOT_FOUND after delete, got: " << getResult;
 }
