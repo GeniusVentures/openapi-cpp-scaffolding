@@ -31,6 +31,7 @@ TableUpdate::TableUpdate()
     m_StatusIsSet = false;
     m_Asset_id = "";
     m_Asset_idIsSet = false;
+    m_MetadataIsSet = false;
     
 }
 
@@ -55,7 +56,7 @@ bool TableUpdate::validate(std::stringstream& msg, const std::string& pathPrefix
     bool success = true;
     const std::string _pathPrefix = pathPrefix.empty() ? "TableUpdate" : pathPrefix;
 
-                        
+                            
     return success;
 }
 
@@ -77,7 +78,10 @@ bool TableUpdate::operator==(const TableUpdate& rhs) const
     ((!statusIsSet() && !rhs.statusIsSet()) || (statusIsSet() && rhs.statusIsSet() && getStatus() == rhs.getStatus())) &&
     
     
-    ((!assetIdIsSet() && !rhs.assetIdIsSet()) || (assetIdIsSet() && rhs.assetIdIsSet() && getAssetId() == rhs.getAssetId()))
+    ((!assetIdIsSet() && !rhs.assetIdIsSet()) || (assetIdIsSet() && rhs.assetIdIsSet() && getAssetId() == rhs.getAssetId())) &&
+    
+    
+    ((!metadataIsSet() && !rhs.metadataIsSet()) || (metadataIsSet() && rhs.metadataIsSet() && getMetadata() == rhs.getMetadata()))
     
     ;
 }
@@ -100,6 +104,8 @@ void to_json(nlohmann::json& j, const TableUpdate& o)
         j["status"] = o.m_Status;
     if(o.assetIdIsSet())
         j["asset_id"] = o.m_Asset_id;
+    if(o.metadataIsSet() || !o.m_Metadata.empty())
+        j["metadata"] = o.m_Metadata;
     
 }
 
@@ -129,6 +135,11 @@ void from_json(const nlohmann::json& j, TableUpdate& o)
     {
         j.at("asset_id").get_to(o.m_Asset_id);
         o.m_Asset_idIsSet = true;
+    } 
+    if(j.find("metadata") != j.end())
+    {
+        j.at("metadata").get_to(o.m_Metadata);
+        o.m_MetadataIsSet = true;
     } 
     
 }
@@ -217,6 +228,23 @@ bool TableUpdate::assetIdIsSet() const
 void TableUpdate::unsetAsset_id()
 {
     m_Asset_idIsSet = false;
+}
+std::map<std::string, nlohmann::json> TableUpdate::getMetadata() const
+{
+    return m_Metadata;
+}
+void TableUpdate::setMetadata(std::map<std::string, nlohmann::json> const& value)
+{
+    m_Metadata = value;
+    m_MetadataIsSet = true;
+}
+bool TableUpdate::metadataIsSet() const
+{
+    return m_MetadataIsSet;
+}
+void TableUpdate::unsetMetadata()
+{
+    m_MetadataIsSet = false;
 }
 
 

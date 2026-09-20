@@ -19,7 +19,9 @@
 #define TableUpdate_H_
 
 
+#include <nlohmann/json.hpp>
 #include <string>
+#include <map>
 #include <nlohmann/json.hpp>
 
 namespace org::openapitools::server::model
@@ -93,6 +95,13 @@ public:
     void setAssetId(std::string const& value);
     bool assetIdIsSet() const;
     void unsetAsset_id();
+    /// <summary>
+    /// Free-form table metadata. Floor-plan convention: a position object with normalized x and y doubles in [0.0, 1.0] relative to the floor-plan canvas, e.g. position x 0.25 y 0.4.
+    /// </summary>
+    std::map<std::string, nlohmann::json> getMetadata() const;
+    void setMetadata(std::map<std::string, nlohmann::json> const& value);
+    bool metadataIsSet() const;
+    void unsetMetadata();
 
     friend  void to_json(nlohmann::json& j, const TableUpdate& o);
     friend  void from_json(const nlohmann::json& j, TableUpdate& o);
@@ -107,6 +116,8 @@ protected:
     bool m_StatusIsSet;
     std::string m_Asset_id;
     bool m_Asset_idIsSet;
+    std::map<std::string, nlohmann::json> m_Metadata;
+    bool m_MetadataIsSet;
     
 };
 
