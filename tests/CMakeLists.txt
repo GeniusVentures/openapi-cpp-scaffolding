@@ -144,6 +144,7 @@ add_executable(test_pos_handlers
     "${CMAKE_CURRENT_SOURCE_DIR}/../src/restaurant/generated/model/Modifier.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/../src/restaurant/generated/model/KitchenTicket.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/../src/restaurant/generated/model/KitchenTicketCreate.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/../src/restaurant/generated/model/TableCreate.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/../src/restaurant/generated/model/Money.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/../src/restaurant/generated/model/Pagination.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/../src/restaurant/generated/model/Helpers.cpp"
