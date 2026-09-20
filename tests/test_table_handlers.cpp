@@ -20,7 +20,9 @@
  * idempotency through the real handlers. Group 7 (CR-01) proves the
  * tables_delete override: a cross-tenant DELETE is indistinguishable from a
  * missing id and leaves the row stored, while the owning tenant's DELETE
- * succeeds with the generated stub shape and removes the row.
+ * succeeds with the generated stub shape and removes the row. Group 8 (WR-01)
+ * proves the null-tolerance contract: an explicit JSON null asset_id or
+ * table_id is accepted as absent, per the spec language this phase published.
  *
  * Route note (deferred-items.md): the orders create override lives at
  * /api/v1/orders (commerce spec paths carry no /commerce segment);
@@ -1193,4 +1195,79 @@ TEST_F(TableHandlersTest, DeleteOtherTenantNotFoundThenOwnerSucceeds)
     const std::string getResult = Route("GET", TablePath(id));
     EXPECT_NE(getResult.find("NOT_FOUND"), std::string::npos)
         << "Expected NOT_FOUND after delete, got: " << getResult;
+}
+
+// ============================================================================
+// GROUP 8 — WR-01 null tolerance (null is absent)
+// ============================================================================
+
+///
+/// A create carrying asset_id as an explicit JSON null is accepted — null is
+/// absent per the published spec language ("absent or null", WR-01) — and the
+/// echoed and stored documents carry no asset_id key.
+///
+TEST_F(TableHandlersTest, CreateNullAssetIdTreatedAsAbsent)
+{
+    json body;
+    body["name"]     = "t-null-asset-create";
+    body["capacity"] = kFixtureCapacity;
+    body["status"]   = kAvailableStatus;
+    body["asset_id"] = nullptr;
+
+    const json echo = json::parse(PostJson(kTablesPath, body.dump()));
+    const std::string id = echo.at("id").get<std::string>();
+    EXPECT_FALSE(echo.contains("asset_id"))
+        << "A null asset_id must be erased, not persisted as null";
+
+    const json stored = GetTableAsJson(id);
+    EXPECT_FALSE(stored.contains("asset_id"))
+        << "The stored document must carry no asset_id key";
+}
+
+///
+/// A PATCH carrying asset_id as an explicit JSON null is accepted — null is
+/// absent, so no contract key is applied and the stored row is untouched
+/// apart from updated_at (WR-01).
+///
+TEST_F(TableHandlersTest, UpdateNullAssetIdTreatedAsAbsent)
+{
+    const std::string id = CreateTable("t-null-asset-update", kFixtureCapacity);
+
+    json body;
+    body["asset_id"] = nullptr;
+    const std::string result = Route("PATCH", TablePath(id), body.dump());
+    EXPECT_EQ(result.find("\"error\""), std::string::npos)
+        << "Expected update success, got: " << result;
+
+    const json stored = GetTableAsJson(id);
+    EXPECT_FALSE(stored.contains("asset_id"))
+        << "A null asset_id must be erased, not persisted as null";
+    EXPECT_EQ(stored.at("capacity").get<int32_t>(), kFixtureCapacity)
+        << "An absent-everything PATCH must not disturb contract fields";
+}
+
+///
+/// An order carrying table_id as an explicit JSON null is accepted — null is
+/// absent for tableless channels (WR-01) — persists without a table_id key,
+/// and no restaurant/tables row is created or touched.
+///
+TEST_F(TableHandlersTest, OrderNullTableIdTreatedAsAbsent)
+{
+    SeedOrderMenuItem();
+    ASSERT_EQ(CountStoredTables(), kZeroCreatedRows);
+
+    json body = MakeOrderBody(kMissingTableId);
+    body["table_id"] = nullptr;
+
+    const std::string orderId = ParseId(PostJson(kOrdersPath, body.dump()));
+
+    auto keyResult = KeyBuilder::Build("commerce", "orders", orderId);
+    ASSERT_TRUE(keyResult.has_value());
+    std::string storedOrder;
+    ASSERT_TRUE(m_engine->Get(keyResult.value(), storedOrder));
+    const json orderDoc = json::parse(storedOrder);
+    EXPECT_FALSE(orderDoc.contains("table_id"))
+        << "A null table_id must be erased, not persisted as null";
+    EXPECT_EQ(CountStoredTables(), kZeroCreatedRows)
+        << "A tableless order must never touch restaurant/tables";
 }

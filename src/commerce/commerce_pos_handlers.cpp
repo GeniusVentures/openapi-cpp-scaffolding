@@ -397,9 +397,11 @@ static std::string orders_list(const RequestContext& ctx, const std::string& /*m
  * After the order Put succeeds, the linked table transitions server-side:
  * the order id is appended to open_order_ids (deduped) and pos_status
  * becomes "order_placed" unconditionally — a new check on a served table
- * genuinely returns it to order_placed. An explicit JSON null table_id
- * throws from OrderCreate::from_json into the shared catch (INVALID_REQUEST,
- * WR-03 accepted posture); an empty string parses and is treated as absent.
+ * genuinely returns it to order_placed. An explicit JSON null table_id is
+ * erased before DTO extraction — null is absent per the published spec
+ * language ("absent or null for tableless channels", WR-01) — and an empty
+ * string parses and is treated as absent (and erased before persisting,
+ * WR-03).
  *
  * @param      ctx   Request context (auth, tenant, organization)
  * @param      body  Raw JSON request body (OrderCreate)
@@ -431,6 +433,17 @@ static std::string orders_create(const RequestContext& ctx, const std::string& /
         // (missing required field) and type_error (mistyped field) — the json
         // base exception covers both (Pitfall 5)
         requestData = json::parse(body);
+
+        // WR-01: the spec declares table_id "absent or null for tableless
+        // channels such as quick order" — treat an explicit JSON null as
+        // absent so regenerated clients that serialize unset nullable fields
+        // as null parse cleanly (the generated from_json throws
+        // type_error.302 on a null string field)
+        if (requestData.contains("table_id") && requestData["table_id"].is_null())
+        {
+            requestData.erase("table_id");
+        }
+
         dto = requestData.get<org::openapitools::server::model::OrderCreate>();
 
         // Generated contract constraints the parse does not enforce (e.g.
@@ -448,8 +461,8 @@ static std::string orders_create(const RequestContext& ctx, const std::string& /
 
         // TBL-02: pre-persist table reference validation — the table must
         // exist and belong to the caller's tenant before anything is computed
-        // or persisted. A null table_id never reaches this guard (from_json
-        // throws type_error into the shared catch); an empty string is absent.
+        // or persisted. A null table_id never reaches this guard (erased
+        // before DTO extraction, WR-01); an empty string is absent.
         if (dto.tableIdIsSet() && !dto.getTableId().empty())
         {
             auto tableKeyResult = KeyBuilder::Build("restaurant", "tables", dto.getTableId());
