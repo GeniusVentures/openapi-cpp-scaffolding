@@ -32,7 +32,9 @@
 #include "restaurant/generated/model/MenuCategoryCreate.h"
 #include "restaurant/generated/model/MenuItemCreate.h"
 #include "restaurant/generated/model/ModifierGroupCreate.h"
+#include "restaurant/generated/model/SeatTable_request.h"
 #include "restaurant/generated/model/TableCreate.h"
+#include "restaurant/generated/model/TableUpdate.h"
 #include "nlohmann/json.hpp"
 #include <spdlog/spdlog.h>
 #include <chrono>
@@ -883,6 +885,231 @@ static std::string tables_get(const RequestContext& ctx, const std::string& /*me
     }
 }
 
+/**
+ * @brief      Seat a table — persist the SEAT event (TBL-04)
+ *
+ * Supersedes the generated seatTable stub, which answered INVALID_PATH (a
+ * dead stub). The body is validated against the generated SeatTable_request
+ * contract under the strict key-set posture {party_size, customer_id,
+ * booking_id} and party_size must be at least 1. The SEAT event then moves
+ * every lifecycle field server-side:
+ *
+ * - guest_count  = the request's party_size
+ * - server_id    = ctx.userId (JWT-verified caller — never a body field,
+ *                  T-03.1-06)
+ * - opened_at    = server now() ONLY when the stored doc has no non-null
+ *                  opened_at (first seat — preserves elapsed dining time on a
+ *                  mid-meal party-size change)
+ * - pos_status   = "seated" ONLY when the current value is absent, null, or
+ *                  "empty" (never regresses order_placed/order_served on a
+ *                  party change mid-meal)
+ * - status       = "occupied" always
+ *
+ * customer_id/booking_id are parsed and validated for contract compliance but
+ * deliberately NOT persisted — the Table contract has no home for them.
+ *
+ * @param      ctx      Request context (auth, tenant)
+ * @param      urlPath  Dispatched URL path carrying the real table id
+ * @param      body     Raw JSON request body (SeatTable_request)
+ *
+ * @return     Updated JSON document, or error envelope
+ */
+static std::string tables_seat(const RequestContext& ctx, const std::string& /*method*/, const std::string& urlPath, const std::string& body)
+{
+    // HANDLER-06 defense-in-depth auth check (behind the main.cpp JWT middleware)
+    if (ctx.userId.empty())
+    {
+        return R"({"error":{"code":"UNAUTHORIZED","message":"No authenticated user"}})";
+    }
+
+    const std::string id = TableIdFromPath(urlPath);
+    if (id.empty())
+    {
+        return R"({"error":{"code":"INVALID_REQUEST","message":"Invalid table id"}})";
+    }
+
+    auto keyResult = KeyBuilder::Build("restaurant", "tables", id);
+    if (!keyResult.has_value())
+    {
+        return R"({"error":{"code":"INVALID_KEY","message":"Failed to build storage key"}})";
+    }
+    const std::string key = keyResult.value();
+
+    std::string value;
+    if (!s_storage->Get(key, value))
+    {
+        return R"({"error":{"code":"NOT_FOUND","message":"Table not found"}})";
+    }
+
+    try
+    {
+        json doc = json::parse(value);
+
+        // D-03 tenant check — an other-tenant row is indistinguishable from
+        // missing (legacy rows without tenant_id count as "default")
+        if (doc.value("tenant_id", "default") != ctx.tenantId)
+        {
+            return R"({"error":{"code":"NOT_FOUND","message":"Table not found"}})";
+        }
+
+        // Strict key-set posture — the seating event accepts exactly three keys
+        json requestBody = json::parse(body);
+        if (!BodyKeysWithin(requestBody, {"party_size", "customer_id", "booking_id"}))
+        {
+            return R"({"error":{"code":"INVALID_REQUEST","message":"Seat table body contains keys outside the contract"}})";
+        }
+        const org::openapitools::server::model::SeatTable_request dto =
+            requestBody.get<org::openapitools::server::model::SeatTable_request>();
+        dto.validate();
+        if (dto.getPartySize() < 1)
+        {
+            return R"({"error":{"code":"INVALID_REQUEST","message":"Party size must be at least 1"}})";
+        }
+
+        // SEAT event rules (TBL-04) — server-computed lifecycle only
+        doc["guest_count"] = dto.getPartySize();
+        doc["server_id"]   = ctx.userId;
+
+        // opened_at only on the first seat (absent or null stored value)
+        const json storedOpenedAt = doc.value("opened_at", json());
+        if (storedOpenedAt.is_null())
+        {
+            doc["opened_at"] = GetCurrentTimestamp();
+        }
+
+        // pos_status advances only from empty — an order_placed/order_served
+        // table keeps its progress through a party-size change
+        const json storedPosStatus = doc.value("pos_status", json());
+        if (storedPosStatus.is_null() ||
+            (storedPosStatus.is_string() && storedPosStatus.get<std::string>() == "empty"))
+        {
+            doc["pos_status"] = "seated";
+        }
+
+        doc["status"]     = "occupied";
+        doc["updated_at"] = GetCurrentTimestamp();
+
+        if (!s_storage->Put(key, doc.dump()))
+        {
+            return R"({"error":{"code":"STORAGE_ERROR","message":"Failed to store entity"}})";
+        }
+        return doc.dump();
+    }
+    catch (const std::exception&)
+    {
+        return R"({"error":{"code":"INVALID_REQUEST","message":"Invalid seat table request body"}})";
+    }
+}
+
+/**
+ * @brief      Update a table — contract-strict fields + BUS/RESET (TBL-05)
+ *
+ * Supersedes the generated updateTable stub, which raw-merged ANY body keys
+ * into the stored doc (a client could overwrite pos_status/open_order_ids/
+ * guest_count directly). The body is validated against the generated
+ * TableUpdate contract under the strict key-set posture {name, section,
+ * capacity, status, asset_id, metadata}; only the six contract keys present
+ * in the body are applied to the stored document (metadata replaces
+ * wholesale, matching the generated top-level merge semantics).
+ *
+ * BUS/RESET compensating event: when the body sets status to "available" or
+ * "dirty" the seating lifecycle resets — pos_status "empty", guest_count/
+ * server_id/opened_at null, open_order_ids []. The spec has no dedicated
+ * unseat route, so the status patch is its vehicle (touch-pos D-04). The
+ * reset is unconditional by design (minimal v1; a guard against bussing
+ * tables with open checks is a one-line follow-up if a consumer needs it).
+ *
+ * @param      ctx      Request context (auth, tenant)
+ * @param      urlPath  Dispatched URL path carrying the real table id
+ * @param      body     Raw JSON request body (TableUpdate)
+ *
+ * @return     Updated JSON document, or error envelope
+ */
+static std::string tables_update(const RequestContext& ctx, const std::string& /*method*/, const std::string& urlPath, const std::string& body)
+{
+    // HANDLER-06 defense-in-depth auth check (behind the main.cpp JWT middleware)
+    if (ctx.userId.empty())
+    {
+        return R"({"error":{"code":"UNAUTHORIZED","message":"No authenticated user"}})";
+    }
+
+    const std::string id = TableIdFromPath(urlPath);
+    if (id.empty())
+    {
+        return R"({"error":{"code":"INVALID_REQUEST","message":"Invalid table id"}})";
+    }
+
+    auto keyResult = KeyBuilder::Build("restaurant", "tables", id);
+    if (!keyResult.has_value())
+    {
+        return R"({"error":{"code":"INVALID_KEY","message":"Failed to build storage key"}})";
+    }
+    const std::string key = keyResult.value();
+
+    std::string value;
+    if (!s_storage->Get(key, value))
+    {
+        return R"({"error":{"code":"NOT_FOUND","message":"Table not found"}})";
+    }
+
+    try
+    {
+        json stored = json::parse(value);
+
+        // D-03 tenant check — an other-tenant row is indistinguishable from
+        // missing (legacy rows without tenant_id count as "default")
+        if (stored.value("tenant_id", "default") != ctx.tenantId)
+        {
+            return R"({"error":{"code":"NOT_FOUND","message":"Table not found"}})";
+        }
+
+        // Strict key-set posture — lifecycle fields are never client-writable
+        json requestBody = json::parse(body);
+        if (!BodyKeysWithin(requestBody, {"name", "section", "capacity", "status", "asset_id", "metadata"}))
+        {
+            return R"({"error":{"code":"INVALID_REQUEST","message":"Table update body contains keys outside the contract"}})";
+        }
+        const org::openapitools::server::model::TableUpdate dto =
+            requestBody.get<org::openapitools::server::model::TableUpdate>();
+        dto.validate();
+
+        // Apply only the contract keys present in the body
+        static const std::vector<std::string> kTableContractKeys = {
+            "name", "section", "capacity", "status", "asset_id", "metadata"};
+        for (const std::string& contractKey : kTableContractKeys)
+        {
+            if (requestBody.contains(contractKey))
+            {
+                stored[contractKey] = requestBody[contractKey];
+            }
+        }
+
+        // BUS/RESET — the body setting status to available/dirty is the
+        // compensating unseat event; the seating lifecycle returns to empty
+        const std::string bodyStatus = requestBody.value("status", std::string());
+        if (bodyStatus == "available" || bodyStatus == "dirty")
+        {
+            stored["pos_status"]     = "empty";
+            stored["guest_count"]    = nullptr;
+            stored["server_id"]      = nullptr;
+            stored["opened_at"]      = nullptr;
+            stored["open_order_ids"] = json::array();
+        }
+
+        stored["updated_at"] = GetCurrentTimestamp();
+
+        if (!s_storage->Put(key, stored.dump()))
+        {
+            return R"({"error":{"code":"STORAGE_ERROR","message":"Failed to update entity"}})";
+        }
+        return stored.dump();
+    }
+    catch (const std::exception&)
+    {
+        return R"({"error":{"code":"INVALID_REQUEST","message":"Invalid table update request body"}})";
+    }
+}
+
 // ============================================================================
 // init_restaurant_pos_overrides — called from RestaurantPluginImpl::Initialize()
 // ============================================================================
@@ -928,4 +1155,6 @@ void init_restaurant_pos_overrides(PluginManager* pm, IServiceLocator& locator)
     pm->RegisterHandler("GET", "/api/v1/restaurant/tables", "tables_list", tables_list, "Restaurant", kOverrideHandlerPriority);
     pm->RegisterHandler("POST", "/api/v1/restaurant/tables", "tables_create", tables_create, "Restaurant", kOverrideHandlerPriority);
     pm->RegisterHandler("GET", "/api/v1/restaurant/tables/{tableId}", "tables_get", tables_get, "Restaurant", kOverrideHandlerPriority);
+    pm->RegisterHandler("POST", "/api/v1/restaurant/tables/{tableId}/seat", "tables_seat", tables_seat, "Restaurant", kOverrideHandlerPriority);
+    pm->RegisterHandler("PATCH", "/api/v1/restaurant/tables/{tableId}", "tables_update", tables_update, "Restaurant", kOverrideHandlerPriority);
 }
