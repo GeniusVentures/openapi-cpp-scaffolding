@@ -28,6 +28,7 @@ TableCreate::TableCreate()
     m_Status = "";
     m_Asset_id = "";
     m_Asset_idIsSet = false;
+    m_MetadataIsSet = false;
     
 }
 
@@ -52,7 +53,7 @@ bool TableCreate::validate(std::stringstream& msg, const std::string& pathPrefix
     bool success = true;
     const std::string _pathPrefix = pathPrefix.empty() ? "TableCreate" : pathPrefix;
 
-                        
+                            
     return success;
 }
 
@@ -74,7 +75,10 @@ bool TableCreate::operator==(const TableCreate& rhs) const
      &&
     
     
-    ((!assetIdIsSet() && !rhs.assetIdIsSet()) || (assetIdIsSet() && rhs.assetIdIsSet() && getAssetId() == rhs.getAssetId()))
+    ((!assetIdIsSet() && !rhs.assetIdIsSet()) || (assetIdIsSet() && rhs.assetIdIsSet() && getAssetId() == rhs.getAssetId())) &&
+    
+    
+    ((!metadataIsSet() && !rhs.metadataIsSet()) || (metadataIsSet() && rhs.metadataIsSet() && getMetadata() == rhs.getMetadata()))
     
     ;
 }
@@ -94,6 +98,8 @@ void to_json(nlohmann::json& j, const TableCreate& o)
     j["status"] = o.m_Status;
     if(o.assetIdIsSet())
         j["asset_id"] = o.m_Asset_id;
+    if(o.metadataIsSet() || !o.m_Metadata.empty())
+        j["metadata"] = o.m_Metadata;
     
 }
 
@@ -111,6 +117,11 @@ void from_json(const nlohmann::json& j, TableCreate& o)
     {
         j.at("asset_id").get_to(o.m_Asset_id);
         o.m_Asset_idIsSet = true;
+    } 
+    if(j.find("metadata") != j.end())
+    {
+        j.at("metadata").get_to(o.m_Metadata);
+        o.m_MetadataIsSet = true;
     } 
     
 }
@@ -172,6 +183,23 @@ bool TableCreate::assetIdIsSet() const
 void TableCreate::unsetAsset_id()
 {
     m_Asset_idIsSet = false;
+}
+std::map<std::string, nlohmann::json> TableCreate::getMetadata() const
+{
+    return m_Metadata;
+}
+void TableCreate::setMetadata(std::map<std::string, nlohmann::json> const& value)
+{
+    m_Metadata = value;
+    m_MetadataIsSet = true;
+}
+bool TableCreate::metadataIsSet() const
+{
+    return m_MetadataIsSet;
+}
+void TableCreate::unsetMetadata()
+{
+    m_MetadataIsSet = false;
 }
 
 

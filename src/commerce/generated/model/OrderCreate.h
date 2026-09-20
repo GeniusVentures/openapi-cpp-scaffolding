@@ -74,6 +74,13 @@ public:
     std::string getStatus() const;
     void setStatus(std::string const& value);
     /// <summary>
+    /// UUID of the restaurant table this order or check belongs to in table service; absent or null for tableless channels such as quick order.
+    /// </summary>
+    std::string getTableId() const;
+    void setTableId(std::string const& value);
+    bool tableIdIsSet() const;
+    void unsetTable_id();
+    /// <summary>
     /// 
     /// </summary>
     std::string getChannel() const;
@@ -131,6 +138,8 @@ protected:
     bool m_Customer_idIsSet;
     std::string m_Status;
 
+    std::string m_Table_id;
+    bool m_Table_idIsSet;
     std::string m_Channel;
 
     std::string m_Fulfillment_type;
