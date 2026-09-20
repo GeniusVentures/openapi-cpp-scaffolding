@@ -13,6 +13,12 @@
  * paging, the D-03 tenant filter, and the HANDLER-06 handler-level auth
  * check; the creates get strict Create-model validation, the D-02
  * referential-integrity checks, and D-03 body-stamp tenancy.
+ *
+ * Phase 3.1 adds the table handlers (tables_list/tables_create/tables_get/
+ * tables_seat/tables_update) on the same identity pattern, with strict
+ * key-set write contracts (T-03.1-04) and server-owned lifecycle transitions
+ * — pos_status/open_order_ids/guest_count/server_id/opened_at only ever move
+ * through server events (create-default/seat/order/bus), never client input.
  */
 
 #include "restaurant/restaurant_pos_handlers.hpp"
@@ -26,6 +32,7 @@
 #include "restaurant/generated/model/MenuCategoryCreate.h"
 #include "restaurant/generated/model/MenuItemCreate.h"
 #include "restaurant/generated/model/ModifierGroupCreate.h"
+#include "restaurant/generated/model/TableCreate.h"
 #include "nlohmann/json.hpp"
 #include <spdlog/spdlog.h>
 #include <chrono>
@@ -35,6 +42,7 @@
 #include <limits>
 #include <random>
 #include <sstream>
+#include <vector>
 
 using json = nlohmann::json;
 using namespace gnus::hash;
@@ -318,6 +326,73 @@ static std::string list_entity(const RequestContext& ctx, const std::string& ent
     return response.dump();
 }
 
+/// Literal prefix shared by every tables route (GET/POST collection,
+/// GET/PATCH by-id, and the /seat sub-route)
+static constexpr const char* kTablesRoutePrefix = "/api/v1/restaurant/tables/";
+
+/**
+ * @brief      Extract the table id segment from a tables route path
+ *
+ * The dispatch layer substitutes the REAL id into the path (e.g.
+ * /api/v1/restaurant/tables/<id>/seat), so the generated stubs'
+ * rfind(kPathSeparator) trick would grab "seat" on the seat route. This
+ * helper anchors on the literal tables prefix and takes the segment after it
+ * up to the next '/' or the string end.
+ *
+ * @param      urlPath  Dispatched URL path with the real id substituted
+ *
+ * @return     The table id segment, or "" when the prefix is absent
+ */
+static std::string TableIdFromPath(const std::string& urlPath)
+{
+    const size_t prefixPos = urlPath.find(kTablesRoutePrefix);
+    if (prefixPos == std::string::npos)
+    {
+        return std::string();
+    }
+    const size_t idStart = prefixPos + std::char_traits<char>::length(kTablesRoutePrefix);
+    const size_t nextSlash = urlPath.find('/', idStart);
+    return (nextSlash == std::string::npos)
+        ? urlPath.substr(idStart)
+        : urlPath.substr(idStart, nextSlash - idStart);
+}
+
+/**
+ * @brief      Check that every body key is within the allowed key set
+ *
+ * Strict key-set posture for table writes (T-03.1-04): table documents carry
+ * server-owned lifecycle fields (pos_status, guest_count, server_id,
+ * opened_at, open_order_ids) that must never be client-writable, so a body
+ * carrying ANY key outside the write contract is rejected outright instead of
+ * riding along silently (Phase 2 creates store raw bodies; tables deviate
+ * deliberately — a silent no-op on unknown keys would mask client bugs).
+ *
+ * @param      body         Parsed request body (must be a JSON object)
+ * @param      allowedKeys  The exact write-contract key set
+ *
+ * @return     true when every body key is in allowedKeys
+ */
+static bool BodyKeysWithin(const json& body, const std::vector<std::string>& allowedKeys)
+{
+    for (const auto& item : body.items())
+    {
+        bool allowed = false;
+        for (const std::string& allowedKey : allowedKeys)
+        {
+            if (item.key() == allowedKey)
+            {
+                allowed = true;
+                break;
+            }
+        }
+        if (!allowed)
+        {
+            return false;
+        }
+    }
+    return true;
+}
+
 // ============================================================================
 // List Handlers
 // ============================================================================
@@ -372,6 +447,23 @@ static std::string modifier_groups_list(const RequestContext& ctx, const std::st
 static std::string kitchen_tickets_list(const RequestContext& ctx, const std::string& /*method*/, const std::string& /*urlPath*/, const std::string& /*body*/)
 {
     return list_entity(ctx, "kitchen-tickets");
+}
+
+/**
+ * @brief      List tables with keyset cursor paging (TBL-03)
+ *
+ * One-line delegation to the shared list core: supersedes the generated
+ * listTables stub, which scanned every tenant's tables with no filter and no
+ * paging. The shared core gives tables the D-03 tenant filter, D-07/D-09
+ * keyset paging, the HANDLER-06 auth check, and corrupt-row skipping.
+ *
+ * @param      ctx    Request context (auth, tenant, query string)
+ *
+ * @return     JSON envelope string, or error envelope
+ */
+static std::string tables_list(const RequestContext& ctx, const std::string& /*method*/, const std::string& /*urlPath*/, const std::string& /*body*/)
+{
+    return list_entity(ctx, "tables");
 }
 
 // ============================================================================
@@ -651,6 +743,146 @@ static std::string kitchen_tickets_create(const RequestContext& ctx, const std::
     }
 }
 
+/**
+ * @brief      Create a table (TBL-03) with server-defaulted lifecycle fields
+ *
+ * Parses and validates the body against the generated TableCreate contract
+ * (from_json requires name, capacity, and status; optional section/asset_id/
+ * metadata) and enforces the strict key-set posture — a body carrying any key
+ * outside {name, section, capacity, status, asset_id, metadata} is rejected
+ * INVALID_REQUEST with nothing persisted (T-03.1-04: pos_status, guest_count,
+ * server_id, opened_at, and open_order_ids are server-owned lifecycle fields;
+ * the generated passthrough would store whatever keys arrive). Before the
+ * shared stamp-and-persist tail, the lifecycle fields are server-defaulted —
+ * pos_status "empty" and open_order_ids [] — so every readable table is a
+ * complete document (dart Table models require the fields; without the
+ * defaults every read row would carry dart nulls).
+ *
+ * @param      ctx    Request context (auth, tenant, organization)
+ * @param      body   Raw JSON request body (TableCreate)
+ *
+ * @return     JSON document echo, or error envelope
+ */
+static std::string tables_create(const RequestContext& ctx, const std::string& /*method*/, const std::string& /*urlPath*/, const std::string& body)
+{
+    // HANDLER-06 defense-in-depth auth check (behind the main.cpp JWT middleware)
+    if (ctx.userId.empty())
+    {
+        return R"({"error":{"code":"UNAUTHORIZED","message":"No authenticated user"}})";
+    }
+
+    try
+    {
+        json requestData = json::parse(body);
+
+        // Strict key-set posture — lifecycle fields are never client-writable
+        if (!BodyKeysWithin(requestData, {"name", "section", "capacity", "status", "asset_id", "metadata"}))
+        {
+            return R"({"error":{"code":"INVALID_REQUEST","message":"Table create body contains keys outside the contract"}})";
+        }
+
+        // Strict contract validation — from_json throws json::out_of_range
+        // (missing required field) or json::type_error (mistyped field), and
+        // validate() throws ValidationException on contract constraints the
+        // parse does not enforce; both map to INVALID_REQUEST below
+        const org::openapitools::server::model::TableCreate dto =
+            requestData.get<org::openapitools::server::model::TableCreate>();
+        dto.validate();
+
+        // Server-defaulted lifecycle fields — a freshly created table starts
+        // empty with no open checks; only server events (seat/order/bus) ever
+        // move these (the key-set rejection above means the defaults always
+        // apply; the contains guards keep the rule explicit and local)
+        if (!requestData.contains("pos_status"))
+        {
+            requestData["pos_status"] = "empty";
+        }
+        if (!requestData.contains("open_order_ids"))
+        {
+            requestData["open_order_ids"] = json::array();
+        }
+
+        return stamp_and_persist(ctx, "tables", requestData);
+    }
+    catch (const std::exception&)
+    {
+        return R"({"error":{"code":"INVALID_REQUEST","message":"Invalid table request body"}})";
+    }
+}
+
+// ============================================================================
+// Table Lifecycle Handlers
+// ============================================================================
+
+/**
+ * @brief      Get a single table (TBL-03) with the tenant boundary
+ *
+ * Supersedes the generated getTable stub, which returned any stored table to
+ * any caller with no tenant check. A row belonging to another tenant returns
+ * the same NOT_FOUND envelope as a missing id — cross-tenant reads must not
+ * be distinguishable from missing (T-03.1-05).
+ *
+ * @param      ctx      Request context (auth, tenant)
+ * @param      urlPath  Dispatched URL path carrying the real table id
+ *
+ * @return     JSON document, or error envelope
+ */
+static std::string tables_get(const RequestContext& ctx, const std::string& /*method*/, const std::string& urlPath, const std::string& /*body*/)
+{
+    // HANDLER-06 defense-in-depth auth check (behind the main.cpp JWT middleware)
+    if (ctx.userId.empty())
+    {
+        return R"({"error":{"code":"UNAUTHORIZED","message":"No authenticated user"}})";
+    }
+
+    const std::string id = TableIdFromPath(urlPath);
+    if (id.empty())
+    {
+        return R"({"error":{"code":"INVALID_REQUEST","message":"Invalid table id"}})";
+    }
+
+    auto keyResult = KeyBuilder::Build("restaurant", "tables", id);
+    if (!keyResult.has_value())
+    {
+        return R"({"error":{"code":"INVALID_KEY","message":"Failed to build storage key"}})";
+    }
+
+    std::string value;
+    if (!s_storage->Get(keyResult.value(), value))
+    {
+        return R"({"error":{"code":"NOT_FOUND","message":"Table not found"}})";
+    }
+
+    try
+    {
+        json item = json::parse(value);
+
+        // D-03 tenant check — an other-tenant row is indistinguishable from
+        // missing (legacy rows without tenant_id count as "default")
+        if (item.value("tenant_id", "default") != ctx.tenantId)
+        {
+            return R"({"error":{"code":"NOT_FOUND","message":"Table not found"}})";
+        }
+
+        // Backfill multi-tenant fields for records created before tenant
+        // stamping (matches generated get behavior)
+        if (!item.contains("tenant_id"))
+        {
+            item["tenant_id"] = "default";
+        }
+        if (!item.contains("organization_id"))
+        {
+            item["organization_id"] = "default";
+        }
+        return item.dump();
+    }
+    catch (const json::exception&)
+    {
+        // A corrupt stored row surfaces as a bad request, never a crash
+        return R"({"error":{"code":"INVALID_REQUEST","message":"Stored table document is corrupt"}})";
+    }
+}
+
 // ============================================================================
 // init_restaurant_pos_overrides — called from RestaurantPluginImpl::Initialize()
 // ============================================================================
@@ -663,6 +895,11 @@ static std::string kitchen_tickets_create(const RequestContext& ctx, const std::
  * kOverrideHandlerPriority (200), superseding the generated stubs
  * (priority 0). Owner name is "Restaurant" (the plugin's GetName()).
  * No seed data — Phase 2 ships none.
+ *
+ * Also registers the Phase 3.1 table handlers: GET+POST
+ * /api/v1/restaurant/tables and GET /api/v1/restaurant/tables/{tableId}
+ * (listTables/createTable/getTable), keyed on the exact generated METHOD+path
+ * strings so the priority-200 overrides supersede the priority-0 stubs.
  *
  * @param      pm       PluginManager from service locator
  * @param      locator  Service locator for StorageEngine
@@ -686,4 +923,9 @@ void init_restaurant_pos_overrides(PluginManager* pm, IServiceLocator& locator)
     pm->RegisterHandler("POST", "/api/v1/restaurant/menu-items", "menu_items_create", menu_items_create, "Restaurant", kOverrideHandlerPriority);
     pm->RegisterHandler("POST", "/api/v1/restaurant/modifier-groups", "modifier_groups_create", modifier_groups_create, "Restaurant", kOverrideHandlerPriority);
     pm->RegisterHandler("POST", "/api/v1/restaurant/kitchen-tickets", "kitchen_tickets_create", kitchen_tickets_create, "Restaurant", kOverrideHandlerPriority);
+
+    SPDLOG_INFO("Registering restaurant POS table override handlers");
+    pm->RegisterHandler("GET", "/api/v1/restaurant/tables", "tables_list", tables_list, "Restaurant", kOverrideHandlerPriority);
+    pm->RegisterHandler("POST", "/api/v1/restaurant/tables", "tables_create", tables_create, "Restaurant", kOverrideHandlerPriority);
+    pm->RegisterHandler("GET", "/api/v1/restaurant/tables/{tableId}", "tables_get", tables_get, "Restaurant", kOverrideHandlerPriority);
 }
