@@ -15,7 +15,7 @@
  * referential-integrity checks, and D-03 body-stamp tenancy.
  *
  * Phase 3.1 adds the table handlers (tables_list/tables_create/tables_get/
- * tables_seat/tables_update) on the same identity pattern, with strict
+ * tables_seat/tables_update/tables_delete) on the same identity pattern, with strict
  * key-set write contracts (T-03.1-04) and server-owned lifecycle transitions
  * — pos_status/open_order_ids/guest_count/server_id/opened_at only ever move
  * through server events (create-default/seat/order/bus), never client input.
@@ -1110,6 +1110,75 @@ static std::string tables_update(const RequestContext& ctx, const std::string& /
     }
 }
 
+/**
+ * @brief      Delete a table with the tenant boundary (CR-01)
+ *
+ * Supersedes the generated deleteTable stub, which ignored the request
+ * context entirely and deleted ANY tenant's row by id (storage keys carry no
+ * tenant segment, so this handler-level check is the isolation barrier for
+ * the by-id routes). The stored row is read and tenant-checked exactly as
+ * tables_get does: a missing row OR a row belonging to another tenant
+ * returns the same NOT_FOUND envelope — cross-tenant deletes are
+ * indistinguishable from missing (T-03.1-05). Only after the boundary
+ * passes is the row deleted through the storage engine, returning the
+ * generated stub contract's success shape. Straight tenant-checked delete
+ * only — open-check/lifecycle guards are deliberately out of scope.
+ *
+ * @param      ctx      Request context (auth, tenant)
+ * @param      urlPath  Dispatched URL path carrying the real table id
+ *
+ * @return     {"deleted":true}, or error envelope
+ */
+static std::string tables_delete(const RequestContext& ctx, const std::string& /*method*/, const std::string& urlPath, const std::string& /*body*/)
+{
+    // HANDLER-06 defense-in-depth auth check (behind the main.cpp JWT middleware)
+    if (ctx.userId.empty())
+    {
+        return R"({"error":{"code":"UNAUTHORIZED","message":"No authenticated user"}})";
+    }
+
+    const std::string id = TableIdFromPath(urlPath);
+    if (id.empty())
+    {
+        return R"({"error":{"code":"INVALID_REQUEST","message":"Invalid table id"}})";
+    }
+
+    auto keyResult = KeyBuilder::Build("restaurant", "tables", id);
+    if (!keyResult.has_value())
+    {
+        return R"({"error":{"code":"INVALID_KEY","message":"Failed to build storage key"}})";
+    }
+
+    std::string value;
+    if (!s_storage->Get(keyResult.value(), value))
+    {
+        return R"({"error":{"code":"NOT_FOUND","message":"Table not found"}})";
+    }
+
+    try
+    {
+        const json item = json::parse(value);
+
+        // D-03 tenant check — an other-tenant row is indistinguishable from
+        // missing (legacy rows without tenant_id count as "default")
+        if (item.value("tenant_id", "default") != ctx.tenantId)
+        {
+            return R"({"error":{"code":"NOT_FOUND","message":"Table not found"}})";
+        }
+    }
+    catch (const json::exception&)
+    {
+        // A corrupt stored row surfaces as a bad request, never a crash
+        return R"({"error":{"code":"INVALID_REQUEST","message":"Stored table document is corrupt"}})";
+    }
+
+    if (!s_storage->Delete(keyResult.value()))
+    {
+        return R"({"error":{"code":"STORAGE_ERROR","message":"Failed to delete entity"}})";
+    }
+    return R"({"deleted":true})";
+}
+
 // ============================================================================
 // init_restaurant_pos_overrides — called from RestaurantPluginImpl::Initialize()
 // ============================================================================
@@ -1124,9 +1193,11 @@ static std::string tables_update(const RequestContext& ctx, const std::string& /
  * No seed data — Phase 2 ships none.
  *
  * Also registers the Phase 3.1 table handlers: GET+POST
- * /api/v1/restaurant/tables and GET /api/v1/restaurant/tables/{tableId}
- * (listTables/createTable/getTable), keyed on the exact generated METHOD+path
- * strings so the priority-200 overrides supersede the priority-0 stubs.
+ * /api/v1/restaurant/tables and GET/PATCH/DELETE
+ * /api/v1/restaurant/tables/{tableId}
+ * (listTables/createTable/getTable/updateTable/deleteTable), keyed on the
+ * exact generated METHOD+path strings so the priority-200 overrides
+ * supersede the priority-0 stubs.
  *
  * @param      pm       PluginManager from service locator
  * @param      locator  Service locator for StorageEngine
@@ -1157,4 +1228,5 @@ void init_restaurant_pos_overrides(PluginManager* pm, IServiceLocator& locator)
     pm->RegisterHandler("GET", "/api/v1/restaurant/tables/{tableId}", "tables_get", tables_get, "Restaurant", kOverrideHandlerPriority);
     pm->RegisterHandler("POST", "/api/v1/restaurant/tables/{tableId}/seat", "tables_seat", tables_seat, "Restaurant", kOverrideHandlerPriority);
     pm->RegisterHandler("PATCH", "/api/v1/restaurant/tables/{tableId}", "tables_update", tables_update, "Restaurant", kOverrideHandlerPriority);
+    pm->RegisterHandler("DELETE", "/api/v1/restaurant/tables/{tableId}", "tables_delete", tables_delete, "Restaurant", kOverrideHandlerPriority);
 }
