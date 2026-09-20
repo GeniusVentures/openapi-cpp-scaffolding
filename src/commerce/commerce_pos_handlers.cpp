@@ -676,6 +676,15 @@ static std::string orders_create(const RequestContext& ctx, const std::string& /
         return R"({"error":{"code":"TOTAL_MISMATCH","message":"Client total does not match server-recomputed total"}})";
     }
 
+    // WR-03: an empty-string table_id is "treated as absent" for linkage but
+    // the raw body is persisted as-is — the field's contract is
+    // format: uuid, nullable: true, never "". Erase it so the stored
+    // document matches the published contract.
+    if (requestData.contains("table_id") && requestData["table_id"].get<std::string>().empty())
+    {
+        requestData.erase("table_id");
+    }
+
     // Persist the stamped, server-authoritative document
     const std::string id = GenerateUuid();
     requestData["subtotal"]["amount"]   = static_cast<int32_t>(subtotal);
