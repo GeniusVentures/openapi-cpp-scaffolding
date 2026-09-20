@@ -777,6 +777,15 @@ static std::string tables_create(const RequestContext& ctx, const std::string& /
     {
         json requestData = json::parse(body);
 
+        // WR-01: the spec declares asset_id nullable — treat an explicit JSON
+        // null as absent so regenerated clients that serialize unset nullable
+        // fields as null parse cleanly (the generated from_json throws
+        // type_error.302 on a null string field)
+        if (requestData.contains("asset_id") && requestData["asset_id"].is_null())
+        {
+            requestData.erase("asset_id");
+        }
+
         // Strict key-set posture — lifecycle fields are never client-writable
         if (!BodyKeysWithin(requestData, {"name", "section", "capacity", "status", "asset_id", "metadata"}))
         {
@@ -1065,6 +1074,14 @@ static std::string tables_update(const RequestContext& ctx, const std::string& /
 
         // Strict key-set posture — lifecycle fields are never client-writable
         json requestBody = json::parse(body);
+
+        // WR-01: the spec declares asset_id nullable — treat an explicit JSON
+        // null as absent (same erase as tables_create, before DTO extraction)
+        if (requestBody.contains("asset_id") && requestBody["asset_id"].is_null())
+        {
+            requestBody.erase("asset_id");
+        }
+
         if (!BodyKeysWithin(requestBody, {"name", "section", "capacity", "status", "asset_id", "metadata"}))
         {
             return R"({"error":{"code":"INVALID_REQUEST","message":"Table update body contains keys outside the contract"}})";
