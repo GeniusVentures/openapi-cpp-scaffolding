@@ -1037,9 +1037,13 @@ static std::string tables_seat(const RequestContext& ctx, const std::string& /*m
         return R"({"error":{"code":"NOT_FOUND","message":"Table not found"}})";
     }
 
+    // Stored-row parse in its own try — a corrupt row must report corrupt
+    // storage, never masquerade as a bad request body (WR-04, the
+    // tables_get pattern)
+    json doc;
     try
     {
-        json doc = json::parse(value);
+        doc = json::parse(value);
 
         // D-03 tenant check — an other-tenant row is indistinguishable from
         // missing (legacy rows without tenant_id count as "default")
@@ -1047,7 +1051,15 @@ static std::string tables_seat(const RequestContext& ctx, const std::string& /*m
         {
             return R"({"error":{"code":"NOT_FOUND","message":"Table not found"}})";
         }
+    }
+    catch (const json::exception&)
+    {
+        // A corrupt stored row surfaces as a bad request, never a crash
+        return R"({"error":{"code":"INVALID_REQUEST","message":"Stored table document is corrupt"}})";
+    }
 
+    try
+    {
         // Strict key-set posture — the seating event accepts exactly three keys
         json requestBody = json::parse(body);
         if (!BodyKeysWithin(requestBody, {"party_size", "customer_id", "booking_id"}))
@@ -1150,9 +1162,13 @@ static std::string tables_update(const RequestContext& ctx, const std::string& /
         return R"({"error":{"code":"NOT_FOUND","message":"Table not found"}})";
     }
 
+    // Stored-row parse in its own try — a corrupt row must report corrupt
+    // storage, never masquerade as a bad request body (WR-04, the
+    // tables_get pattern)
+    json stored;
     try
     {
-        json stored = json::parse(value);
+        stored = json::parse(value);
 
         // D-03 tenant check — an other-tenant row is indistinguishable from
         // missing (legacy rows without tenant_id count as "default")
@@ -1160,7 +1176,15 @@ static std::string tables_update(const RequestContext& ctx, const std::string& /
         {
             return R"({"error":{"code":"NOT_FOUND","message":"Table not found"}})";
         }
+    }
+    catch (const json::exception&)
+    {
+        // A corrupt stored row surfaces as a bad request, never a crash
+        return R"({"error":{"code":"INVALID_REQUEST","message":"Stored table document is corrupt"}})";
+    }
 
+    try
+    {
         // Strict key-set posture — lifecycle fields are never client-writable
         json requestBody = json::parse(body);
 
