@@ -23,6 +23,8 @@
  * succeeds with the generated stub shape and removes the row. Group 8 (WR-01)
  * proves the null-tolerance contract: an explicit JSON null asset_id or
  * table_id is accepted as absent, per the spec language this phase published.
+ * Group 9 (WR-02) proves the write-value gate: out-of-enum status, blank
+ * name, and sub-1 capacity reject with nothing persisted.
  *
  * Route note (deferred-items.md): the orders create override lives at
  * /api/v1/orders (commerce spec paths carry no /commerce segment);
@@ -89,6 +91,7 @@ static constexpr unsigned int kMaxTraversalPages = 6; ///< Safety bound for curs
 static constexpr size_t  kOpenOrderIdsFirstCount  = 1;  ///< open_order_ids after the first linked order
 static constexpr size_t  kOpenOrderIdsSecondCount = 2;  ///< open_order_ids after the second linked order
 static constexpr size_t  kStoredTableCountOne = 1;    ///< Table rows after one create
+static constexpr int32_t kZeroCapacity        = 0;    ///< Capacity the value gate must reject (WR-02)
 static constexpr size_t  kExpectedDevTables  = 8;   ///< dev.json declares exactly 8 positioned tables (TBL-06)
 static constexpr int32_t kMinTableCapacity  = 1;   ///< Contract floor for every declared capacity
 static constexpr size_t  kExpectedSections  = 2;   ///< dev.json declares exactly Main + Patio
@@ -118,6 +121,8 @@ static const std::string kPatioSection    = "Patio";            ///< dev.json fl
 static const std::string kOldTimestamp    = "2020-01-01T00:00:00Z";  ///< Deterministic stored created_at for the updated_at-advance proof
 static const std::string kEmptyJsonObject = "{}";
 static const std::string kDeletedTrueJson = "{\"deleted\":true}";  ///< Generated delete-stub success shape
+static const std::string kOutOfEnumStatus = "hoverboard";  ///< Out-of-enum status the value gate must reject (WR-02)
+static const std::string kBlankName       = "   ";         ///< Whitespace-only name the value gate must reject (WR-02)
 
 // Well-formed 32-hex fixture ids (unknown refs are NOT stored anywhere)
 static const std::string kMissingTableId       = "cccccccccccccccccccccccccccccccc";  ///< Well-formed but unstored
@@ -1270,4 +1275,99 @@ TEST_F(TableHandlersTest, OrderNullTableIdTreatedAsAbsent)
         << "A null table_id must be erased, not persisted as null";
     EXPECT_EQ(CountStoredTables(), kZeroCreatedRows)
         << "A tableless order must never touch restaurant/tables";
+}
+
+// ============================================================================
+// GROUP 9 — WR-02 write-value gate
+// ============================================================================
+
+///
+/// A create carrying a status outside the contract enum rejects with
+/// INVALID_REQUEST and nothing is stored — the generated validate() is a
+/// no-op, so the enum gate lives in the handler (WR-02).
+///
+TEST_F(TableHandlersTest, CreateRejectsOutOfEnumStatus)
+{
+    json body;
+    body["name"]     = "t-status-enum";
+    body["capacity"] = kFixtureCapacity;
+    body["status"]   = kOutOfEnumStatus;
+
+    const std::string result = Route("POST", kTablesPath, body.dump());
+    EXPECT_NE(result.find("INVALID_REQUEST"), std::string::npos)
+        << "Expected INVALID_REQUEST, got: " << result;
+
+    EXPECT_EQ(CountStoredTables(), 0) << "Rejected table must not persist";
+}
+
+///
+/// A create carrying a whitespace-only name rejects with INVALID_REQUEST and
+/// nothing is stored (WR-02).
+///
+TEST_F(TableHandlersTest, CreateRejectsBlankName)
+{
+    json body;
+    body["name"]     = kBlankName;
+    body["capacity"] = kFixtureCapacity;
+    body["status"]   = kAvailableStatus;
+
+    const std::string result = Route("POST", kTablesPath, body.dump());
+    EXPECT_NE(result.find("INVALID_REQUEST"), std::string::npos)
+        << "Expected INVALID_REQUEST, got: " << result;
+
+    EXPECT_EQ(CountStoredTables(), 0) << "Rejected table must not persist";
+}
+
+///
+/// A create carrying a capacity below 1 rejects with INVALID_REQUEST and
+/// nothing is stored (WR-02).
+///
+TEST_F(TableHandlersTest, CreateRejectsZeroCapacity)
+{
+    json body;
+    body["name"]     = "t-zero-capacity";
+    body["capacity"] = kZeroCapacity;
+    body["status"]   = kAvailableStatus;
+
+    const std::string result = Route("POST", kTablesPath, body.dump());
+    EXPECT_NE(result.find("INVALID_REQUEST"), std::string::npos)
+        << "Expected INVALID_REQUEST, got: " << result;
+
+    EXPECT_EQ(CountStoredTables(), 0) << "Rejected table must not persist";
+}
+
+///
+/// A PATCH carrying contract-illegal VALUES (out-of-enum status, blank name,
+/// zero capacity) rejects with INVALID_REQUEST and storage is unchanged —
+/// and only the keys present in the partial body are judged (WR-02).
+///
+TEST_F(TableHandlersTest, UpdateRejectsValuesOutsideContract)
+{
+    const std::string id = CreateTable("t-value-gate", kFixtureCapacity);
+
+    json before;
+    ASSERT_TRUE(ReadStoredTable(id, before));
+
+    json statusBody;
+    statusBody["status"] = kOutOfEnumStatus;
+    const std::string statusResult = Route("PATCH", TablePath(id), statusBody.dump());
+    EXPECT_NE(statusResult.find("INVALID_REQUEST"), std::string::npos)
+        << "Expected INVALID_REQUEST for out-of-enum status, got: " << statusResult;
+
+    json nameBody;
+    nameBody["name"] = kBlankName;
+    const std::string nameResult = Route("PATCH", TablePath(id), nameBody.dump());
+    EXPECT_NE(nameResult.find("INVALID_REQUEST"), std::string::npos)
+        << "Expected INVALID_REQUEST for blank name, got: " << nameResult;
+
+    json capacityBody;
+    capacityBody["capacity"] = kZeroCapacity;
+    const std::string capacityResult = Route("PATCH", TablePath(id), capacityBody.dump());
+    EXPECT_NE(capacityResult.find("INVALID_REQUEST"), std::string::npos)
+        << "Expected INVALID_REQUEST for zero capacity, got: " << capacityResult;
+
+    json after;
+    ASSERT_TRUE(ReadStoredTable(id, after));
+    EXPECT_EQ(after.dump(), before.dump())
+        << "Rejected patches must leave storage unchanged";
 }

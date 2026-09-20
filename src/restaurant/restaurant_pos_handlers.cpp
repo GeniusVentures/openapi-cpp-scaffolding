@@ -38,6 +38,7 @@
 #include "nlohmann/json.hpp"
 #include <spdlog/spdlog.h>
 #include <chrono>
+#include <cctype>
 #include <cstdint>
 #include <ctime>
 #include <iomanip>
@@ -57,6 +58,7 @@ static IStorageEngine* s_storage = nullptr;
 
 static constexpr unsigned int kDefaultListLimit = 50;   ///< Matches generated kDefaultPaginationLimit + Dart client default
 static constexpr unsigned int kUuidHexLength    = 32;   ///< Stored ids are 32 hex chars, no hyphens
+static constexpr int32_t      kMinTableCapacity = 1;    ///< Contract floor for a table capacity (WR-02 value gate)
 static constexpr int          kHexDigitMax      = 15;   ///< Largest index into kHexChars
 static constexpr const char*  kHexChars         = "0123456789abcdef";
 
@@ -392,6 +394,82 @@ static bool BodyKeysWithin(const json& body, const std::vector<std::string>& all
             return false;
         }
     }
+    return true;
+}
+
+/// Contract-legal table status values — mirrors K_TABLE_STATUSES in
+/// scripts/apply_setup.sh (WR-02: the generated TableCreate/TableUpdate
+/// validate() is a no-op, so the enum gate lives in the handlers)
+static constexpr const char* const kTableStatuses[] =
+{
+    "available", "occupied", "reserved", "dirty", "disabled",
+};
+
+/**
+ * @brief      Check that a string is empty or all whitespace
+ *
+ * @param      value  Candidate name string
+ *
+ * @return     true when value carries no non-whitespace character
+ */
+static bool IsBlank(const std::string& value) noexcept
+{
+    for (const char c : value)
+    {
+        if (std::isspace(static_cast<unsigned char>(c)) == 0)
+        {
+            return false;
+        }
+    }
+    return true;
+}
+
+/**
+ * @brief      Check that every contract value in a table write is legal
+ *
+ * WR-02 value gate: BodyKeysWithin proves the KEY set; this proves the
+ * VALUES — the generated TableCreate/TableUpdate validate() is a no-op, so
+ * without this gate an out-of-enum status, a blank name, or a capacity
+ * below 1 would persist verbatim and break Table-model consumers (dart
+ * enum parsing, the ASVS L1 input-validation posture). Only keys PRESENT
+ * in the body are judged, so the same gate serves create (name/capacity/
+ * status are required by the DTO) and update (partial bodies). Must run
+ * after DTO extraction — from_json guarantees the types (name/status
+ * strings, capacity a number).
+ *
+ * @param      body  Parsed + DTO-extracted request body
+ *
+ * @return     true when every present contract value is legal
+ */
+static bool TableValuesWithinContract(const json& body)
+{
+    if (body.contains("status"))
+    {
+        bool legalStatus = false;
+        for (const char* const status : kTableStatuses)
+        {
+            if (body.at("status") == status)
+            {
+                legalStatus = true;
+                break;
+            }
+        }
+        if (!legalStatus)
+        {
+            return false;
+        }
+    }
+
+    if (body.contains("name") && IsBlank(body.at("name").get<std::string>()))
+    {
+        return false;
+    }
+
+    if (body.contains("capacity") && body.at("capacity").get<int32_t>() < kMinTableCapacity)
+    {
+        return false;
+    }
+
     return true;
 }
 
@@ -754,7 +832,9 @@ static std::string kitchen_tickets_create(const RequestContext& ctx, const std::
  * outside {name, section, capacity, status, asset_id, metadata} is rejected
  * INVALID_REQUEST with nothing persisted (T-03.1-04: pos_status, guest_count,
  * server_id, opened_at, and open_order_ids are server-owned lifecycle fields;
- * the generated passthrough would store whatever keys arrive). Before the
+ * the generated passthrough would store whatever keys arrive) and the values
+ * are gated too — status within the contract enum, non-blank name, capacity
+ * >= 1 (WR-02; the generated validate() is a no-op). Before the
  * shared stamp-and-persist tail, the lifecycle fields are server-defaulted —
  * pos_status "empty" and open_order_ids [] — so every readable table is a
  * complete document (dart Table models require the fields; without the
@@ -799,6 +879,13 @@ static std::string tables_create(const RequestContext& ctx, const std::string& /
         const org::openapitools::server::model::TableCreate dto =
             requestData.get<org::openapitools::server::model::TableCreate>();
         dto.validate();
+
+        // WR-02 value gate — the keys are within the contract; the values
+        // must be too (out-of-enum status, blank name, capacity < 1)
+        if (!TableValuesWithinContract(requestData))
+        {
+            return R"({"error":{"code":"INVALID_REQUEST","message":"Table create body contains values outside the contract"}})";
+        }
 
         // Server-defaulted lifecycle fields — a freshly created table starts
         // empty with no open checks; only server events (seat/order/bus) ever
@@ -1019,7 +1106,9 @@ static std::string tables_seat(const RequestContext& ctx, const std::string& /*m
  * TableUpdate contract under the strict key-set posture {name, section,
  * capacity, status, asset_id, metadata}; only the six contract keys present
  * in the body are applied to the stored document (metadata replaces
- * wholesale, matching the generated top-level merge semantics).
+ * wholesale, matching the generated top-level merge semantics) and only the
+ * present keys are value-gated — status within the contract enum, non-blank
+ * name, capacity >= 1 (WR-02; the generated validate() is a no-op).
  *
  * BUS/RESET compensating event: when the body sets status to "available" or
  * "dirty" the seating lifecycle resets — pos_status "empty", guest_count/
@@ -1089,6 +1178,13 @@ static std::string tables_update(const RequestContext& ctx, const std::string& /
         const org::openapitools::server::model::TableUpdate dto =
             requestBody.get<org::openapitools::server::model::TableUpdate>();
         dto.validate();
+
+        // WR-02 value gate — only the keys present in the partial body are
+        // judged (out-of-enum status, blank name, capacity < 1)
+        if (!TableValuesWithinContract(requestBody))
+        {
+            return R"({"error":{"code":"INVALID_REQUEST","message":"Table update body contains values outside the contract"}})";
+        }
 
         // Apply only the contract keys present in the body
         static const std::vector<std::string> kTableContractKeys = {
