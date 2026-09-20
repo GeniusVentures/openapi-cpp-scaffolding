@@ -26,7 +26,8 @@
  * Group 9 (WR-02) proves the write-value gate: out-of-enum status, blank
  * name, and sub-1 capacity reject with nothing persisted. Group 10 (WR-03)
  * proves the empty-string table_id erasure: the stored order never carries
- * table_id "".
+ * table_id "". Group 11 (WR-04) proves seat/update report a corrupt STORED
+ * row through the corrupt-storage envelope, never the invalid-body message.
  *
  * Route note (deferred-items.md): the orders create override lives at
  * /api/v1/orders (commerce spec paths carry no /commerce segment);
@@ -125,6 +126,7 @@ static const std::string kEmptyJsonObject = "{}";
 static const std::string kDeletedTrueJson = "{\"deleted\":true}";  ///< Generated delete-stub success shape
 static const std::string kOutOfEnumStatus = "hoverboard";  ///< Out-of-enum status the value gate must reject (WR-02)
 static const std::string kBlankName       = "   ";         ///< Whitespace-only name the value gate must reject (WR-02)
+static const std::string kCorruptStoredDoc = "not-valid-json";  ///< Non-JSON payload seeded for the corrupt-row tests (WR-04)
 
 // Well-formed 32-hex fixture ids (unknown refs are NOT stored anywhere)
 static const std::string kMissingTableId       = "cccccccccccccccccccccccccccccccc";  ///< Well-formed but unstored
@@ -1399,4 +1401,35 @@ TEST_F(TableHandlersTest, OrderEmptyStringTableIdErasedFromStoredDoc)
     const json orderDoc = json::parse(storedOrder);
     EXPECT_FALSE(orderDoc.contains("table_id"))
         << "An empty-string table_id must be erased before persisting";
+}
+
+// ============================================================================
+// GROUP 11 — WR-04 corrupt stored-row envelopes
+// ============================================================================
+
+///
+/// A corrupt STORED table row makes seat and update answer "Stored table
+/// document is corrupt" — the invalid-request-body message would blame the
+/// caller for a storage defect (WR-04: the stored-row parse sits in its own
+/// try, the tables_get pattern).
+///
+TEST_F(TableHandlersTest, SeatAndUpdateReportCorruptStoredRow)
+{
+    auto keyResult = KeyBuilder::Build("restaurant", "tables", kOtherTenantTableId);
+    ASSERT_TRUE(keyResult.has_value());
+    ASSERT_TRUE(m_engine->Put(keyResult.value(), kCorruptStoredDoc));
+
+    json seatBody;
+    seatBody["party_size"] = kSeatPartyTwo;
+    const std::string seatResult =
+        Route("POST", SeatPath(kOtherTenantTableId), seatBody.dump());
+    EXPECT_NE(seatResult.find("Stored table document is corrupt"), std::string::npos)
+        << "Expected the corrupt-storage envelope from seat, got: " << seatResult;
+
+    json updateBody;
+    updateBody["name"] = kPatchedName;
+    const std::string updateResult =
+        Route("PATCH", TablePath(kOtherTenantTableId), updateBody.dump());
+    EXPECT_NE(updateResult.find("Stored table document is corrupt"), std::string::npos)
+        << "Expected the corrupt-storage envelope from update, got: " << updateResult;
 }
