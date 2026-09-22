@@ -25,9 +25,16 @@ macro(build_domain_plugin PREFIX PLUGIN_SUBDIR)
 
     option(USE_DERIVED_CLASS "Provide a hand-written derived plugin class with its own EXPORT_PLUGIN" OFF)
 
-    # When ON, skip the generated export shim — the module adds its own .cpp with
-    # EXPORT_PLUGIN for the derived class.
-    if(NOT USE_DERIVED_CLASS)
+    # Per-prefix variant for a derived class supplied by the CONSUMING parent
+    # repo: the parent sets USE_DERIVED_CLASS_<PREFIX>=ON (uppercased) in its
+    # cache BEFORE add_subdirectory() of the scaffold, then appends its impl
+    # sources to ${PREFIX}_api from outside this repo.
+    string(TOUPPER "${PREFIX}" _PREFIX_UPPER)
+    option(USE_DERIVED_CLASS_${_PREFIX_UPPER} "Derived plugin class for ${PREFIX} supplied by the consuming parent" OFF)
+
+    # When either is ON, skip the generated export shim — the derived class
+    # provides the one .cpp with EXPORT_PLUGIN.
+    if(NOT USE_DERIVED_CLASS AND NOT USE_DERIVED_CLASS_${_PREFIX_UPPER})
         set(_PLUGIN_SOURCES ${PLUGIN_CPP} ${MODEL_SOURCES})
     else()
         set(_PLUGIN_SOURCES ${MODEL_SOURCES})
