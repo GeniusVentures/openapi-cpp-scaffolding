@@ -43,6 +43,7 @@
 #include <ctime>
 #include <iomanip>
 #include <limits>
+#include <mutex>
 #include <random>
 #include <sstream>
 #include <vector>
@@ -51,6 +52,14 @@ using json = nlohmann::json;
 using namespace gnus::hash;
 
 static IStorageEngine* s_storage = nullptr;
+
+/// Serializes the linked-table read-modify-write in orders_create's
+/// post-persist transition (PR #24 review, P1): two concurrent creates for
+/// the same table each appended to a snapshot and the second Put dropped
+/// the first order id. File-local by design — only this translation
+/// unit's orders_create performs the TBL-02 table transition, so the
+/// mutex needs no cross-library visibility.
+static std::mutex s_tableAggregateMutex;
 
 // ============================================================================
 // Helpers
@@ -713,11 +722,43 @@ static std::string orders_create(const RequestContext& ctx, const std::string& /
     // table's open_order_ids (deduped — initialize the array when the doc
     // lacks it or carries a corrupt non-array value) and set pos_status to
     // "order_placed" unconditionally — a table with newly fired items IS
-    // order_placed, even one previously order_served. Not atomic with the
+    // order_placed, even one previously order_served. The transition holds
+    // the table-aggregate mutex and refetches the row under it: the
+    // validation-time snapshot is stale by now (a concurrent create, seat,
+    // or update may have transitioned the table since it was read), so
+    // appending to the snapshot would drop that write. Not atomic with the
     // order Put (T-03.1-07 accepted): a failure here surfaces STORAGE_ERROR
     // and logs both ids as the reconciliation trail.
     if (tableLinked)
     {
+        std::lock_guard<std::mutex> tableLock(s_tableAggregateMutex);
+        std::string freshTableDoc;
+        if (!s_storage->Get(linkedTableKey, freshTableDoc))
+        {
+            SPDLOG_ERROR("Order {} persisted but the linked table {} vanished before the transition",
+                         id, dto.getTableId());
+            return R"({"error":{"code":"STORAGE_ERROR","message":"Failed to update linked table"}})";
+        }
+        try
+        {
+            linkedTableDoc = json::parse(freshTableDoc);
+        }
+        catch (const json::exception&)
+        {
+            SPDLOG_ERROR("Order {} persisted but the linked table {} row is corrupt", id, dto.getTableId());
+            return R"({"error":{"code":"STORAGE_ERROR","message":"Failed to update linked table"}})";
+        }
+
+        // The refetched row must still be the caller's tenant — a delete
+        // and cross-tenant recreate between validation and this Put would
+        // otherwise append this order to another tenant's aggregate
+        if (linkedTableDoc.value("tenant_id", "default") != ctx.tenantId)
+        {
+            SPDLOG_ERROR("Order {} persisted but the linked table {} changed tenant before the transition",
+                         id, dto.getTableId());
+            return R"({"error":{"code":"STORAGE_ERROR","message":"Failed to update linked table"}})";
+        }
+
         if (!linkedTableDoc.contains("open_order_ids") ||
             !linkedTableDoc["open_order_ids"].is_array())
         {
