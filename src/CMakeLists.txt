@@ -30,6 +30,19 @@ foreach(SPEC_FILE ${SPEC_FILES})
 
     set(SRC_DIR "${CMAKE_CURRENT_SOURCE_DIR}/${PREFIX}")
     set(GEN_DIR "${SRC_DIR}/generated")
+
+    # Parent-owned domains (specs from the consuming parent's api-specs/)
+    # redirect generation into the parent's tree when the parent declares
+    # BACKEND_GENERATED_ROOT, and the PARENT builds their plugin dylibs —
+    # the frontend-scaffold pattern: this repo is the generator + framework
+    # and builds only its own modules (in-repo specs like identity).
+    # Standalone scaffold builds (no BACKEND_GENERATED_ROOT) stay in-tree.
+    set(_PARENT_REDIRECT FALSE)
+    if("${SPEC_FILE}" IN_LIST EXTERNAL_SPEC_FILES AND BACKEND_GENERATED_ROOT)
+        set(_PARENT_REDIRECT TRUE)
+        set(GEN_DIR "${BACKEND_GENERATED_ROOT}/${PREFIX}/generated")
+    endif()
+
     set(PLUGIN_CPP "${GEN_DIR}/${PREFIX}_plugin.cpp")
 
     # Create cmake-time placeholder — overwritten by generate_plugin.py during build
@@ -94,8 +107,10 @@ foreach(SPEC_FILE ${SPEC_FILES})
 
     list(APPEND BACKEND_API_TARGETS ${PREFIX}_api_ep)
 
-    # Step 3: Add domain subdirectory for building the plugin .dylib
-    if(EXISTS "${SRC_DIR}/CMakeLists.txt")
+    # Step 3: Add domain subdirectory for building the plugin .dylib.
+    # Skipped for redirected parent-owned domains — the parent's build owns
+    # their dylibs (see BACKEND_GENERATED_ROOT above).
+    if(NOT _PARENT_REDIRECT AND EXISTS "${SRC_DIR}/CMakeLists.txt")
         add_subdirectory(${SRC_DIR} ${CMAKE_CURRENT_BINARY_DIR}/${PREFIX})
         list(APPEND BACKEND_PLUGIN_TARGETS ${PREFIX}_api_plugin)
     endif()
