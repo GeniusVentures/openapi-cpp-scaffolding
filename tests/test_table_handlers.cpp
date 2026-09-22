@@ -49,6 +49,7 @@
 #include <memory>
 #include <set>
 #include <string>
+#include <thread>
 #include <utility>
 #include <vector>
 
@@ -995,6 +996,55 @@ TEST_F(TableHandlersTest, SecondOrderAppendsSecondId)
     ASSERT_TRUE(m_engine->Get(keyResult.value(), storedFirst));
     EXPECT_EQ(storedFirst, firstEcho)
         << "The second linked order must not modify the first order's row";
+}
+
+///
+/// Concurrent linked orders on one table all land in open_order_ids — the
+/// P1 lost-update regression (PR #24 review): orders_create used its
+/// validation-time table snapshot for the post-persist transition, so two
+/// racing creates each appended to their own stale copy and the second Put
+/// silently dropped the first order id, making that check unreachable from
+/// the table aggregate. The serialized refetch keeps every persisted order
+/// reachable. Membership, not ordering — the mutex serializes appends but
+/// completion order is scheduler-dependent.
+///
+TEST_F(TableHandlersTest, ConcurrentOrdersAllAppearInOpenOrderIds)
+{
+    const std::string tableId = CreateTable("t-order-concurrent", kFixtureCapacity);
+    SeedOrderMenuItem();
+
+    constexpr unsigned int kConcurrentOrderPosts = 8;
+    std::vector<std::string> orderIds(kConcurrentOrderPosts);
+    std::vector<std::thread> posters;
+    posters.reserve(kConcurrentOrderPosts);
+    for (unsigned int i = 0; i < kConcurrentOrderPosts; ++i)
+    {
+        posters.emplace_back([this, &tableId, &orderIds, i] {
+            try
+            {
+                orderIds[i] = ParseId(PostJson(kOrdersPath, MakeOrderBody(tableId).dump()));
+            }
+            catch (const std::exception& e)
+            {
+                ADD_FAILURE() << "Concurrent order post " << i << " failed: " << e.what();
+            }
+        });
+    }
+    for (std::thread& poster : posters)
+    {
+        poster.join();
+    }
+
+    const json table = GetTableAsJson(tableId);
+    const std::vector<std::string> openIds =
+        table.at("open_order_ids").get<std::vector<std::string>>();
+    ASSERT_EQ(openIds.size(), kConcurrentOrderPosts);
+    for (const std::string& orderId : orderIds)
+    {
+        EXPECT_NE(std::find(openIds.begin(), openIds.end(), orderId), openIds.end())
+            << "Order " << orderId << " must remain reachable from its table";
+    }
+    EXPECT_EQ(table.at("pos_status").get<std::string>(), kPosStatusOrderPlaced);
 }
 
 ///
