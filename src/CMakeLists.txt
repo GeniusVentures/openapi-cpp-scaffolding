@@ -24,6 +24,16 @@ list(APPEND SPEC_FILES ${EXTERNAL_SPEC_FILES})
 set(BACKEND_API_TARGETS "")
 set(BACKEND_PLUGIN_TARGETS "")
 
+# Parent-supplied schema mappings (declare-before-consume): when the parent
+# sets API_SCHEMA_MAPPINGS before adding this scaffold, every parent-owned
+# (redirected) domain passes it to openapi-generator as --schema-mappings —
+# mapped schemas are treated as externally supplied models and are NOT
+# generated into the domain tree (the parent compiles them once from a
+# shared spec). Scaffold-internal specs are never mapped: the standalone
+# scaffold owns and generates all of its models.
+set(API_SCHEMA_MAPPINGS "" CACHE STRING
+    "Comma-separated schema=name mappings for parent-owned domains (externally supplied models)")
+
 foreach(SPEC_FILE ${SPEC_FILES})
     get_filename_component(SPEC_BASENAME ${SPEC_FILE} NAME_WE)
     string(REPLACE "_openapi" "" PREFIX ${SPEC_BASENAME})
@@ -41,6 +51,11 @@ foreach(SPEC_FILE ${SPEC_FILES})
     if("${SPEC_FILE}" IN_LIST EXTERNAL_SPEC_FILES AND BACKEND_GENERATED_ROOT)
         set(_PARENT_REDIRECT TRUE)
         set(GEN_DIR "${BACKEND_GENERATED_ROOT}/${PREFIX}/generated")
+    endif()
+
+    set(_SCHEMA_MAPPING_ARGS "")
+    if(_PARENT_REDIRECT AND API_SCHEMA_MAPPINGS)
+        set(_SCHEMA_MAPPING_ARGS --schema-mappings ${API_SCHEMA_MAPPINGS})
     endif()
 
     set(PLUGIN_CPP "${GEN_DIR}/${PREFIX}_plugin.cpp")
@@ -71,6 +86,7 @@ foreach(SPEC_FILE ${SPEC_FILES})
             -i ${SPEC_FILE}
             -g cpp-pistache-server
             -o ${GEN_DIR}
+            ${_SCHEMA_MAPPING_ARGS}
         DEPENDS ${SPEC_FILE}
         DEPENDEES configure
         WORKING_DIRECTORY "${SRC_DIR}"
