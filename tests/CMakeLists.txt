@@ -37,6 +37,7 @@ target_link_libraries(test_auth PRIVATE
     storage
     GTest::gtest_main
     OpenSSL::Crypto
+    nlohmann_json::nlohmann_json
 )
 target_include_directories(test_auth PRIVATE
     "${CMAKE_CURRENT_SOURCE_DIR}/../src"

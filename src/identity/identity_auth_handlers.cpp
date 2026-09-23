@@ -69,6 +69,43 @@ static void StripPasswordFields(json& u) noexcept { u.erase("password_hash"); u.
 // Auth Handlers
 // ============================================================================
 
+/**
+ * @brief      Flatten a user's role permissions per ACL-CONTRACT-01
+ *
+ * Walks user["roles"] (array of Role objects) and collects every string from
+ * each role's permissions array in first-seen order, skipping duplicates so
+ * overlapping roles contribute one entry. Users without a roles array yield
+ * an empty list.
+ *
+ * @param      user   Stored user document
+ *
+ * @return     Flattened {domain}:{action} permission strings
+ */
+static std::vector<std::string> FlattenRolePermissions(const json& user)
+{
+    std::vector<std::string> permissions;
+    if (!user.contains("roles") || !user.at("roles").is_array())
+    {
+        return permissions;
+    }
+    for (const auto& role : user.at("roles"))
+    {
+        if (!role.is_object() || !role.contains("permissions") || !role.at("permissions").is_array())
+        {
+            continue;
+        }
+        for (const auto& permission : role.at("permissions"))
+        {
+            if (permission.is_string() &&
+                std::find(permissions.begin(), permissions.end(), permission.get<std::string>()) == permissions.end())
+            {
+                permissions.push_back(permission.get<std::string>());
+            }
+        }
+    }
+    return permissions;
+}
+
 static std::string auth_login(const RequestContext& /*ctx*/, const std::string& /*m*/, const std::string& /*p*/, const std::string& body)
 {
     try {
@@ -92,13 +129,15 @@ static std::string auth_login(const RequestContext& /*ctx*/, const std::string& 
         if (!VerifyPassword(pass, BuildStoredHash(u)))
             return R"({"error":{"code":"INVALID_CREDENTIALS","message":"Invalid email or password"}})";
 
-        std::string tok = CreateJwtToken(s_jwtSecret, userId, u.value("tenant_id",""), u.value("organization_id",""), 3600);
+        std::vector<std::string> permissions = FlattenRolePermissions(u);
+        std::string tok = CreateJwtToken(s_jwtSecret, userId, u.value("tenant_id",""), u.value("organization_id",""), 3600, permissions);
         if (tok.empty()) return R"({"error":{"code":"TOKEN_ERROR","message":"Failed to create token"}})";
 
         StripPasswordFields(u);
-        json r; r["access_token"]=tok; r["token_type"]="Bearer"; r["expires_in"]=3600; r["user"]=u;
+        json r; r["access_token"]=tok; r["token_type"]="Bearer"; r["expires_in"]=3600; r["user"]=u; r["permissions"]=permissions;
         return r.dump();
     } catch (const json::parse_error&) { return R"({"error":{"code":"PARSE_ERROR","message":"Invalid JSON body"}})"; }
+      catch (const json::exception&)   { return R"({"error":{"code":"INVALID_REQUEST","message":"Request body fields have invalid types"}})"; }
 }
 
 static std::string auth_logout(const RequestContext&, const std::string&, const std::string&, const std::string&)
@@ -120,11 +159,13 @@ static std::string auth_refreshToken(const RequestContext&, const std::string&, 
         json req = json::parse(body);
         if (!req.contains("token")) return R"({"error":{"code":"INVALID_REQUEST","message":"Token is required"}})";
         std::string old = req["token"].get<std::string>(), nw;
-        if (!RefreshJwtToken(old, s_jwtSecret, 86400, nw, 3600))
+        std::vector<std::string> permissions;
+        if (!RefreshJwtToken(old, s_jwtSecret, 86400, nw, 3600, &permissions))
             return R"({"error":{"code":"INVALID_TOKEN","message":"Token is invalid or expired beyond refresh window"}})";
-        json r; r["access_token"]=nw; r["token_type"]="Bearer"; r["expires_in"]=3600;
+        json r; r["access_token"]=nw; r["token_type"]="Bearer"; r["expires_in"]=3600; r["permissions"]=permissions;
         return r.dump();
     } catch (const json::parse_error&) { return R"({"error":{"code":"PARSE_ERROR","message":"Invalid JSON body"}})"; }
+      catch (const json::exception&)   { return R"({"error":{"code":"INVALID_REQUEST","message":"Request body fields have invalid types"}})"; }
 }
 
 // ============================================================================
@@ -210,6 +251,10 @@ static std::string users_create(const RequestContext& ctx, const std::string& /*
     catch (const json::parse_error&)
     {
         return R"({"error":{"code":"PARSE_ERROR","message":"Invalid JSON body"}})";
+    }
+    catch (const json::exception&)
+    {
+        return R"({"error":{"code":"INVALID_REQUEST","message":"Request body fields have invalid types"}})";
     }
 }
 
