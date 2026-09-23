@@ -66,7 +66,8 @@ std::string CreateJwtToken(
 bool ValidateJwtToken(
     const std::string& token,
     const std::string& secret,
-    RequestContext&     ctx_out) noexcept
+    RequestContext&     ctx_out,
+    int                 leewaySeconds) noexcept
 {
     try
     {
@@ -74,6 +75,7 @@ bool ValidateJwtToken(
 
         jwt::verify()
             .allow_algorithm(jwt::algorithm::hs256{secret})
+            .leeway(static_cast<size_t>(leewaySeconds))
             .verify(decoded);
 
         ctx_out.userId         = decoded.get_payload_claim("sub").as_string();
@@ -169,7 +171,7 @@ bool RefreshJwtToken(
     int                leewaySeconds,
     std::string&       newToken_out,
     int                expirySeconds,
-    std::vector<std::string>* permissions_out) noexcept
+    const std::vector<std::string>& permissions) noexcept
 {
     try
     {
@@ -180,27 +182,13 @@ bool RefreshJwtToken(
             .leeway(static_cast<size_t>(leewaySeconds))
             .verify(decoded);
 
-        std::string userId   = decoded.get_payload_claim("sub").as_string();
-        std::string tenantId = decoded.get_payload_claim("tenant").as_string();
-        std::string orgId    = decoded.get_payload_claim("org").as_string();
-
-        std::vector<std::string> permissions;
-        if (decoded.has_payload_claim("perms"))
-        {
-            for (const auto& entry : decoded.get_payload_claim("perms").as_array())
-            {
-                if (entry.is<std::string>())
-                {
-                    permissions.push_back(entry.get<std::string>());
-                }
-            }
-        }
-
-        newToken_out = CreateJwtToken(secret, userId, tenantId, orgId, expirySeconds, permissions);
-        if (permissions_out != nullptr)
-        {
-            *permissions_out = std::move(permissions);
-        }
+        newToken_out = CreateJwtToken(
+            secret,
+            decoded.get_payload_claim("sub").as_string(),
+            decoded.get_payload_claim("tenant").as_string(),
+            decoded.get_payload_claim("org").as_string(),
+            expirySeconds,
+            permissions);
         return !newToken_out.empty();
     }
     catch (...)

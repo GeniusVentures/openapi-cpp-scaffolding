@@ -354,19 +354,65 @@ TEST(AuthJwtTest, ValidateJwtToken_EmptyPermsClaim_LeavesPermissionsEmpty)
     EXPECT_TRUE(ctx.permissions.empty());
 }
 
-TEST(AuthJwtTest, RefreshJwtToken_PreservesPermissionsAndOutputsThem)
+// ============================================================================
+// Refresh semantics (PR #4 round-3 P1): the replacement token carries the
+// caller-SUPPLIED permissions — never the old token's perms claim — so a
+// caller that re-resolves roles from storage cannot resurrect revoked ones.
+// ============================================================================
+
+TEST(AuthJwtTest, RefreshJwtToken_MintsSuppliedPermissions)
 {
-    const std::vector<std::string> kPerms = {"pos:operate", "inventory:read"};
-    const auto token = CreateJwtToken(kTestSecret, kTestUserId, kTestTenant, kTestOrg, 3600, kPerms);
+    const std::vector<std::string> kStalePerms   = {"pos:operate", "inventory:read"};
+    const std::vector<std::string> kCurrentPerms = {"pos:operate"};
+    const auto token = CreateJwtToken(kTestSecret, kTestUserId, kTestTenant, kTestOrg, 3600, kStalePerms);
 
     std::string refreshed;
-    std::vector<std::string> permsOut;
-    ASSERT_TRUE(RefreshJwtToken(token, kTestSecret, 86400, refreshed, 3600, &permsOut))
+    ASSERT_TRUE(RefreshJwtToken(token, kTestSecret, 86400, refreshed, 3600, kCurrentPerms))
         << "refresh must accept the token it just created";
-
-    EXPECT_EQ(kPerms, permsOut);
 
     RequestContext ctx;
     ASSERT_TRUE(ValidateJwtToken(refreshed, kTestSecret, ctx));
-    EXPECT_EQ(kPerms, ctx.permissions) << "refresh must re-issue perms in the new token";
+    EXPECT_EQ(kCurrentPerms, ctx.permissions) << "refresh must mint the supplied perms, not the old claim";
+}
+
+TEST(AuthJwtTest, RefreshJwtToken_DefaultPermissions_MintEmptyPerms)
+{
+    // A caller that resolves no roles (fully revoked user) gets an empty
+    // perms claim even though the old token carried privileges.
+    const std::vector<std::string> kStalePerms = {"pos:operate"};
+    const auto token = CreateJwtToken(kTestSecret, kTestUserId, kTestTenant, kTestOrg, 3600, kStalePerms);
+
+    std::string refreshed;
+    ASSERT_TRUE(RefreshJwtToken(token, kTestSecret, 86400, refreshed));
+
+    RequestContext ctx;
+    ASSERT_TRUE(ValidateJwtToken(refreshed, kTestSecret, ctx));
+    EXPECT_TRUE(ctx.permissions.empty());
+}
+
+// ============================================================================
+// Refresh leeway: refresh accepts recently-expired tokens within its window
+// ============================================================================
+
+TEST(AuthJwtTest, ValidateJwtToken_Leeway_AcceptsRecentlyExpiredToken)
+{
+    // A negative lifetime mints a token already expired, so leeway is
+    // exercised without sleeping.
+    static constexpr int kExpiredSecondsAgo = 10;
+    const auto token = CreateJwtToken(kTestSecret, kTestUserId, kTestTenant, kTestOrg, -kExpiredSecondsAgo);
+
+    RequestContext ctx;
+    EXPECT_FALSE(ValidateJwtToken(token, kTestSecret, ctx))
+        << "strict validation must reject an expired token";
+    EXPECT_TRUE(ValidateJwtToken(token, kTestSecret, ctx, 86400))
+        << "refresh leeway must accept a recently expired token";
+}
+
+TEST(AuthJwtTest, ValidateJwtToken_Leeway_RejectsTokenExpiredBeyondWindow)
+{
+    static constexpr int kExpiredSecondsAgo = 90000;  // 25h — past the 24h window
+    const auto token = CreateJwtToken(kTestSecret, kTestUserId, kTestTenant, kTestOrg, -kExpiredSecondsAgo);
+
+    RequestContext ctx;
+    EXPECT_FALSE(ValidateJwtToken(token, kTestSecret, ctx, 86400));
 }

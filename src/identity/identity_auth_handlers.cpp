@@ -31,6 +31,13 @@ static IStorageEngine* s_storage = nullptr;
 static std::string s_jwtSecret;
 
 // ============================================================================
+// Auth Constants
+// ============================================================================
+
+static constexpr int kTokenExpirySeconds   = 3600;   ///< Access-token lifetime
+static constexpr int kRefreshLeewaySeconds = 86400;  ///< Refresh accepts tokens expired ≤24h
+
+// ============================================================================
 // Hex Helpers
 // ============================================================================
 
@@ -106,6 +113,29 @@ static std::vector<std::string> FlattenRolePermissions(const json& user)
     return permissions;
 }
 
+// ============================================================================
+// Seeded-account roles
+// ============================================================================
+
+static constexpr const char* kAdminRoleName           = "admin";
+static constexpr const char* kAdminWildcardPermission = "*:*";
+
+/**
+ * @brief      Default roles document for seeded dev accounts
+ *
+ * ACL-CONTRACT-01 flattens permissions from user["roles"]; the seeded
+ * accounts previously carried only the legacy "role":"admin" marker, which
+ * flattens to an EMPTY permission list. Seed an explicit admin role with the
+ * wildcard permission so seeded logins actually authorize.
+ *
+ * @return     roles array [{name: "admin", permissions: ["*:*"]}]
+ */
+static json DefaultAdminRoles()
+{
+    return json::array({json{{"name", kAdminRoleName},
+                             {"permissions", json::array({kAdminWildcardPermission})}}});
+}
+
 static std::string auth_login(const RequestContext& /*ctx*/, const std::string& /*m*/, const std::string& /*p*/, const std::string& body)
 {
     try {
@@ -130,11 +160,11 @@ static std::string auth_login(const RequestContext& /*ctx*/, const std::string& 
             return R"({"error":{"code":"INVALID_CREDENTIALS","message":"Invalid email or password"}})";
 
         std::vector<std::string> permissions = FlattenRolePermissions(u);
-        std::string tok = CreateJwtToken(s_jwtSecret, userId, u.value("tenant_id",""), u.value("organization_id",""), 3600, permissions);
+        std::string tok = CreateJwtToken(s_jwtSecret, userId, u.value("tenant_id",""), u.value("organization_id",""), kTokenExpirySeconds, permissions);
         if (tok.empty()) return R"({"error":{"code":"TOKEN_ERROR","message":"Failed to create token"}})";
 
         StripPasswordFields(u);
-        json r; r["access_token"]=tok; r["token_type"]="Bearer"; r["expires_in"]=3600; r["user"]=u; r["permissions"]=permissions;
+        json r; r["access_token"]=tok; r["token_type"]="Bearer"; r["expires_in"]=kTokenExpirySeconds; r["user"]=u; r["permissions"]=permissions;
         return r.dump();
     } catch (const json::parse_error&) { return R"({"error":{"code":"PARSE_ERROR","message":"Invalid JSON body"}})"; }
       catch (const json::exception&)   { return R"({"error":{"code":"INVALID_REQUEST","message":"Request body fields have invalid types"}})"; }
@@ -158,11 +188,28 @@ static std::string auth_refreshToken(const RequestContext&, const std::string&, 
     try {
         json req = json::parse(body);
         if (!req.contains("token")) return R"({"error":{"code":"INVALID_REQUEST","message":"Token is required"}})";
-        std::string old = req["token"].get<std::string>(), nw;
-        std::vector<std::string> permissions;
-        if (!RefreshJwtToken(old, s_jwtSecret, 86400, nw, 3600, &permissions))
+        std::string old = req["token"].get<std::string>();
+
+        // Validate with refresh leeway, then re-resolve the user's CURRENT
+        // roles from storage — never carry the old token's perms claim, so a
+        // revoked role dies at the next refresh even while the old token is
+        // still within its refresh window.
+        RequestContext ctx;
+        if (!ValidateJwtToken(old, s_jwtSecret, ctx, kRefreshLeewaySeconds))
             return R"({"error":{"code":"INVALID_TOKEN","message":"Token is invalid or expired beyond refresh window"}})";
-        json r; r["access_token"]=nw; r["token_type"]="Bearer"; r["expires_in"]=3600; r["permissions"]=permissions;
+
+        auto ukr = KeyBuilder::Build("identity", "users", ctx.userId);
+        if (!ukr.has_value()) return R"({"error":{"code":"INVALID_TOKEN","message":"Account no longer exists"}})";
+        std::string userStr;
+        if (!s_storage->Get(ukr.value(), userStr))
+            return R"({"error":{"code":"INVALID_TOKEN","message":"Account no longer exists"}})";
+
+        json u = json::parse(userStr);
+        std::vector<std::string> permissions = FlattenRolePermissions(u);
+        std::string nw = CreateJwtToken(s_jwtSecret, ctx.userId, u.value("tenant_id", ctx.tenantId), u.value("organization_id", ctx.organizationId), kTokenExpirySeconds, permissions);
+        if (nw.empty()) return R"({"error":{"code":"TOKEN_ERROR","message":"Failed to create token"}})";
+
+        json r; r["access_token"]=nw; r["token_type"]="Bearer"; r["expires_in"]=kTokenExpirySeconds; r["permissions"]=permissions;
         return r.dump();
     } catch (const json::parse_error&) { return R"({"error":{"code":"PARSE_ERROR","message":"Invalid JSON body"}})"; }
       catch (const json::exception&)   { return R"({"error":{"code":"INVALID_REQUEST","message":"Request body fields have invalid types"}})"; }
@@ -277,7 +324,7 @@ void init_identity_overrides(PluginManager* pm, IServiceLocator& locator)
         {
             json u; u["id"]="admin-00000000000000000000000000000001"; u["email"]="admin";
             u["display_name"]="Admin"; u["tenant_id"]="default"; u["organization_id"]="default";
-            u["role"]="admin"; u["status"]="active"; u["created_at"]="2026-01-01T00:00:00Z"; u["updated_at"]="2026-01-01T00:00:00Z";
+            u["role"]="admin"; u["roles"]=DefaultAdminRoles(); u["status"]="active"; u["created_at"]="2026-01-01T00:00:00Z"; u["updated_at"]="2026-01-01T00:00:00Z";
             u["password_hash"]=HexEncode(std::string(hr.hash.begin(),hr.hash.end()));
             u["password_salt"]=HexEncode(std::string(hr.salt.begin(),hr.salt.end()));
             u["password_iterations"]=hr.iterations;
@@ -303,7 +350,7 @@ void init_identity_overrides(PluginManager* pm, IServiceLocator& locator)
             {
                 json u; u["id"]=GenerateUserUuid(); u["email"]="pin_user_0000@touchpos.local";
                 u["display_name"]="Pin User"; u["tenant_id"]="default"; u["organization_id"]="default";
-                u["role"]="admin"; u["status"]="active"; u["created_at"]="2026-01-01T00:00:00Z"; u["updated_at"]="2026-01-01T00:00:00Z";
+                u["role"]="admin"; u["roles"]=DefaultAdminRoles(); u["status"]="active"; u["created_at"]="2026-01-01T00:00:00Z"; u["updated_at"]="2026-01-01T00:00:00Z";
                 u["password_hash"]=HexEncode(std::string(hr.hash.begin(),hr.hash.end()));
                 u["password_salt"]=HexEncode(std::string(hr.salt.begin(),hr.salt.end()));
                 u["password_iterations"]=hr.iterations;

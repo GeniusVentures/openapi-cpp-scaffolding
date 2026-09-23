@@ -647,3 +647,98 @@ TEST_F(AuthLoginTest, RealHandler_Refresh_IncludesPermissionsAndNewToken)
     const std::vector<std::string> kExpected{"orders:read"};
     EXPECT_EQ(kExpected, tokenCtx.permissions);
 }
+
+// ============================================================================
+// Refresh re-resolves roles from storage (PR #4 round-3 P1): a revocation
+// made after the token was minted must kill the privileges at the next
+// refresh; a deleted account must not be able to refresh at all.
+// ============================================================================
+
+TEST_F(AuthLoginTest, RealHandler_Refresh_AfterRoleRevocation_DropsPermissions)
+{
+    init_identity_overrides(&m_pm, m_locator);
+    SeedUser("revoke@test.com", kTestPassword, "user-revoke-001",
+             json::array({
+                 json{{"name", "pos"},
+                      {"permissions", json::array({"orders:read", "orders:write"})}},
+             }));
+
+    json loginBody;
+    loginBody["email"] = "revoke@test.com";
+    loginBody["password"] = kTestPassword;
+    std::string loginResponse = m_pm.Route(m_ctx, "POST", "/api/v1/auth/login", loginBody.dump());
+    auto login = json::parse(loginResponse);
+    ASSERT_FALSE(login.contains("error")) << loginResponse;
+
+    // Revoke every role in storage AFTER the token was minted.
+    auto userKey = KeyBuilder::Build("identity", "users", "user-revoke-001");
+    ASSERT_TRUE(userKey.has_value());
+    std::string stored;
+    ASSERT_TRUE(m_engine->Get(userKey.value(), stored));
+    json user = json::parse(stored);
+    user["roles"] = json::array();
+    ASSERT_TRUE(m_engine->Put(userKey.value(), user.dump()));
+
+    json refreshBody;
+    refreshBody["token"] = login.at("access_token").get<std::string>();
+    std::string response = m_pm.Route(m_ctx, "POST", "/api/v1/auth/refresh", refreshBody.dump());
+    auto data = json::parse(response);
+    ASSERT_FALSE(data.contains("error")) << response;
+
+    EXPECT_TRUE(data.at("permissions").empty())
+        << "revoked roles must not survive the refresh";
+
+    RequestContext tokenCtx;
+    ASSERT_TRUE(ValidateJwtToken(data.at("access_token").get<std::string>(),
+                                 kTestSecret, tokenCtx));
+    EXPECT_TRUE(tokenCtx.permissions.empty())
+        << "replacement token must not carry the revoked perms claim";
+}
+
+TEST_F(AuthLoginTest, RealHandler_Refresh_DeletedUser_ReturnsInvalidToken)
+{
+    init_identity_overrides(&m_pm, m_locator);
+    SeedUser("deleted@test.com", kTestPassword, "user-deleted-001");
+
+    json loginBody;
+    loginBody["email"] = "deleted@test.com";
+    loginBody["password"] = kTestPassword;
+    std::string loginResponse = m_pm.Route(m_ctx, "POST", "/api/v1/auth/login", loginBody.dump());
+    auto login = json::parse(loginResponse);
+    ASSERT_FALSE(login.contains("error")) << loginResponse;
+
+    auto userKey = KeyBuilder::Build("identity", "users", "user-deleted-001");
+    ASSERT_TRUE(userKey.has_value());
+    ASSERT_TRUE(m_engine->Delete(userKey.value()));
+
+    json refreshBody;
+    refreshBody["token"] = login.at("access_token").get<std::string>();
+    std::string response = m_pm.Route(m_ctx, "POST", "/api/v1/auth/refresh", refreshBody.dump());
+    auto data = json::parse(response);
+
+    EXPECT_EQ("INVALID_TOKEN", data.at("error").at("code").get<std::string>())
+        << "a deleted account must not refresh into a live token";
+}
+
+// ============================================================================
+// Seeded dev accounts carry explicit admin roles (PR #4 round-3 P2): the
+// legacy "role":"admin" marker flattens to zero permissions, so the seeds
+// now include roles [{name: "admin", permissions: ["*:*"]}]. The PIN user
+// seeds independently of the empty-DB check, making it the reachable seed
+// from this fixture (SetUp already seeded kTestEmail).
+// ============================================================================
+
+TEST_F(AuthLoginTest, RealHandler_Login_SeededPinUser_CarriesWildcardPermissions)
+{
+    init_identity_overrides(&m_pm, m_locator);
+
+    json body;
+    body["email"] = "pin_user_0000@touchpos.local";
+    body["password"] = "pin_0000";
+    std::string response = m_pm.Route(m_ctx, "POST", "/api/v1/auth/login", body.dump());
+    auto data = json::parse(response);
+    ASSERT_FALSE(data.contains("error")) << response;
+
+    EXPECT_EQ(json::array({"*:*"}), data.at("permissions"))
+        << "seeded dev accounts must authorize via the seeded admin role";
+}

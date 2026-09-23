@@ -46,15 +46,18 @@ std::string CreateJwtToken(
 /// Validate an HS256-signed JWT token and extract claims into a RequestContext.
 /// Populates ctx_out.userId/tenantId/organizationId from the sub/tenant/org
 /// claims and ctx_out.permissions from the perms claim when present.
-/// @param token      Compact JWT string to validate
-/// @param secret     Signing secret to verify against
-/// @param ctx_out    Output context populated on success
-/// @return true if signature valid, not expired, and all claims present; false otherwise
+/// @param token          Compact JWT string to validate
+/// @param secret         Signing secret to verify against
+/// @param ctx_out        Output context populated on success
+/// @param leewaySeconds  How far past expiry to still accept (default 0 —
+///                       strict; refresh paths pass the refresh window)
+/// @return true if signature valid, not expired (within leeway), and all claims present; false otherwise
 ///
 bool ValidateJwtToken(
     const std::string& token,
     const std::string& secret,
-    RequestContext&     ctx_out) noexcept;
+    RequestContext&     ctx_out,
+    int                 leewaySeconds = 0) noexcept;
 
 ///
 /// Hash a password using PBKDF2-HMAC-SHA256 with a random 16-byte salt.
@@ -75,15 +78,19 @@ bool VerifyPassword(
 
 ///
 /// Validate a JWT token with extended leeway for refresh operations.
-/// Allows tokens that are recently expired (within the leeway window) to be accepted.
-/// Extracts claims and creates a new token with a fresh expiry, carrying the
-/// token's perms claim into the new token.
+/// Allows tokens that are recently expired (within the leeway window) to be
+/// accepted and mints a replacement with a fresh expiry. The new token
+/// carries the caller-SUPPLIED permission list, never the old token's perms
+/// claim — callers must re-resolve the user's current roles from storage so
+/// revoked permissions cannot survive a refresh. Callers that need a storage
+/// hop between validation and minting should use
+/// ValidateJwtToken(leewaySeconds) + CreateJwtToken directly.
 /// @param token           Compact JWT string (possibly expired)
 /// @param secret          Signing secret to verify against
 /// @param leewaySeconds   How far past expiry to still accept (e.g. 86400 for 24 hours)
 /// @param newToken_out    Output — newly created JWT with fresh expiry
 /// @param expirySeconds   New token lifetime in seconds (default 3600)
-/// @param permissions_out Optional output — the token's perms claim (unchanged when null)
+/// @param permissions     Permissions minted into the new token (default empty)
 /// @return true if token was valid (within leeway) and new token created; false otherwise
 ///
 bool RefreshJwtToken(
@@ -92,6 +99,6 @@ bool RefreshJwtToken(
     int                leewaySeconds,
     std::string&       newToken_out,
     int                expirySeconds = 3600,
-    std::vector<std::string>* permissions_out = nullptr) noexcept;
+    const std::vector<std::string>& permissions = {}) noexcept;
 
 #endif // AUTH_UTILS_HPP
