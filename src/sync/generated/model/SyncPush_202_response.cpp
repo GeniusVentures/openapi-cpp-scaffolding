@@ -109,7 +109,7 @@ void from_json(const nlohmann::json& j, SyncPush_202_response& o)
 {
     j.at("accepted").get_to(o.m_Accepted);
     j.at("rejected").get_to(o.m_Rejected);
-    if(j.find("conflicts") != j.end())
+    if(j.find("conflicts") != j.end() && !j.at("conflicts").is_null())
     {
         j.at("conflicts").get_to(o.m_Conflicts);
         o.m_ConflictsIsSet = true;

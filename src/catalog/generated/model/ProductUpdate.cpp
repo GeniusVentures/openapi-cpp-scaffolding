@@ -124,42 +124,42 @@ void to_json(nlohmann::json& j, const ProductUpdate& o)
 
 void from_json(const nlohmann::json& j, ProductUpdate& o)
 {
-    if(j.find("name") != j.end())
+    if(j.find("name") != j.end() && !j.at("name").is_null())
     {
         j.at("name").get_to(o.m_Name);
         o.m_NameIsSet = true;
     } 
-    if(j.find("sku") != j.end())
+    if(j.find("sku") != j.end() && !j.at("sku").is_null())
     {
         j.at("sku").get_to(o.m_Sku);
         o.m_SkuIsSet = true;
     } 
-    if(j.find("type") != j.end())
+    if(j.find("type") != j.end() && !j.at("type").is_null())
     {
         j.at("type").get_to(o.m_Type);
         o.m_TypeIsSet = true;
     } 
-    if(j.find("description") != j.end())
+    if(j.find("description") != j.end() && !j.at("description").is_null())
     {
         j.at("description").get_to(o.m_Description);
         o.m_DescriptionIsSet = true;
     } 
-    if(j.find("status") != j.end())
+    if(j.find("status") != j.end() && !j.at("status").is_null())
     {
         j.at("status").get_to(o.m_Status);
         o.m_StatusIsSet = true;
     } 
-    if(j.find("price") != j.end())
+    if(j.find("price") != j.end() && !j.at("price").is_null())
     {
         j.at("price").get_to(o.m_Price);
         o.m_PriceIsSet = true;
     } 
-    if(j.find("tax_category_id") != j.end())
+    if(j.find("tax_category_id") != j.end() && !j.at("tax_category_id").is_null())
     {
         j.at("tax_category_id").get_to(o.m_Tax_category_id);
         o.m_Tax_category_idIsSet = true;
     } 
-    if(j.find("image") != j.end())
+    if(j.find("image") != j.end() && !j.at("image").is_null())
     {
         j.at("image").get_to(o.m_Image);
         o.m_ImageIsSet = true;

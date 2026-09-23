@@ -122,18 +122,18 @@ void to_json(nlohmann::json& j, const PromptTemplateCreate& o)
 void from_json(const nlohmann::json& j, PromptTemplateCreate& o)
 {
     j.at("name").get_to(o.m_Name);
-    if(j.find("purpose") != j.end())
+    if(j.find("purpose") != j.end() && !j.at("purpose").is_null())
     {
         j.at("purpose").get_to(o.m_Purpose);
         o.m_PurposeIsSet = true;
     } 
     j.at("template").get_to(o.m_r_template);
-    if(j.find("variables") != j.end())
+    if(j.find("variables") != j.end() && !j.at("variables").is_null())
     {
         j.at("variables").get_to(o.m_Variables);
         o.m_VariablesIsSet = true;
     } 
-    if(j.find("version") != j.end())
+    if(j.find("version") != j.end() && !j.at("version").is_null())
     {
         j.at("version").get_to(o.m_Version);
         o.m_VersionIsSet = true;

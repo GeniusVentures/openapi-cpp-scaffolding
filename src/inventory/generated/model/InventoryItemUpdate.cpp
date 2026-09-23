@@ -118,37 +118,37 @@ void to_json(nlohmann::json& j, const InventoryItemUpdate& o)
 
 void from_json(const nlohmann::json& j, InventoryItemUpdate& o)
 {
-    if(j.find("product_id") != j.end())
+    if(j.find("product_id") != j.end() && !j.at("product_id").is_null())
     {
         j.at("product_id").get_to(o.m_Product_id);
         o.m_Product_idIsSet = true;
     } 
-    if(j.find("name") != j.end())
+    if(j.find("name") != j.end() && !j.at("name").is_null())
     {
         j.at("name").get_to(o.m_Name);
         o.m_NameIsSet = true;
     } 
-    if(j.find("sku") != j.end())
+    if(j.find("sku") != j.end() && !j.at("sku").is_null())
     {
         j.at("sku").get_to(o.m_Sku);
         o.m_SkuIsSet = true;
     } 
-    if(j.find("unit") != j.end())
+    if(j.find("unit") != j.end() && !j.at("unit").is_null())
     {
         j.at("unit").get_to(o.m_Unit);
         o.m_UnitIsSet = true;
     } 
-    if(j.find("reorder_point") != j.end())
+    if(j.find("reorder_point") != j.end() && !j.at("reorder_point").is_null())
     {
         j.at("reorder_point").get_to(o.m_Reorder_point);
         o.m_Reorder_pointIsSet = true;
     } 
-    if(j.find("cost") != j.end())
+    if(j.find("cost") != j.end() && !j.at("cost").is_null())
     {
         j.at("cost").get_to(o.m_Cost);
         o.m_CostIsSet = true;
     } 
-    if(j.find("vendor_id") != j.end())
+    if(j.find("vendor_id") != j.end() && !j.at("vendor_id").is_null())
     {
         j.at("vendor_id").get_to(o.m_Vendor_id);
         o.m_Vendor_idIsSet = true;

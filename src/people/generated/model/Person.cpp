@@ -197,45 +197,45 @@ void from_json(const nlohmann::json& j, Person& o)
     j.at("id").get_to(o.m_Id);
     j.at("tenant_id").get_to(o.m_Tenant_id);
     j.at("organization_id").get_to(o.m_Organization_id);
-    if(j.find("location_id") != j.end())
+    if(j.find("location_id") != j.end() && !j.at("location_id").is_null())
     {
         j.at("location_id").get_to(o.m_Location_id);
         o.m_Location_idIsSet = true;
     } 
     j.at("created_at").get_to(o.m_Created_at);
     j.at("updated_at").get_to(o.m_Updated_at);
-    if(j.find("deleted_at") != j.end())
+    if(j.find("deleted_at") != j.end() && !j.at("deleted_at").is_null())
     {
         j.at("deleted_at").get_to(o.m_Deleted_at);
         o.m_Deleted_atIsSet = true;
     } 
-    if(j.find("metadata") != j.end())
+    if(j.find("metadata") != j.end() && !j.at("metadata").is_null())
     {
         j.at("metadata").get_to(o.m_Metadata);
         o.m_MetadataIsSet = true;
     } 
-    if(j.find("first_name") != j.end())
+    if(j.find("first_name") != j.end() && !j.at("first_name").is_null())
     {
         j.at("first_name").get_to(o.m_First_name);
         o.m_First_nameIsSet = true;
     } 
-    if(j.find("last_name") != j.end())
+    if(j.find("last_name") != j.end() && !j.at("last_name").is_null())
     {
         j.at("last_name").get_to(o.m_Last_name);
         o.m_Last_nameIsSet = true;
     } 
     j.at("display_name").get_to(o.m_Display_name);
-    if(j.find("contact") != j.end())
+    if(j.find("contact") != j.end() && !j.at("contact").is_null())
     {
         j.at("contact").get_to(o.m_Contact);
         o.m_ContactIsSet = true;
     } 
-    if(j.find("addresses") != j.end())
+    if(j.find("addresses") != j.end() && !j.at("addresses").is_null())
     {
         j.at("addresses").get_to(o.m_Addresses);
         o.m_AddressesIsSet = true;
     } 
-    if(j.find("tags") != j.end())
+    if(j.find("tags") != j.end() && !j.at("tags").is_null())
     {
         j.at("tags").get_to(o.m_Tags);
         o.m_TagsIsSet = true;

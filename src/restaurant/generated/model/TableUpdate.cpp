@@ -111,32 +111,32 @@ void to_json(nlohmann::json& j, const TableUpdate& o)
 
 void from_json(const nlohmann::json& j, TableUpdate& o)
 {
-    if(j.find("name") != j.end())
+    if(j.find("name") != j.end() && !j.at("name").is_null())
     {
         j.at("name").get_to(o.m_Name);
         o.m_NameIsSet = true;
     } 
-    if(j.find("section") != j.end())
+    if(j.find("section") != j.end() && !j.at("section").is_null())
     {
         j.at("section").get_to(o.m_Section);
         o.m_SectionIsSet = true;
     } 
-    if(j.find("capacity") != j.end())
+    if(j.find("capacity") != j.end() && !j.at("capacity").is_null())
     {
         j.at("capacity").get_to(o.m_Capacity);
         o.m_CapacityIsSet = true;
     } 
-    if(j.find("status") != j.end())
+    if(j.find("status") != j.end() && !j.at("status").is_null())
     {
         j.at("status").get_to(o.m_Status);
         o.m_StatusIsSet = true;
     } 
-    if(j.find("asset_id") != j.end())
+    if(j.find("asset_id") != j.end() && !j.at("asset_id").is_null())
     {
         j.at("asset_id").get_to(o.m_Asset_id);
         o.m_Asset_idIsSet = true;
     } 
-    if(j.find("metadata") != j.end())
+    if(j.find("metadata") != j.end() && !j.at("metadata").is_null())
     {
         j.at("metadata").get_to(o.m_Metadata);
         o.m_MetadataIsSet = true;

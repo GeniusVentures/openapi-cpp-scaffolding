@@ -121,25 +121,25 @@ void to_json(nlohmann::json& j, const ProductCreate& o)
 void from_json(const nlohmann::json& j, ProductCreate& o)
 {
     j.at("name").get_to(o.m_Name);
-    if(j.find("sku") != j.end())
+    if(j.find("sku") != j.end() && !j.at("sku").is_null())
     {
         j.at("sku").get_to(o.m_Sku);
         o.m_SkuIsSet = true;
     } 
     j.at("type").get_to(o.m_Type);
-    if(j.find("description") != j.end())
+    if(j.find("description") != j.end() && !j.at("description").is_null())
     {
         j.at("description").get_to(o.m_Description);
         o.m_DescriptionIsSet = true;
     } 
     j.at("status").get_to(o.m_Status);
     j.at("price").get_to(o.m_Price);
-    if(j.find("tax_category_id") != j.end())
+    if(j.find("tax_category_id") != j.end() && !j.at("tax_category_id").is_null())
     {
         j.at("tax_category_id").get_to(o.m_Tax_category_id);
         o.m_Tax_category_idIsSet = true;
     } 
-    if(j.find("image") != j.end())
+    if(j.find("image") != j.end() && !j.at("image").is_null())
     {
         j.at("image").get_to(o.m_Image);
         o.m_ImageIsSet = true;

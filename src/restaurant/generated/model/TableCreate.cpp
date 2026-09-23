@@ -106,19 +106,19 @@ void to_json(nlohmann::json& j, const TableCreate& o)
 void from_json(const nlohmann::json& j, TableCreate& o)
 {
     j.at("name").get_to(o.m_Name);
-    if(j.find("section") != j.end())
+    if(j.find("section") != j.end() && !j.at("section").is_null())
     {
         j.at("section").get_to(o.m_Section);
         o.m_SectionIsSet = true;
     } 
     j.at("capacity").get_to(o.m_Capacity);
     j.at("status").get_to(o.m_Status);
-    if(j.find("asset_id") != j.end())
+    if(j.find("asset_id") != j.end() && !j.at("asset_id").is_null())
     {
         j.at("asset_id").get_to(o.m_Asset_id);
         o.m_Asset_idIsSet = true;
     } 
-    if(j.find("metadata") != j.end())
+    if(j.find("metadata") != j.end() && !j.at("metadata").is_null())
     {
         j.at("metadata").get_to(o.m_Metadata);
         o.m_MetadataIsSet = true;

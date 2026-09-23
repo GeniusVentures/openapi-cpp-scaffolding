@@ -103,7 +103,7 @@ void to_json(nlohmann::json& j, const NotificationCreate& o)
 void from_json(const nlohmann::json& j, NotificationCreate& o)
 {
     j.at("type").get_to(o.m_Type);
-    if(j.find("recipient_user_id") != j.end())
+    if(j.find("recipient_user_id") != j.end() && !j.at("recipient_user_id").is_null())
     {
         j.at("recipient_user_id").get_to(o.m_Recipient_user_id);
         o.m_Recipient_user_idIsSet = true;

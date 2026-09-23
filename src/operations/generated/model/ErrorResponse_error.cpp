@@ -95,12 +95,12 @@ void from_json(const nlohmann::json& j, ErrorResponse_error& o)
 {
     j.at("code").get_to(o.m_Code);
     j.at("message").get_to(o.m_Message);
-    if(j.find("details") != j.end())
+    if(j.find("details") != j.end() && !j.at("details").is_null())
     {
         j.at("details").get_to(o.m_Details);
         o.m_DetailsIsSet = true;
     } 
-    if(j.find("trace_id") != j.end())
+    if(j.find("trace_id") != j.end() && !j.at("trace_id").is_null())
     {
         j.at("trace_id").get_to(o.m_Trace_id);
         o.m_Trace_idIsSet = true;

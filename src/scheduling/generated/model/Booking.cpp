@@ -166,46 +166,46 @@ void from_json(const nlohmann::json& j, Booking& o)
     j.at("id").get_to(o.m_Id);
     j.at("tenant_id").get_to(o.m_Tenant_id);
     j.at("organization_id").get_to(o.m_Organization_id);
-    if(j.find("location_id") != j.end())
+    if(j.find("location_id") != j.end() && !j.at("location_id").is_null())
     {
         j.at("location_id").get_to(o.m_Location_id);
         o.m_Location_idIsSet = true;
     } 
     j.at("created_at").get_to(o.m_Created_at);
     j.at("updated_at").get_to(o.m_Updated_at);
-    if(j.find("deleted_at") != j.end())
+    if(j.find("deleted_at") != j.end() && !j.at("deleted_at").is_null())
     {
         j.at("deleted_at").get_to(o.m_Deleted_at);
         o.m_Deleted_atIsSet = true;
     } 
-    if(j.find("metadata") != j.end())
+    if(j.find("metadata") != j.end() && !j.at("metadata").is_null())
     {
         j.at("metadata").get_to(o.m_Metadata);
         o.m_MetadataIsSet = true;
     } 
-    if(j.find("resource_id") != j.end())
+    if(j.find("resource_id") != j.end() && !j.at("resource_id").is_null())
     {
         j.at("resource_id").get_to(o.m_Resource_id);
         o.m_Resource_idIsSet = true;
     } 
-    if(j.find("customer_id") != j.end())
+    if(j.find("customer_id") != j.end() && !j.at("customer_id").is_null())
     {
         j.at("customer_id").get_to(o.m_Customer_id);
         o.m_Customer_idIsSet = true;
     } 
-    if(j.find("service_id") != j.end())
+    if(j.find("service_id") != j.end() && !j.at("service_id").is_null())
     {
         j.at("service_id").get_to(o.m_Service_id);
         o.m_Service_idIsSet = true;
     } 
     j.at("status").get_to(o.m_Status);
     j.at("window").get_to(o.m_Window);
-    if(j.find("party_size") != j.end())
+    if(j.find("party_size") != j.end() && !j.at("party_size").is_null())
     {
         j.at("party_size").get_to(o.m_Party_size);
         o.m_Party_sizeIsSet = true;
     } 
-    if(j.find("notes") != j.end())
+    if(j.find("notes") != j.end() && !j.at("notes").is_null())
     {
         j.at("notes").get_to(o.m_Notes);
         o.m_NotesIsSet = true;

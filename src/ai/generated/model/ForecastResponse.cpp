@@ -109,7 +109,7 @@ void from_json(const nlohmann::json& j, ForecastResponse& o)
 {
     j.at("metric").get_to(o.m_Metric);
     j.at("points").get_to(o.m_Points);
-    if(j.find("explanation") != j.end())
+    if(j.find("explanation") != j.end() && !j.at("explanation").is_null())
     {
         j.at("explanation").get_to(o.m_Explanation);
         o.m_ExplanationIsSet = true;

@@ -180,22 +180,22 @@ void from_json(const nlohmann::json& j, Report& o)
     j.at("job_id").get_to(o.m_Job_id);
     j.at("status").get_to(o.m_Status);
     j.at("manifest_sha256").get_to(o.m_Manifest_sha256);
-    if(j.find("signature") != j.end())
+    if(j.find("signature") != j.end() && !j.at("signature").is_null())
     {
         j.at("signature").get_to(o.m_Signature);
         o.m_SignatureIsSet = true;
     } 
-    if(j.find("signing_key_id") != j.end())
+    if(j.find("signing_key_id") != j.end() && !j.at("signing_key_id").is_null())
     {
         j.at("signing_key_id").get_to(o.m_Signing_key_id);
         o.m_Signing_key_idIsSet = true;
     } 
-    if(j.find("evidence_ids") != j.end())
+    if(j.find("evidence_ids") != j.end() && !j.at("evidence_ids").is_null())
     {
         j.at("evidence_ids").get_to(o.m_Evidence_ids);
         o.m_Evidence_idsIsSet = true;
     } 
-    if(j.find("review_ids") != j.end())
+    if(j.find("review_ids") != j.end() && !j.at("review_ids").is_null())
     {
         j.at("review_ids").get_to(o.m_Review_ids);
         o.m_Review_idsIsSet = true;

@@ -124,22 +124,22 @@ void to_json(nlohmann::json& j, const ModifierGroupCreate& o)
 void from_json(const nlohmann::json& j, ModifierGroupCreate& o)
 {
     j.at("name").get_to(o.m_Name);
-    if(j.find("min_selected") != j.end())
+    if(j.find("min_selected") != j.end() && !j.at("min_selected").is_null())
     {
         j.at("min_selected").get_to(o.m_Min_selected);
         o.m_Min_selectedIsSet = true;
     } 
-    if(j.find("max_selected") != j.end())
+    if(j.find("max_selected") != j.end() && !j.at("max_selected").is_null())
     {
         j.at("max_selected").get_to(o.m_Max_selected);
         o.m_Max_selectedIsSet = true;
     } 
-    if(j.find("required") != j.end())
+    if(j.find("required") != j.end() && !j.at("required").is_null())
     {
         j.at("required").get_to(o.m_Required);
         o.m_RequiredIsSet = true;
     } 
-    if(j.find("modifiers") != j.end())
+    if(j.find("modifiers") != j.end() && !j.at("modifiers").is_null())
     {
         j.at("modifiers").get_to(o.m_Modifiers);
         o.m_ModifiersIsSet = true;

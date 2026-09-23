@@ -107,17 +107,17 @@ void from_json(const nlohmann::json& j, AgentRunCreate& o)
     j.at("agent_id").get_to(o.m_Agent_id);
     j.at("status").get_to(o.m_Status);
     j.at("input").get_to(o.m_Input);
-    if(j.find("output") != j.end())
+    if(j.find("output") != j.end() && !j.at("output").is_null())
     {
         j.at("output").get_to(o.m_Output);
         o.m_OutputIsSet = true;
     } 
-    if(j.find("started_at") != j.end())
+    if(j.find("started_at") != j.end() && !j.at("started_at").is_null())
     {
         j.at("started_at").get_to(o.m_Started_at);
         o.m_Started_atIsSet = true;
     } 
-    if(j.find("completed_at") != j.end())
+    if(j.find("completed_at") != j.end() && !j.at("completed_at").is_null())
     {
         j.at("completed_at").get_to(o.m_Completed_at);
         o.m_Completed_atIsSet = true;

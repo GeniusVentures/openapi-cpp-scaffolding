@@ -105,27 +105,27 @@ void to_json(nlohmann::json& j, const TimeEntryUpdate& o)
 
 void from_json(const nlohmann::json& j, TimeEntryUpdate& o)
 {
-    if(j.find("employee_id") != j.end())
+    if(j.find("employee_id") != j.end() && !j.at("employee_id").is_null())
     {
         j.at("employee_id").get_to(o.m_Employee_id);
         o.m_Employee_idIsSet = true;
     } 
-    if(j.find("clock_in_at") != j.end())
+    if(j.find("clock_in_at") != j.end() && !j.at("clock_in_at").is_null())
     {
         j.at("clock_in_at").get_to(o.m_Clock_in_at);
         o.m_Clock_in_atIsSet = true;
     } 
-    if(j.find("clock_out_at") != j.end())
+    if(j.find("clock_out_at") != j.end() && !j.at("clock_out_at").is_null())
     {
         j.at("clock_out_at").get_to(o.m_Clock_out_at);
         o.m_Clock_out_atIsSet = true;
     } 
-    if(j.find("source") != j.end())
+    if(j.find("source") != j.end() && !j.at("source").is_null())
     {
         j.at("source").get_to(o.m_Source);
         o.m_SourceIsSet = true;
     } 
-    if(j.find("approved") != j.end())
+    if(j.find("approved") != j.end() && !j.at("approved").is_null())
     {
         j.at("approved").get_to(o.m_Approved);
         o.m_ApprovedIsSet = true;

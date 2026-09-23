@@ -124,12 +124,12 @@ void to_json(nlohmann::json& j, const ReportCreate& o)
 
 void from_json(const nlohmann::json& j, ReportCreate& o)
 {
-    if(j.find("evidence_ids") != j.end())
+    if(j.find("evidence_ids") != j.end() && !j.at("evidence_ids").is_null())
     {
         j.at("evidence_ids").get_to(o.m_Evidence_ids);
         o.m_Evidence_idsIsSet = true;
     } 
-    if(j.find("review_ids") != j.end())
+    if(j.find("review_ids") != j.end() && !j.at("review_ids").is_null())
     {
         j.at("review_ids").get_to(o.m_Review_ids);
         o.m_Review_idsIsSet = true;

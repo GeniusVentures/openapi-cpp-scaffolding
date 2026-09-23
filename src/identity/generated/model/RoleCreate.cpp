@@ -109,7 +109,7 @@ void from_json(const nlohmann::json& j, RoleCreate& o)
 {
     j.at("name").get_to(o.m_Name);
     j.at("scope").get_to(o.m_Scope);
-    if(j.find("permissions") != j.end())
+    if(j.find("permissions") != j.end() && !j.at("permissions").is_null())
     {
         j.at("permissions").get_to(o.m_Permissions);
         o.m_PermissionsIsSet = true;

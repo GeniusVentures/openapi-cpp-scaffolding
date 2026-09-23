@@ -89,7 +89,7 @@ void from_json(const nlohmann::json& j, LoginRequest& o)
 {
     j.at("email").get_to(o.m_Email);
     j.at("password").get_to(o.m_Password);
-    if(j.find("mfa_code") != j.end())
+    if(j.find("mfa_code") != j.end() && !j.at("mfa_code").is_null())
     {
         j.at("mfa_code").get_to(o.m_Mfa_code);
         o.m_Mfa_codeIsSet = true;

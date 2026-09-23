@@ -140,29 +140,29 @@ void to_json(nlohmann::json& j, const Address& o)
 void from_json(const nlohmann::json& j, Address& o)
 {
     j.at("line1").get_to(o.m_Line1);
-    if(j.find("line2") != j.end())
+    if(j.find("line2") != j.end() && !j.at("line2").is_null())
     {
         j.at("line2").get_to(o.m_Line2);
         o.m_Line2IsSet = true;
     } 
     j.at("city").get_to(o.m_City);
-    if(j.find("region") != j.end())
+    if(j.find("region") != j.end() && !j.at("region").is_null())
     {
         j.at("region").get_to(o.m_Region);
         o.m_RegionIsSet = true;
     } 
-    if(j.find("postal_code") != j.end())
+    if(j.find("postal_code") != j.end() && !j.at("postal_code").is_null())
     {
         j.at("postal_code").get_to(o.m_Postal_code);
         o.m_Postal_codeIsSet = true;
     } 
     j.at("country").get_to(o.m_Country);
-    if(j.find("latitude") != j.end())
+    if(j.find("latitude") != j.end() && !j.at("latitude").is_null())
     {
         j.at("latitude").get_to(o.m_Latitude);
         o.m_LatitudeIsSet = true;
     } 
-    if(j.find("longitude") != j.end())
+    if(j.find("longitude") != j.end() && !j.at("longitude").is_null())
     {
         j.at("longitude").get_to(o.m_Longitude);
         o.m_LongitudeIsSet = true;

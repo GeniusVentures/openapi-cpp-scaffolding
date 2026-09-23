@@ -115,17 +115,17 @@ void to_json(nlohmann::json& j, const AnalyticsQuery_request& o)
 void from_json(const nlohmann::json& j, AnalyticsQuery_request& o)
 {
     j.at("metric").get_to(o.m_Metric);
-    if(j.find("dimensions") != j.end())
+    if(j.find("dimensions") != j.end() && !j.at("dimensions").is_null())
     {
         j.at("dimensions").get_to(o.m_Dimensions);
         o.m_DimensionsIsSet = true;
     } 
-    if(j.find("filters") != j.end())
+    if(j.find("filters") != j.end() && !j.at("filters").is_null())
     {
         j.at("filters").get_to(o.m_Filters);
         o.m_FiltersIsSet = true;
     } 
-    if(j.find("time_range") != j.end())
+    if(j.find("time_range") != j.end() && !j.at("time_range").is_null())
     {
         j.at("time_range").get_to(o.m_Time_range);
         o.m_Time_rangeIsSet = true;

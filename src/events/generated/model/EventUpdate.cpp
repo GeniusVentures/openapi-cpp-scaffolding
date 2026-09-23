@@ -111,32 +111,32 @@ void to_json(nlohmann::json& j, const EventUpdate& o)
 
 void from_json(const nlohmann::json& j, EventUpdate& o)
 {
-    if(j.find("type") != j.end())
+    if(j.find("type") != j.end() && !j.at("type").is_null())
     {
         j.at("type").get_to(o.m_Type);
         o.m_TypeIsSet = true;
     } 
-    if(j.find("actor_user_id") != j.end())
+    if(j.find("actor_user_id") != j.end() && !j.at("actor_user_id").is_null())
     {
         j.at("actor_user_id").get_to(o.m_Actor_user_id);
         o.m_Actor_user_idIsSet = true;
     } 
-    if(j.find("object_type") != j.end())
+    if(j.find("object_type") != j.end() && !j.at("object_type").is_null())
     {
         j.at("object_type").get_to(o.m_Object_type);
         o.m_Object_typeIsSet = true;
     } 
-    if(j.find("object_id") != j.end())
+    if(j.find("object_id") != j.end() && !j.at("object_id").is_null())
     {
         j.at("object_id").get_to(o.m_Object_id);
         o.m_Object_idIsSet = true;
     } 
-    if(j.find("occurred_at") != j.end())
+    if(j.find("occurred_at") != j.end() && !j.at("occurred_at").is_null())
     {
         j.at("occurred_at").get_to(o.m_Occurred_at);
         o.m_Occurred_atIsSet = true;
     } 
-    if(j.find("payload") != j.end())
+    if(j.find("payload") != j.end() && !j.at("payload").is_null())
     {
         j.at("payload").get_to(o.m_Payload);
         o.m_PayloadIsSet = true;

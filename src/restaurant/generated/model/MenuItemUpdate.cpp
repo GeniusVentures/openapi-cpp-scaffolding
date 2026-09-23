@@ -165,42 +165,42 @@ void to_json(nlohmann::json& j, const MenuItemUpdate& o)
 
 void from_json(const nlohmann::json& j, MenuItemUpdate& o)
 {
-    if(j.find("category_id") != j.end())
+    if(j.find("category_id") != j.end() && !j.at("category_id").is_null())
     {
         j.at("category_id").get_to(o.m_Category_id);
         o.m_Category_idIsSet = true;
     } 
-    if(j.find("product_id") != j.end())
+    if(j.find("product_id") != j.end() && !j.at("product_id").is_null())
     {
         j.at("product_id").get_to(o.m_Product_id);
         o.m_Product_idIsSet = true;
     } 
-    if(j.find("name") != j.end())
+    if(j.find("name") != j.end() && !j.at("name").is_null())
     {
         j.at("name").get_to(o.m_Name);
         o.m_NameIsSet = true;
     } 
-    if(j.find("description") != j.end())
+    if(j.find("description") != j.end() && !j.at("description").is_null())
     {
         j.at("description").get_to(o.m_Description);
         o.m_DescriptionIsSet = true;
     } 
-    if(j.find("price") != j.end())
+    if(j.find("price") != j.end() && !j.at("price").is_null())
     {
         j.at("price").get_to(o.m_Price);
         o.m_PriceIsSet = true;
     } 
-    if(j.find("status") != j.end())
+    if(j.find("status") != j.end() && !j.at("status").is_null())
     {
         j.at("status").get_to(o.m_Status);
         o.m_StatusIsSet = true;
     } 
-    if(j.find("allergens") != j.end())
+    if(j.find("allergens") != j.end() && !j.at("allergens").is_null())
     {
         j.at("allergens").get_to(o.m_Allergens);
         o.m_AllergensIsSet = true;
     } 
-    if(j.find("modifier_group_ids") != j.end())
+    if(j.find("modifier_group_ids") != j.end() && !j.at("modifier_group_ids").is_null())
     {
         j.at("modifier_group_ids").get_to(o.m_Modifier_group_ids);
         o.m_Modifier_group_idsIsSet = true;

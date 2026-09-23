@@ -167,19 +167,19 @@ void from_json(const nlohmann::json& j, KitchenTicket& o)
     j.at("id").get_to(o.m_Id);
     j.at("tenant_id").get_to(o.m_Tenant_id);
     j.at("organization_id").get_to(o.m_Organization_id);
-    if(j.find("location_id") != j.end())
+    if(j.find("location_id") != j.end() && !j.at("location_id").is_null())
     {
         j.at("location_id").get_to(o.m_Location_id);
         o.m_Location_idIsSet = true;
     } 
     j.at("created_at").get_to(o.m_Created_at);
     j.at("updated_at").get_to(o.m_Updated_at);
-    if(j.find("deleted_at") != j.end())
+    if(j.find("deleted_at") != j.end() && !j.at("deleted_at").is_null())
     {
         j.at("deleted_at").get_to(o.m_Deleted_at);
         o.m_Deleted_atIsSet = true;
     } 
-    if(j.find("metadata") != j.end())
+    if(j.find("metadata") != j.end() && !j.at("metadata").is_null())
     {
         j.at("metadata").get_to(o.m_Metadata);
         o.m_MetadataIsSet = true;
@@ -187,12 +187,12 @@ void from_json(const nlohmann::json& j, KitchenTicket& o)
     j.at("order_id").get_to(o.m_Order_id);
     j.at("station").get_to(o.m_Station);
     j.at("status").get_to(o.m_Status);
-    if(j.find("priority") != j.end())
+    if(j.find("priority") != j.end() && !j.at("priority").is_null())
     {
         j.at("priority").get_to(o.m_Priority);
         o.m_PriorityIsSet = true;
     } 
-    if(j.find("items") != j.end())
+    if(j.find("items") != j.end() && !j.at("items").is_null())
     {
         j.at("items").get_to(o.m_Items);
         o.m_ItemsIsSet = true;

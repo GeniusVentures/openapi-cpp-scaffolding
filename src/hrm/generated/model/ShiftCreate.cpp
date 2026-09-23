@@ -96,7 +96,7 @@ void to_json(nlohmann::json& j, const ShiftCreate& o)
 void from_json(const nlohmann::json& j, ShiftCreate& o)
 {
     j.at("employee_id").get_to(o.m_Employee_id);
-    if(j.find("role") != j.end())
+    if(j.find("role") != j.end() && !j.at("role").is_null())
     {
         j.at("role").get_to(o.m_Role);
         o.m_RoleIsSet = true;

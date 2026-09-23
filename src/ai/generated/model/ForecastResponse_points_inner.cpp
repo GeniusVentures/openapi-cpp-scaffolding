@@ -96,12 +96,12 @@ void from_json(const nlohmann::json& j, ForecastResponse_points_inner& o)
 {
     j.at("timestamp").get_to(o.m_Timestamp);
     j.at("value").get_to(o.m_Value);
-    if(j.find("lower") != j.end())
+    if(j.find("lower") != j.end() && !j.at("lower").is_null())
     {
         j.at("lower").get_to(o.m_Lower);
         o.m_LowerIsSet = true;
     } 
-    if(j.find("upper") != j.end())
+    if(j.find("upper") != j.end() && !j.at("upper").is_null())
     {
         j.at("upper").get_to(o.m_Upper);
         o.m_UpperIsSet = true;

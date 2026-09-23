@@ -118,37 +118,37 @@ void to_json(nlohmann::json& j, const PaymentUpdate& o)
 
 void from_json(const nlohmann::json& j, PaymentUpdate& o)
 {
-    if(j.find("order_id") != j.end())
+    if(j.find("order_id") != j.end() && !j.at("order_id").is_null())
     {
         j.at("order_id").get_to(o.m_Order_id);
         o.m_Order_idIsSet = true;
     } 
-    if(j.find("invoice_id") != j.end())
+    if(j.find("invoice_id") != j.end() && !j.at("invoice_id").is_null())
     {
         j.at("invoice_id").get_to(o.m_Invoice_id);
         o.m_Invoice_idIsSet = true;
     } 
-    if(j.find("provider") != j.end())
+    if(j.find("provider") != j.end() && !j.at("provider").is_null())
     {
         j.at("provider").get_to(o.m_Provider);
         o.m_ProviderIsSet = true;
     } 
-    if(j.find("method") != j.end())
+    if(j.find("method") != j.end() && !j.at("method").is_null())
     {
         j.at("method").get_to(o.m_Method);
         o.m_MethodIsSet = true;
     } 
-    if(j.find("status") != j.end())
+    if(j.find("status") != j.end() && !j.at("status").is_null())
     {
         j.at("status").get_to(o.m_Status);
         o.m_StatusIsSet = true;
     } 
-    if(j.find("amount") != j.end())
+    if(j.find("amount") != j.end() && !j.at("amount").is_null())
     {
         j.at("amount").get_to(o.m_Amount);
         o.m_AmountIsSet = true;
     } 
-    if(j.find("provider_reference") != j.end())
+    if(j.find("provider_reference") != j.end() && !j.at("provider_reference").is_null())
     {
         j.at("provider_reference").get_to(o.m_Provider_reference);
         o.m_Provider_referenceIsSet = true;

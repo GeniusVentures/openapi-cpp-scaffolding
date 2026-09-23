@@ -90,17 +90,17 @@ void to_json(nlohmann::json& j, const JobUpdate& o)
 
 void from_json(const nlohmann::json& j, JobUpdate& o)
 {
-    if(j.find("status") != j.end())
+    if(j.find("status") != j.end() && !j.at("status").is_null())
     {
         j.at("status").get_to(o.m_Status);
         o.m_StatusIsSet = true;
     } 
-    if(j.find("head_ref") != j.end())
+    if(j.find("head_ref") != j.end() && !j.at("head_ref").is_null())
     {
         j.at("head_ref").get_to(o.m_Head_ref);
         o.m_Head_refIsSet = true;
     } 
-    if(j.find("supervisor") != j.end())
+    if(j.find("supervisor") != j.end() && !j.at("supervisor").is_null())
     {
         j.at("supervisor").get_to(o.m_Supervisor);
         o.m_SupervisorIsSet = true;

@@ -288,29 +288,29 @@ void from_json(const nlohmann::json& j, Order& o)
     j.at("id").get_to(o.m_Id);
     j.at("tenant_id").get_to(o.m_Tenant_id);
     j.at("organization_id").get_to(o.m_Organization_id);
-    if(j.find("location_id") != j.end())
+    if(j.find("location_id") != j.end() && !j.at("location_id").is_null())
     {
         j.at("location_id").get_to(o.m_Location_id);
         o.m_Location_idIsSet = true;
     } 
     j.at("created_at").get_to(o.m_Created_at);
     j.at("updated_at").get_to(o.m_Updated_at);
-    if(j.find("deleted_at") != j.end())
+    if(j.find("deleted_at") != j.end() && !j.at("deleted_at").is_null())
     {
         j.at("deleted_at").get_to(o.m_Deleted_at);
         o.m_Deleted_atIsSet = true;
     } 
-    if(j.find("metadata") != j.end())
+    if(j.find("metadata") != j.end() && !j.at("metadata").is_null())
     {
         j.at("metadata").get_to(o.m_Metadata);
         o.m_MetadataIsSet = true;
     } 
-    if(j.find("order_number") != j.end())
+    if(j.find("order_number") != j.end() && !j.at("order_number").is_null())
     {
         j.at("order_number").get_to(o.m_Order_number);
         o.m_Order_numberIsSet = true;
     } 
-    if(j.find("customer_id") != j.end())
+    if(j.find("customer_id") != j.end() && !j.at("customer_id").is_null())
     {
         j.at("customer_id").get_to(o.m_Customer_id);
         o.m_Customer_idIsSet = true;
@@ -318,58 +318,58 @@ void from_json(const nlohmann::json& j, Order& o)
     j.at("status").get_to(o.m_Status);
     j.at("channel").get_to(o.m_Channel);
     j.at("fulfillment_type").get_to(o.m_Fulfillment_type);
-    if(j.find("subtotal") != j.end())
+    if(j.find("subtotal") != j.end() && !j.at("subtotal").is_null())
     {
         j.at("subtotal").get_to(o.m_Subtotal);
         o.m_SubtotalIsSet = true;
     } 
-    if(j.find("tax_total") != j.end())
+    if(j.find("tax_total") != j.end() && !j.at("tax_total").is_null())
     {
         j.at("tax_total").get_to(o.m_Tax_total);
         o.m_Tax_totalIsSet = true;
     } 
-    if(j.find("discount_total") != j.end())
+    if(j.find("discount_total") != j.end() && !j.at("discount_total").is_null())
     {
         j.at("discount_total").get_to(o.m_Discount_total);
         o.m_Discount_totalIsSet = true;
     } 
-    if(j.find("tip_total") != j.end())
+    if(j.find("tip_total") != j.end() && !j.at("tip_total").is_null())
     {
         j.at("tip_total").get_to(o.m_Tip_total);
         o.m_Tip_totalIsSet = true;
     } 
     j.at("total").get_to(o.m_Total);
-    if(j.find("lines") != j.end())
+    if(j.find("lines") != j.end() && !j.at("lines").is_null())
     {
         j.at("lines").get_to(o.m_Lines);
         o.m_LinesIsSet = true;
     } 
-    if(j.find("table_id") != j.end())
+    if(j.find("table_id") != j.end() && !j.at("table_id").is_null())
     {
         j.at("table_id").get_to(o.m_Table_id);
         o.m_Table_idIsSet = true;
     } 
-    if(j.find("server_id") != j.end())
+    if(j.find("server_id") != j.end() && !j.at("server_id").is_null())
     {
         j.at("server_id").get_to(o.m_Server_id);
         o.m_Server_idIsSet = true;
     } 
-    if(j.find("guest_count") != j.end())
+    if(j.find("guest_count") != j.end() && !j.at("guest_count").is_null())
     {
         j.at("guest_count").get_to(o.m_Guest_count);
         o.m_Guest_countIsSet = true;
     } 
-    if(j.find("payment_status") != j.end())
+    if(j.find("payment_status") != j.end() && !j.at("payment_status").is_null())
     {
         j.at("payment_status").get_to(o.m_Payment_status);
         o.m_Payment_statusIsSet = true;
     } 
-    if(j.find("discounts") != j.end())
+    if(j.find("discounts") != j.end() && !j.at("discounts").is_null())
     {
         j.at("discounts").get_to(o.m_Discounts);
         o.m_DiscountsIsSet = true;
     } 
-    if(j.find("service_charges") != j.end())
+    if(j.find("service_charges") != j.end() && !j.at("service_charges").is_null())
     {
         j.at("service_charges").get_to(o.m_Service_charges);
         o.m_Service_chargesIsSet = true;

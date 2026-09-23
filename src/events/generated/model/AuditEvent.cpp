@@ -182,37 +182,37 @@ void from_json(const nlohmann::json& j, AuditEvent& o)
     j.at("id").get_to(o.m_Id);
     j.at("tenant_id").get_to(o.m_Tenant_id);
     j.at("organization_id").get_to(o.m_Organization_id);
-    if(j.find("location_id") != j.end())
+    if(j.find("location_id") != j.end() && !j.at("location_id").is_null())
     {
         j.at("location_id").get_to(o.m_Location_id);
         o.m_Location_idIsSet = true;
     } 
     j.at("created_at").get_to(o.m_Created_at);
     j.at("updated_at").get_to(o.m_Updated_at);
-    if(j.find("deleted_at") != j.end())
+    if(j.find("deleted_at") != j.end() && !j.at("deleted_at").is_null())
     {
         j.at("deleted_at").get_to(o.m_Deleted_at);
         o.m_Deleted_atIsSet = true;
     } 
-    if(j.find("metadata") != j.end())
+    if(j.find("metadata") != j.end() && !j.at("metadata").is_null())
     {
         j.at("metadata").get_to(o.m_Metadata);
         o.m_MetadataIsSet = true;
     } 
     j.at("actor_user_id").get_to(o.m_Actor_user_id);
     j.at("actor_name").get_to(o.m_Actor_name);
-    if(j.find("manager_user_id") != j.end())
+    if(j.find("manager_user_id") != j.end() && !j.at("manager_user_id").is_null())
     {
         j.at("manager_user_id").get_to(o.m_Manager_user_id);
         o.m_Manager_user_idIsSet = true;
     } 
     j.at("action").get_to(o.m_Action);
-    if(j.find("reason") != j.end())
+    if(j.find("reason") != j.end() && !j.at("reason").is_null())
     {
         j.at("reason").get_to(o.m_Reason);
         o.m_ReasonIsSet = true;
     } 
-    if(j.find("reason_code") != j.end())
+    if(j.find("reason_code") != j.end() && !j.at("reason_code").is_null())
     {
         j.at("reason_code").get_to(o.m_Reason_code);
         o.m_Reason_codeIsSet = true;
@@ -220,12 +220,12 @@ void from_json(const nlohmann::json& j, AuditEvent& o)
     j.at("object_type").get_to(o.m_Object_type);
     j.at("object_id").get_to(o.m_Object_id);
     j.at("occurred_at").get_to(o.m_Occurred_at);
-    if(j.find("ip_address") != j.end())
+    if(j.find("ip_address") != j.end() && !j.at("ip_address").is_null())
     {
         j.at("ip_address").get_to(o.m_Ip_address);
         o.m_Ip_addressIsSet = true;
     } 
-    if(j.find("changes") != j.end())
+    if(j.find("changes") != j.end() && !j.at("changes").is_null())
     {
         j.at("changes").get_to(o.m_Changes);
         o.m_ChangesIsSet = true;

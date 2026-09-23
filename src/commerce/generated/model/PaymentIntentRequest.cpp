@@ -98,7 +98,7 @@ void from_json(const nlohmann::json& j, PaymentIntentRequest& o)
     j.at("order_id").get_to(o.m_Order_id);
     j.at("amount").get_to(o.m_Amount);
     j.at("provider").get_to(o.m_Provider);
-    if(j.find("return_url") != j.end())
+    if(j.find("return_url") != j.end() && !j.at("return_url").is_null())
     {
         j.at("return_url").get_to(o.m_Return_url);
         o.m_Return_urlIsSet = true;

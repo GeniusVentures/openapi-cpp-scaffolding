@@ -110,32 +110,32 @@ void to_json(nlohmann::json& j, const InvoiceUpdate& o)
 
 void from_json(const nlohmann::json& j, InvoiceUpdate& o)
 {
-    if(j.find("customer_id") != j.end())
+    if(j.find("customer_id") != j.end() && !j.at("customer_id").is_null())
     {
         j.at("customer_id").get_to(o.m_Customer_id);
         o.m_Customer_idIsSet = true;
     } 
-    if(j.find("status") != j.end())
+    if(j.find("status") != j.end() && !j.at("status").is_null())
     {
         j.at("status").get_to(o.m_Status);
         o.m_StatusIsSet = true;
     } 
-    if(j.find("issued_at") != j.end())
+    if(j.find("issued_at") != j.end() && !j.at("issued_at").is_null())
     {
         j.at("issued_at").get_to(o.m_Issued_at);
         o.m_Issued_atIsSet = true;
     } 
-    if(j.find("due_at") != j.end())
+    if(j.find("due_at") != j.end() && !j.at("due_at").is_null())
     {
         j.at("due_at").get_to(o.m_Due_at);
         o.m_Due_atIsSet = true;
     } 
-    if(j.find("total") != j.end())
+    if(j.find("total") != j.end() && !j.at("total").is_null())
     {
         j.at("total").get_to(o.m_Total);
         o.m_TotalIsSet = true;
     } 
-    if(j.find("balance_due") != j.end())
+    if(j.find("balance_due") != j.end() && !j.at("balance_due").is_null())
     {
         j.at("balance_due").get_to(o.m_Balance_due);
         o.m_Balance_dueIsSet = true;

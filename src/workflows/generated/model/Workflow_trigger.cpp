@@ -82,7 +82,7 @@ void to_json(nlohmann::json& j, const Workflow_trigger& o)
 void from_json(const nlohmann::json& j, Workflow_trigger& o)
 {
     j.at("type").get_to(o.m_Type);
-    if(j.find("config") != j.end())
+    if(j.find("config") != j.end() && !j.at("config").is_null())
     {
         j.at("config").get_to(o.m_Config);
         o.m_ConfigIsSet = true;

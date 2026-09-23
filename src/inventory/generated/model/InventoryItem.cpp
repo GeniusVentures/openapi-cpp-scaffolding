@@ -169,51 +169,51 @@ void from_json(const nlohmann::json& j, InventoryItem& o)
     j.at("id").get_to(o.m_Id);
     j.at("tenant_id").get_to(o.m_Tenant_id);
     j.at("organization_id").get_to(o.m_Organization_id);
-    if(j.find("location_id") != j.end())
+    if(j.find("location_id") != j.end() && !j.at("location_id").is_null())
     {
         j.at("location_id").get_to(o.m_Location_id);
         o.m_Location_idIsSet = true;
     } 
     j.at("created_at").get_to(o.m_Created_at);
     j.at("updated_at").get_to(o.m_Updated_at);
-    if(j.find("deleted_at") != j.end())
+    if(j.find("deleted_at") != j.end() && !j.at("deleted_at").is_null())
     {
         j.at("deleted_at").get_to(o.m_Deleted_at);
         o.m_Deleted_atIsSet = true;
     } 
-    if(j.find("metadata") != j.end())
+    if(j.find("metadata") != j.end() && !j.at("metadata").is_null())
     {
         j.at("metadata").get_to(o.m_Metadata);
         o.m_MetadataIsSet = true;
     } 
-    if(j.find("product_id") != j.end())
+    if(j.find("product_id") != j.end() && !j.at("product_id").is_null())
     {
         j.at("product_id").get_to(o.m_Product_id);
         o.m_Product_idIsSet = true;
     } 
     j.at("name").get_to(o.m_Name);
-    if(j.find("sku") != j.end())
+    if(j.find("sku") != j.end() && !j.at("sku").is_null())
     {
         j.at("sku").get_to(o.m_Sku);
         o.m_SkuIsSet = true;
     } 
     j.at("unit").get_to(o.m_Unit);
-    if(j.find("quantity_on_hand") != j.end())
+    if(j.find("quantity_on_hand") != j.end() && !j.at("quantity_on_hand").is_null())
     {
         j.at("quantity_on_hand").get_to(o.m_Quantity_on_hand);
         o.m_Quantity_on_handIsSet = true;
     } 
-    if(j.find("reorder_point") != j.end())
+    if(j.find("reorder_point") != j.end() && !j.at("reorder_point").is_null())
     {
         j.at("reorder_point").get_to(o.m_Reorder_point);
         o.m_Reorder_pointIsSet = true;
     } 
-    if(j.find("cost") != j.end())
+    if(j.find("cost") != j.end() && !j.at("cost").is_null())
     {
         j.at("cost").get_to(o.m_Cost);
         o.m_CostIsSet = true;
     } 
-    if(j.find("vendor_id") != j.end())
+    if(j.find("vendor_id") != j.end() && !j.at("vendor_id").is_null())
     {
         j.at("vendor_id").get_to(o.m_Vendor_id);
         o.m_Vendor_idIsSet = true;

@@ -118,37 +118,37 @@ void to_json(nlohmann::json& j, const EmployeeUpdate& o)
 
 void from_json(const nlohmann::json& j, EmployeeUpdate& o)
 {
-    if(j.find("person_id") != j.end())
+    if(j.find("person_id") != j.end() && !j.at("person_id").is_null())
     {
         j.at("person_id").get_to(o.m_Person_id);
         o.m_Person_idIsSet = true;
     } 
-    if(j.find("employee_number") != j.end())
+    if(j.find("employee_number") != j.end() && !j.at("employee_number").is_null())
     {
         j.at("employee_number").get_to(o.m_Employee_number);
         o.m_Employee_numberIsSet = true;
     } 
-    if(j.find("department") != j.end())
+    if(j.find("department") != j.end() && !j.at("department").is_null())
     {
         j.at("department").get_to(o.m_Department);
         o.m_DepartmentIsSet = true;
     } 
-    if(j.find("designation") != j.end())
+    if(j.find("designation") != j.end() && !j.at("designation").is_null())
     {
         j.at("designation").get_to(o.m_Designation);
         o.m_DesignationIsSet = true;
     } 
-    if(j.find("hire_date") != j.end())
+    if(j.find("hire_date") != j.end() && !j.at("hire_date").is_null())
     {
         j.at("hire_date").get_to(o.m_Hire_date);
         o.m_Hire_dateIsSet = true;
     } 
-    if(j.find("status") != j.end())
+    if(j.find("status") != j.end() && !j.at("status").is_null())
     {
         j.at("status").get_to(o.m_Status);
         o.m_StatusIsSet = true;
     } 
-    if(j.find("manager_employee_id") != j.end())
+    if(j.find("manager_employee_id") != j.end() && !j.at("manager_employee_id").is_null())
     {
         j.at("manager_employee_id").get_to(o.m_Manager_employee_id);
         o.m_Manager_employee_idIsSet = true;
