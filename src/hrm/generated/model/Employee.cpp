@@ -162,46 +162,46 @@ void from_json(const nlohmann::json& j, Employee& o)
     j.at("id").get_to(o.m_Id);
     j.at("tenant_id").get_to(o.m_Tenant_id);
     j.at("organization_id").get_to(o.m_Organization_id);
-    if(j.find("location_id") != j.end())
+    if(j.find("location_id") != j.end() && !j.at("location_id").is_null())
     {
         j.at("location_id").get_to(o.m_Location_id);
         o.m_Location_idIsSet = true;
     } 
     j.at("created_at").get_to(o.m_Created_at);
     j.at("updated_at").get_to(o.m_Updated_at);
-    if(j.find("deleted_at") != j.end())
+    if(j.find("deleted_at") != j.end() && !j.at("deleted_at").is_null())
     {
         j.at("deleted_at").get_to(o.m_Deleted_at);
         o.m_Deleted_atIsSet = true;
     } 
-    if(j.find("metadata") != j.end())
+    if(j.find("metadata") != j.end() && !j.at("metadata").is_null())
     {
         j.at("metadata").get_to(o.m_Metadata);
         o.m_MetadataIsSet = true;
     } 
     j.at("person_id").get_to(o.m_Person_id);
-    if(j.find("employee_number") != j.end())
+    if(j.find("employee_number") != j.end() && !j.at("employee_number").is_null())
     {
         j.at("employee_number").get_to(o.m_Employee_number);
         o.m_Employee_numberIsSet = true;
     } 
-    if(j.find("department") != j.end())
+    if(j.find("department") != j.end() && !j.at("department").is_null())
     {
         j.at("department").get_to(o.m_Department);
         o.m_DepartmentIsSet = true;
     } 
-    if(j.find("designation") != j.end())
+    if(j.find("designation") != j.end() && !j.at("designation").is_null())
     {
         j.at("designation").get_to(o.m_Designation);
         o.m_DesignationIsSet = true;
     } 
-    if(j.find("hire_date") != j.end())
+    if(j.find("hire_date") != j.end() && !j.at("hire_date").is_null())
     {
         j.at("hire_date").get_to(o.m_Hire_date);
         o.m_Hire_dateIsSet = true;
     } 
     j.at("status").get_to(o.m_Status);
-    if(j.find("manager_employee_id") != j.end())
+    if(j.find("manager_employee_id") != j.end() && !j.at("manager_employee_id").is_null())
     {
         j.at("manager_employee_id").get_to(o.m_Manager_employee_id);
         o.m_Manager_employee_idIsSet = true;

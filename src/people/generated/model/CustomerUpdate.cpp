@@ -105,27 +105,27 @@ void to_json(nlohmann::json& j, const CustomerUpdate& o)
 
 void from_json(const nlohmann::json& j, CustomerUpdate& o)
 {
-    if(j.find("person_id") != j.end())
+    if(j.find("person_id") != j.end() && !j.at("person_id").is_null())
     {
         j.at("person_id").get_to(o.m_Person_id);
         o.m_Person_idIsSet = true;
     } 
-    if(j.find("customer_number") != j.end())
+    if(j.find("customer_number") != j.end() && !j.at("customer_number").is_null())
     {
         j.at("customer_number").get_to(o.m_Customer_number);
         o.m_Customer_numberIsSet = true;
     } 
-    if(j.find("status") != j.end())
+    if(j.find("status") != j.end() && !j.at("status").is_null())
     {
         j.at("status").get_to(o.m_Status);
         o.m_StatusIsSet = true;
     } 
-    if(j.find("loyalty_points") != j.end())
+    if(j.find("loyalty_points") != j.end() && !j.at("loyalty_points").is_null())
     {
         j.at("loyalty_points").get_to(o.m_Loyalty_points);
         o.m_Loyalty_pointsIsSet = true;
     } 
-    if(j.find("notes") != j.end())
+    if(j.find("notes") != j.end() && !j.at("notes").is_null())
     {
         j.at("notes").get_to(o.m_Notes);
         o.m_NotesIsSet = true;

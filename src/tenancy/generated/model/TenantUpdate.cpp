@@ -91,17 +91,17 @@ void to_json(nlohmann::json& j, const TenantUpdate& o)
 
 void from_json(const nlohmann::json& j, TenantUpdate& o)
 {
-    if(j.find("name") != j.end())
+    if(j.find("name") != j.end() && !j.at("name").is_null())
     {
         j.at("name").get_to(o.m_Name);
         o.m_NameIsSet = true;
     } 
-    if(j.find("slug") != j.end())
+    if(j.find("slug") != j.end() && !j.at("slug").is_null())
     {
         j.at("slug").get_to(o.m_Slug);
         o.m_SlugIsSet = true;
     } 
-    if(j.find("plan_id") != j.end())
+    if(j.find("plan_id") != j.end() && !j.at("plan_id").is_null())
     {
         j.at("plan_id").get_to(o.m_Plan_id);
         o.m_Plan_idIsSet = true;

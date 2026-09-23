@@ -118,29 +118,29 @@ void to_json(nlohmann::json& j, const BookingCreate& o)
 
 void from_json(const nlohmann::json& j, BookingCreate& o)
 {
-    if(j.find("resource_id") != j.end())
+    if(j.find("resource_id") != j.end() && !j.at("resource_id").is_null())
     {
         j.at("resource_id").get_to(o.m_Resource_id);
         o.m_Resource_idIsSet = true;
     } 
-    if(j.find("customer_id") != j.end())
+    if(j.find("customer_id") != j.end() && !j.at("customer_id").is_null())
     {
         j.at("customer_id").get_to(o.m_Customer_id);
         o.m_Customer_idIsSet = true;
     } 
-    if(j.find("service_id") != j.end())
+    if(j.find("service_id") != j.end() && !j.at("service_id").is_null())
     {
         j.at("service_id").get_to(o.m_Service_id);
         o.m_Service_idIsSet = true;
     } 
     j.at("status").get_to(o.m_Status);
     j.at("window").get_to(o.m_Window);
-    if(j.find("party_size") != j.end())
+    if(j.find("party_size") != j.end() && !j.at("party_size").is_null())
     {
         j.at("party_size").get_to(o.m_Party_size);
         o.m_Party_sizeIsSet = true;
     } 
-    if(j.find("notes") != j.end())
+    if(j.find("notes") != j.end() && !j.at("notes").is_null())
     {
         j.at("notes").get_to(o.m_Notes);
         o.m_NotesIsSet = true;

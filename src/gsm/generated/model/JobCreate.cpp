@@ -110,22 +110,22 @@ void from_json(const nlohmann::json& j, JobCreate& o)
 {
     j.at("title").get_to(o.m_Title);
     j.at("repo_url").get_to(o.m_Repo_url);
-    if(j.find("base_ref") != j.end())
+    if(j.find("base_ref") != j.end() && !j.at("base_ref").is_null())
     {
         j.at("base_ref").get_to(o.m_Base_ref);
         o.m_Base_refIsSet = true;
     } 
-    if(j.find("head_ref") != j.end())
+    if(j.find("head_ref") != j.end() && !j.at("head_ref").is_null())
     {
         j.at("head_ref").get_to(o.m_Head_ref);
         o.m_Head_refIsSet = true;
     } 
-    if(j.find("agent") != j.end())
+    if(j.find("agent") != j.end() && !j.at("agent").is_null())
     {
         j.at("agent").get_to(o.m_Agent);
         o.m_AgentIsSet = true;
     } 
-    if(j.find("supervisor") != j.end())
+    if(j.find("supervisor") != j.end() && !j.at("supervisor").is_null())
     {
         j.at("supervisor").get_to(o.m_Supervisor);
         o.m_SupervisorIsSet = true;

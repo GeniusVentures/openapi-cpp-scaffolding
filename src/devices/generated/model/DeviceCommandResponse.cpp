@@ -88,7 +88,7 @@ void from_json(const nlohmann::json& j, DeviceCommandResponse& o)
 {
     j.at("command_id").get_to(o.m_Command_id);
     j.at("status").get_to(o.m_Status);
-    if(j.find("result") != j.end())
+    if(j.find("result") != j.end() && !j.at("result").is_null())
     {
         j.at("result").get_to(o.m_Result);
         o.m_ResultIsSet = true;

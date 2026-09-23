@@ -104,7 +104,7 @@ void from_json(const nlohmann::json& j, LeaveRequestCreate& o)
     j.at("type").get_to(o.m_Type);
     j.at("window").get_to(o.m_Window);
     j.at("status").get_to(o.m_Status);
-    if(j.find("reason") != j.end())
+    if(j.find("reason") != j.end() && !j.at("reason").is_null())
     {
         j.at("reason").get_to(o.m_Reason);
         o.m_ReasonIsSet = true;

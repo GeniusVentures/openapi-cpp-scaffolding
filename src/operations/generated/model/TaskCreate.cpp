@@ -114,24 +114,24 @@ void to_json(nlohmann::json& j, const TaskCreate& o)
 void from_json(const nlohmann::json& j, TaskCreate& o)
 {
     j.at("title").get_to(o.m_Title);
-    if(j.find("description") != j.end())
+    if(j.find("description") != j.end() && !j.at("description").is_null())
     {
         j.at("description").get_to(o.m_Description);
         o.m_DescriptionIsSet = true;
     } 
     j.at("status").get_to(o.m_Status);
     j.at("priority").get_to(o.m_Priority);
-    if(j.find("assignee_user_id") != j.end())
+    if(j.find("assignee_user_id") != j.end() && !j.at("assignee_user_id").is_null())
     {
         j.at("assignee_user_id").get_to(o.m_Assignee_user_id);
         o.m_Assignee_user_idIsSet = true;
     } 
-    if(j.find("due_at") != j.end())
+    if(j.find("due_at") != j.end() && !j.at("due_at").is_null())
     {
         j.at("due_at").get_to(o.m_Due_at);
         o.m_Due_atIsSet = true;
     } 
-    if(j.find("source_event_id") != j.end())
+    if(j.find("source_event_id") != j.end() && !j.at("source_event_id").is_null())
     {
         j.at("source_event_id").get_to(o.m_Source_event_id);
         o.m_Source_event_idIsSet = true;

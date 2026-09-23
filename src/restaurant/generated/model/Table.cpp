@@ -202,57 +202,57 @@ void from_json(const nlohmann::json& j, Table& o)
     j.at("id").get_to(o.m_Id);
     j.at("tenant_id").get_to(o.m_Tenant_id);
     j.at("organization_id").get_to(o.m_Organization_id);
-    if(j.find("location_id") != j.end())
+    if(j.find("location_id") != j.end() && !j.at("location_id").is_null())
     {
         j.at("location_id").get_to(o.m_Location_id);
         o.m_Location_idIsSet = true;
     } 
     j.at("created_at").get_to(o.m_Created_at);
     j.at("updated_at").get_to(o.m_Updated_at);
-    if(j.find("deleted_at") != j.end())
+    if(j.find("deleted_at") != j.end() && !j.at("deleted_at").is_null())
     {
         j.at("deleted_at").get_to(o.m_Deleted_at);
         o.m_Deleted_atIsSet = true;
     } 
-    if(j.find("metadata") != j.end())
+    if(j.find("metadata") != j.end() && !j.at("metadata").is_null())
     {
         j.at("metadata").get_to(o.m_Metadata);
         o.m_MetadataIsSet = true;
     } 
     j.at("name").get_to(o.m_Name);
-    if(j.find("section") != j.end())
+    if(j.find("section") != j.end() && !j.at("section").is_null())
     {
         j.at("section").get_to(o.m_Section);
         o.m_SectionIsSet = true;
     } 
     j.at("capacity").get_to(o.m_Capacity);
     j.at("status").get_to(o.m_Status);
-    if(j.find("asset_id") != j.end())
+    if(j.find("asset_id") != j.end() && !j.at("asset_id").is_null())
     {
         j.at("asset_id").get_to(o.m_Asset_id);
         o.m_Asset_idIsSet = true;
     } 
-    if(j.find("server_id") != j.end())
+    if(j.find("server_id") != j.end() && !j.at("server_id").is_null())
     {
         j.at("server_id").get_to(o.m_Server_id);
         o.m_Server_idIsSet = true;
     } 
-    if(j.find("guest_count") != j.end())
+    if(j.find("guest_count") != j.end() && !j.at("guest_count").is_null())
     {
         j.at("guest_count").get_to(o.m_Guest_count);
         o.m_Guest_countIsSet = true;
     } 
-    if(j.find("opened_at") != j.end())
+    if(j.find("opened_at") != j.end() && !j.at("opened_at").is_null())
     {
         j.at("opened_at").get_to(o.m_Opened_at);
         o.m_Opened_atIsSet = true;
     } 
-    if(j.find("open_order_ids") != j.end())
+    if(j.find("open_order_ids") != j.end() && !j.at("open_order_ids").is_null())
     {
         j.at("open_order_ids").get_to(o.m_Open_order_ids);
         o.m_Open_order_idsIsSet = true;
     } 
-    if(j.find("pos_status") != j.end())
+    if(j.find("pos_status") != j.end() && !j.at("pos_status").is_null())
     {
         j.at("pos_status").get_to(o.m_Pos_status);
         o.m_Pos_statusIsSet = true;

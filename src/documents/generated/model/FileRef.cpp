@@ -103,17 +103,17 @@ void from_json(const nlohmann::json& j, FileRef& o)
 {
     j.at("id").get_to(o.m_Id);
     j.at("url").get_to(o.m_Url);
-    if(j.find("mime_type") != j.end())
+    if(j.find("mime_type") != j.end() && !j.at("mime_type").is_null())
     {
         j.at("mime_type").get_to(o.m_Mime_type);
         o.m_Mime_typeIsSet = true;
     } 
-    if(j.find("size_bytes") != j.end())
+    if(j.find("size_bytes") != j.end() && !j.at("size_bytes").is_null())
     {
         j.at("size_bytes").get_to(o.m_Size_bytes);
         o.m_Size_bytesIsSet = true;
     } 
-    if(j.find("checksum") != j.end())
+    if(j.find("checksum") != j.end() && !j.at("checksum").is_null())
     {
         j.at("checksum").get_to(o.m_Checksum);
         o.m_ChecksumIsSet = true;

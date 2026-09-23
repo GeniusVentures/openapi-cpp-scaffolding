@@ -137,17 +137,17 @@ void to_json(nlohmann::json& j, const ChatResponse& o)
 void from_json(const nlohmann::json& j, ChatResponse& o)
 {
     j.at("message").get_to(o.m_Message);
-    if(j.find("run_id") != j.end())
+    if(j.find("run_id") != j.end() && !j.at("run_id").is_null())
     {
         j.at("run_id").get_to(o.m_Run_id);
         o.m_Run_idIsSet = true;
     } 
-    if(j.find("tool_calls") != j.end())
+    if(j.find("tool_calls") != j.end() && !j.at("tool_calls").is_null())
     {
         j.at("tool_calls").get_to(o.m_Tool_calls);
         o.m_Tool_callsIsSet = true;
     } 
-    if(j.find("citations") != j.end())
+    if(j.find("citations") != j.end() && !j.at("citations").is_null())
     {
         j.at("citations").get_to(o.m_Citations);
         o.m_CitationsIsSet = true;

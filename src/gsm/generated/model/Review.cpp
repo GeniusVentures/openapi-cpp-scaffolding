@@ -137,12 +137,12 @@ void from_json(const nlohmann::json& j, Review& o)
     j.at("job_id").get_to(o.m_Job_id);
     j.at("decision").get_to(o.m_Decision);
     j.at("reviewer").get_to(o.m_Reviewer);
-    if(j.find("comment") != j.end())
+    if(j.find("comment") != j.end() && !j.at("comment").is_null())
     {
         j.at("comment").get_to(o.m_Comment);
         o.m_CommentIsSet = true;
     } 
-    if(j.find("evidence_ids") != j.end())
+    if(j.find("evidence_ids") != j.end() && !j.at("evidence_ids").is_null())
     {
         j.at("evidence_ids").get_to(o.m_Evidence_ids);
         o.m_Evidence_idsIsSet = true;

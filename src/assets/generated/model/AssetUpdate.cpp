@@ -112,32 +112,32 @@ void to_json(nlohmann::json& j, const AssetUpdate& o)
 
 void from_json(const nlohmann::json& j, AssetUpdate& o)
 {
-    if(j.find("name") != j.end())
+    if(j.find("name") != j.end() && !j.at("name").is_null())
     {
         j.at("name").get_to(o.m_Name);
         o.m_NameIsSet = true;
     } 
-    if(j.find("type") != j.end())
+    if(j.find("type") != j.end() && !j.at("type").is_null())
     {
         j.at("type").get_to(o.m_Type);
         o.m_TypeIsSet = true;
     } 
-    if(j.find("serial_number") != j.end())
+    if(j.find("serial_number") != j.end() && !j.at("serial_number").is_null())
     {
         j.at("serial_number").get_to(o.m_Serial_number);
         o.m_Serial_numberIsSet = true;
     } 
-    if(j.find("status") != j.end())
+    if(j.find("status") != j.end() && !j.at("status").is_null())
     {
         j.at("status").get_to(o.m_Status);
         o.m_StatusIsSet = true;
     } 
-    if(j.find("location_id") != j.end())
+    if(j.find("location_id") != j.end() && !j.at("location_id").is_null())
     {
         j.at("location_id").get_to(o.m_Location_id);
         o.m_Location_idIsSet = true;
     } 
-    if(j.find("assigned_to_person_id") != j.end())
+    if(j.find("assigned_to_person_id") != j.end() && !j.at("assigned_to_person_id").is_null())
     {
         j.at("assigned_to_person_id").get_to(o.m_Assigned_to_person_id);
         o.m_Assigned_to_person_idIsSet = true;

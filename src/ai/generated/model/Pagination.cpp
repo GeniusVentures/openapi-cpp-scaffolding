@@ -102,18 +102,18 @@ void to_json(nlohmann::json& j, const Pagination& o)
 void from_json(const nlohmann::json& j, Pagination& o)
 {
     j.at("limit").get_to(o.m_Limit);
-    if(j.find("cursor") != j.end())
+    if(j.find("cursor") != j.end() && !j.at("cursor").is_null())
     {
         j.at("cursor").get_to(o.m_Cursor);
         o.m_CursorIsSet = true;
     } 
-    if(j.find("next_cursor") != j.end())
+    if(j.find("next_cursor") != j.end() && !j.at("next_cursor").is_null())
     {
         j.at("next_cursor").get_to(o.m_Next_cursor);
         o.m_Next_cursorIsSet = true;
     } 
     j.at("has_more").get_to(o.m_Has_more);
-    if(j.find("total") != j.end())
+    if(j.find("total") != j.end() && !j.at("total").is_null())
     {
         j.at("total").get_to(o.m_Total);
         o.m_TotalIsSet = true;

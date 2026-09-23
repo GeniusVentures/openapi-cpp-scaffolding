@@ -91,17 +91,17 @@ void to_json(nlohmann::json& j, const ContactPoint& o)
 
 void from_json(const nlohmann::json& j, ContactPoint& o)
 {
-    if(j.find("email") != j.end())
+    if(j.find("email") != j.end() && !j.at("email").is_null())
     {
         j.at("email").get_to(o.m_Email);
         o.m_EmailIsSet = true;
     } 
-    if(j.find("phone") != j.end())
+    if(j.find("phone") != j.end() && !j.at("phone").is_null())
     {
         j.at("phone").get_to(o.m_Phone);
         o.m_PhoneIsSet = true;
     } 
-    if(j.find("website") != j.end())
+    if(j.find("website") != j.end() && !j.at("website").is_null())
     {
         j.at("website").get_to(o.m_Website);
         o.m_WebsiteIsSet = true;

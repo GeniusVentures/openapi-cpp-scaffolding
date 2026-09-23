@@ -89,7 +89,7 @@ void from_json(const nlohmann::json& j, TenantCreate& o)
 {
     j.at("name").get_to(o.m_Name);
     j.at("slug").get_to(o.m_Slug);
-    if(j.find("plan_id") != j.end())
+    if(j.find("plan_id") != j.end() && !j.at("plan_id").is_null())
     {
         j.at("plan_id").get_to(o.m_Plan_id);
         o.m_Plan_idIsSet = true;

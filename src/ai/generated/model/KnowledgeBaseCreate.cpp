@@ -95,13 +95,13 @@ void to_json(nlohmann::json& j, const KnowledgeBaseCreate& o)
 void from_json(const nlohmann::json& j, KnowledgeBaseCreate& o)
 {
     j.at("name").get_to(o.m_Name);
-    if(j.find("description") != j.end())
+    if(j.find("description") != j.end() && !j.at("description").is_null())
     {
         j.at("description").get_to(o.m_Description);
         o.m_DescriptionIsSet = true;
     } 
     j.at("status").get_to(o.m_Status);
-    if(j.find("document_count") != j.end())
+    if(j.find("document_count") != j.end() && !j.at("document_count").is_null())
     {
         j.at("document_count").get_to(o.m_Document_count);
         o.m_Document_countIsSet = true;

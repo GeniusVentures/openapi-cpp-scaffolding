@@ -114,12 +114,12 @@ void to_json(nlohmann::json& j, const PaymentCreate& o)
 
 void from_json(const nlohmann::json& j, PaymentCreate& o)
 {
-    if(j.find("order_id") != j.end())
+    if(j.find("order_id") != j.end() && !j.at("order_id").is_null())
     {
         j.at("order_id").get_to(o.m_Order_id);
         o.m_Order_idIsSet = true;
     } 
-    if(j.find("invoice_id") != j.end())
+    if(j.find("invoice_id") != j.end() && !j.at("invoice_id").is_null())
     {
         j.at("invoice_id").get_to(o.m_Invoice_id);
         o.m_Invoice_idIsSet = true;
@@ -128,7 +128,7 @@ void from_json(const nlohmann::json& j, PaymentCreate& o)
     j.at("method").get_to(o.m_Method);
     j.at("status").get_to(o.m_Status);
     j.at("amount").get_to(o.m_Amount);
-    if(j.find("provider_reference") != j.end())
+    if(j.find("provider_reference") != j.end() && !j.at("provider_reference").is_null())
     {
         j.at("provider_reference").get_to(o.m_Provider_reference);
         o.m_Provider_referenceIsSet = true;

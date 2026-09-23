@@ -82,7 +82,7 @@ void to_json(nlohmann::json& j, const RunAgent_request& o)
 void from_json(const nlohmann::json& j, RunAgent_request& o)
 {
     j.at("input").get_to(o.m_Input);
-    if(j.find("stream") != j.end())
+    if(j.find("stream") != j.end() && !j.at("stream").is_null())
     {
         j.at("stream").get_to(o.m_Stream);
         o.m_StreamIsSet = true;

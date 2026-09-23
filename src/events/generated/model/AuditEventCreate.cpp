@@ -136,18 +136,18 @@ void from_json(const nlohmann::json& j, AuditEventCreate& o)
 {
     j.at("actor_user_id").get_to(o.m_Actor_user_id);
     j.at("actor_name").get_to(o.m_Actor_name);
-    if(j.find("manager_user_id") != j.end())
+    if(j.find("manager_user_id") != j.end() && !j.at("manager_user_id").is_null())
     {
         j.at("manager_user_id").get_to(o.m_Manager_user_id);
         o.m_Manager_user_idIsSet = true;
     } 
     j.at("action").get_to(o.m_Action);
-    if(j.find("reason") != j.end())
+    if(j.find("reason") != j.end() && !j.at("reason").is_null())
     {
         j.at("reason").get_to(o.m_Reason);
         o.m_ReasonIsSet = true;
     } 
-    if(j.find("reason_code") != j.end())
+    if(j.find("reason_code") != j.end() && !j.at("reason_code").is_null())
     {
         j.at("reason_code").get_to(o.m_Reason_code);
         o.m_Reason_codeIsSet = true;
@@ -155,12 +155,12 @@ void from_json(const nlohmann::json& j, AuditEventCreate& o)
     j.at("object_type").get_to(o.m_Object_type);
     j.at("object_id").get_to(o.m_Object_id);
     j.at("occurred_at").get_to(o.m_Occurred_at);
-    if(j.find("ip_address") != j.end())
+    if(j.find("ip_address") != j.end() && !j.at("ip_address").is_null())
     {
         j.at("ip_address").get_to(o.m_Ip_address);
         o.m_Ip_addressIsSet = true;
     } 
-    if(j.find("changes") != j.end())
+    if(j.find("changes") != j.end() && !j.at("changes").is_null())
     {
         j.at("changes").get_to(o.m_Changes);
         o.m_ChangesIsSet = true;

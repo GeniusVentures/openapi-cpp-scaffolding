@@ -95,13 +95,13 @@ void to_json(nlohmann::json& j, const LedgerAccountCreate& o)
 void from_json(const nlohmann::json& j, LedgerAccountCreate& o)
 {
     j.at("name").get_to(o.m_Name);
-    if(j.find("code") != j.end())
+    if(j.find("code") != j.end() && !j.at("code").is_null())
     {
         j.at("code").get_to(o.m_Code);
         o.m_CodeIsSet = true;
     } 
     j.at("type").get_to(o.m_Type);
-    if(j.find("status") != j.end())
+    if(j.find("status") != j.end() && !j.at("status").is_null())
     {
         j.at("status").get_to(o.m_Status);
         o.m_StatusIsSet = true;

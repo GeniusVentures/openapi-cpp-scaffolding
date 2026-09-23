@@ -132,17 +132,17 @@ void from_json(const nlohmann::json& j, Evidence& o)
     j.at("job_id").get_to(o.m_Job_id);
     j.at("kind").get_to(o.m_Kind);
     j.at("sha256").get_to(o.m_Sha256);
-    if(j.find("payload_path") != j.end())
+    if(j.find("payload_path") != j.end() && !j.at("payload_path").is_null())
     {
         j.at("payload_path").get_to(o.m_Payload_path);
         o.m_Payload_pathIsSet = true;
     } 
-    if(j.find("metadata") != j.end())
+    if(j.find("metadata") != j.end() && !j.at("metadata").is_null())
     {
         j.at("metadata").get_to(o.m_Metadata);
         o.m_MetadataIsSet = true;
     } 
-    if(j.find("captured_at") != j.end())
+    if(j.find("captured_at") != j.end() && !j.at("captured_at").is_null())
     {
         j.at("captured_at").get_to(o.m_Captured_at);
         o.m_Captured_atIsSet = true;

@@ -104,27 +104,27 @@ void to_json(nlohmann::json& j, const LeaveRequestUpdate& o)
 
 void from_json(const nlohmann::json& j, LeaveRequestUpdate& o)
 {
-    if(j.find("employee_id") != j.end())
+    if(j.find("employee_id") != j.end() && !j.at("employee_id").is_null())
     {
         j.at("employee_id").get_to(o.m_Employee_id);
         o.m_Employee_idIsSet = true;
     } 
-    if(j.find("type") != j.end())
+    if(j.find("type") != j.end() && !j.at("type").is_null())
     {
         j.at("type").get_to(o.m_Type);
         o.m_TypeIsSet = true;
     } 
-    if(j.find("window") != j.end())
+    if(j.find("window") != j.end() && !j.at("window").is_null())
     {
         j.at("window").get_to(o.m_Window);
         o.m_WindowIsSet = true;
     } 
-    if(j.find("status") != j.end())
+    if(j.find("status") != j.end() && !j.at("status").is_null())
     {
         j.at("status").get_to(o.m_Status);
         o.m_StatusIsSet = true;
     } 
-    if(j.find("reason") != j.end())
+    if(j.find("reason") != j.end() && !j.at("reason").is_null())
     {
         j.at("reason").get_to(o.m_Reason);
         o.m_ReasonIsSet = true;

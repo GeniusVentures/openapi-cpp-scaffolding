@@ -94,7 +94,7 @@ void from_json(const nlohmann::json& j, IntegrationCreate& o)
     j.at("name").get_to(o.m_Name);
     j.at("provider").get_to(o.m_Provider);
     j.at("status").get_to(o.m_Status);
-    if(j.find("config") != j.end())
+    if(j.find("config") != j.end() && !j.at("config").is_null())
     {
         j.at("config").get_to(o.m_Config);
         o.m_ConfigIsSet = true;

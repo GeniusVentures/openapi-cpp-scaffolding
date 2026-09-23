@@ -113,12 +113,12 @@ void to_json(nlohmann::json& j, const Location_hours_inner& o)
 void from_json(const nlohmann::json& j, Location_hours_inner& o)
 {
     j.at("day").get_to(o.m_Day);
-    if(j.find("opens_at") != j.end())
+    if(j.find("opens_at") != j.end() && !j.at("opens_at").is_null())
     {
         j.at("opens_at").get_to(o.m_Opens_at);
         o.m_Opens_atIsSet = true;
     } 
-    if(j.find("closes_at") != j.end())
+    if(j.find("closes_at") != j.end() && !j.at("closes_at").is_null())
     {
         j.at("closes_at").get_to(o.m_Closes_at);
         o.m_Closes_atIsSet = true;

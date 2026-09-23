@@ -112,32 +112,32 @@ void to_json(nlohmann::json& j, const NotificationUpdate& o)
 
 void from_json(const nlohmann::json& j, NotificationUpdate& o)
 {
-    if(j.find("type") != j.end())
+    if(j.find("type") != j.end() && !j.at("type").is_null())
     {
         j.at("type").get_to(o.m_Type);
         o.m_TypeIsSet = true;
     } 
-    if(j.find("recipient_user_id") != j.end())
+    if(j.find("recipient_user_id") != j.end() && !j.at("recipient_user_id").is_null())
     {
         j.at("recipient_user_id").get_to(o.m_Recipient_user_id);
         o.m_Recipient_user_idIsSet = true;
     } 
-    if(j.find("channel") != j.end())
+    if(j.find("channel") != j.end() && !j.at("channel").is_null())
     {
         j.at("channel").get_to(o.m_Channel);
         o.m_ChannelIsSet = true;
     } 
-    if(j.find("title") != j.end())
+    if(j.find("title") != j.end() && !j.at("title").is_null())
     {
         j.at("title").get_to(o.m_Title);
         o.m_TitleIsSet = true;
     } 
-    if(j.find("body") != j.end())
+    if(j.find("body") != j.end() && !j.at("body").is_null())
     {
         j.at("body").get_to(o.m_Body);
         o.m_BodyIsSet = true;
     } 
-    if(j.find("status") != j.end())
+    if(j.find("status") != j.end() && !j.at("status").is_null())
     {
         j.at("status").get_to(o.m_Status);
         o.m_StatusIsSet = true;

@@ -110,17 +110,17 @@ void to_json(nlohmann::json& j, const LocalNodeHeartbeat_request& o)
 
 void from_json(const nlohmann::json& j, LocalNodeHeartbeat_request& o)
 {
-    if(j.find("status") != j.end())
+    if(j.find("status") != j.end() && !j.at("status").is_null())
     {
         j.at("status").get_to(o.m_Status);
         o.m_StatusIsSet = true;
     } 
-    if(j.find("capabilities") != j.end())
+    if(j.find("capabilities") != j.end() && !j.at("capabilities").is_null())
     {
         j.at("capabilities").get_to(o.m_Capabilities);
         o.m_CapabilitiesIsSet = true;
     } 
-    if(j.find("metrics") != j.end())
+    if(j.find("metrics") != j.end() && !j.at("metrics").is_null())
     {
         j.at("metrics").get_to(o.m_Metrics);
         o.m_MetricsIsSet = true;

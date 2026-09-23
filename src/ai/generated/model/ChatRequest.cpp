@@ -96,17 +96,17 @@ void to_json(nlohmann::json& j, const ChatRequest& o)
 void from_json(const nlohmann::json& j, ChatRequest& o)
 {
     j.at("message").get_to(o.m_Message);
-    if(j.find("context") != j.end())
+    if(j.find("context") != j.end() && !j.at("context").is_null())
     {
         j.at("context").get_to(o.m_Context);
         o.m_ContextIsSet = true;
     } 
-    if(j.find("agent_id") != j.end())
+    if(j.find("agent_id") != j.end() && !j.at("agent_id").is_null())
     {
         j.at("agent_id").get_to(o.m_Agent_id);
         o.m_Agent_idIsSet = true;
     } 
-    if(j.find("stream") != j.end())
+    if(j.find("stream") != j.end() && !j.at("stream").is_null())
     {
         j.at("stream").get_to(o.m_Stream);
         o.m_StreamIsSet = true;

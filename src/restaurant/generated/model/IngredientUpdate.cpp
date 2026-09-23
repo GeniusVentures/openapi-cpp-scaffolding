@@ -97,22 +97,22 @@ void to_json(nlohmann::json& j, const IngredientUpdate& o)
 
 void from_json(const nlohmann::json& j, IngredientUpdate& o)
 {
-    if(j.find("inventory_item_id") != j.end())
+    if(j.find("inventory_item_id") != j.end() && !j.at("inventory_item_id").is_null())
     {
         j.at("inventory_item_id").get_to(o.m_Inventory_item_id);
         o.m_Inventory_item_idIsSet = true;
     } 
-    if(j.find("name") != j.end())
+    if(j.find("name") != j.end() && !j.at("name").is_null())
     {
         j.at("name").get_to(o.m_Name);
         o.m_NameIsSet = true;
     } 
-    if(j.find("unit") != j.end())
+    if(j.find("unit") != j.end() && !j.at("unit").is_null())
     {
         j.at("unit").get_to(o.m_Unit);
         o.m_UnitIsSet = true;
     } 
-    if(j.find("cost") != j.end())
+    if(j.find("cost") != j.end() && !j.at("cost").is_null())
     {
         j.at("cost").get_to(o.m_Cost);
         o.m_CostIsSet = true;

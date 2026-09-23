@@ -103,7 +103,7 @@ void to_json(nlohmann::json& j, const SyncPullResponse& o)
 void from_json(const nlohmann::json& j, SyncPullResponse& o)
 {
     j.at("events").get_to(o.m_Events);
-    if(j.find("next_cursor") != j.end())
+    if(j.find("next_cursor") != j.end() && !j.at("next_cursor").is_null())
     {
         j.at("next_cursor").get_to(o.m_Next_cursor);
         o.m_Next_cursorIsSet = true;

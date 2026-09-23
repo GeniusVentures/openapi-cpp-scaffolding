@@ -93,14 +93,14 @@ void to_json(nlohmann::json& j, const IngredientCreate& o)
 
 void from_json(const nlohmann::json& j, IngredientCreate& o)
 {
-    if(j.find("inventory_item_id") != j.end())
+    if(j.find("inventory_item_id") != j.end() && !j.at("inventory_item_id").is_null())
     {
         j.at("inventory_item_id").get_to(o.m_Inventory_item_id);
         o.m_Inventory_item_idIsSet = true;
     } 
     j.at("name").get_to(o.m_Name);
     j.at("unit").get_to(o.m_Unit);
-    if(j.find("cost") != j.end())
+    if(j.find("cost") != j.end() && !j.at("cost").is_null())
     {
         j.at("cost").get_to(o.m_Cost);
         o.m_CostIsSet = true;

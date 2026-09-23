@@ -115,12 +115,12 @@ void from_json(const nlohmann::json& j, RestaurantMenuCreate& o)
 {
     j.at("name").get_to(o.m_Name);
     j.at("status").get_to(o.m_Status);
-    if(j.find("location_ids") != j.end())
+    if(j.find("location_ids") != j.end() && !j.at("location_ids").is_null())
     {
         j.at("location_ids").get_to(o.m_Location_ids);
         o.m_Location_idsIsSet = true;
     } 
-    if(j.find("availability") != j.end())
+    if(j.find("availability") != j.end() && !j.at("availability").is_null())
     {
         j.at("availability").get_to(o.m_Availability);
         o.m_AvailabilityIsSet = true;

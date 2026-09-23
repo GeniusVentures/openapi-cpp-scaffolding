@@ -91,7 +91,7 @@ void to_json(nlohmann::json& j, const OrderDiscount& o)
 void from_json(const nlohmann::json& j, OrderDiscount& o)
 {
     j.at("name").get_to(o.m_Name);
-    if(j.find("reason") != j.end())
+    if(j.find("reason") != j.end() && !j.at("reason").is_null())
     {
         j.at("reason").get_to(o.m_Reason);
         o.m_ReasonIsSet = true;

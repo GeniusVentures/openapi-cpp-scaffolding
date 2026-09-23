@@ -98,13 +98,13 @@ void to_json(nlohmann::json& j, const ServiceCharge& o)
 void from_json(const nlohmann::json& j, ServiceCharge& o)
 {
     j.at("name").get_to(o.m_Name);
-    if(j.find("reason") != j.end())
+    if(j.find("reason") != j.end() && !j.at("reason").is_null())
     {
         j.at("reason").get_to(o.m_Reason);
         o.m_ReasonIsSet = true;
     } 
     j.at("amount").get_to(o.m_Amount);
-    if(j.find("taxable") != j.end())
+    if(j.find("taxable") != j.end() && !j.at("taxable").is_null())
     {
         j.at("taxable").get_to(o.m_Taxable);
         o.m_TaxableIsSet = true;

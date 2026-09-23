@@ -164,19 +164,19 @@ void from_json(const nlohmann::json& j, Message& o)
     j.at("id").get_to(o.m_Id);
     j.at("tenant_id").get_to(o.m_Tenant_id);
     j.at("organization_id").get_to(o.m_Organization_id);
-    if(j.find("location_id") != j.end())
+    if(j.find("location_id") != j.end() && !j.at("location_id").is_null())
     {
         j.at("location_id").get_to(o.m_Location_id);
         o.m_Location_idIsSet = true;
     } 
     j.at("created_at").get_to(o.m_Created_at);
     j.at("updated_at").get_to(o.m_Updated_at);
-    if(j.find("deleted_at") != j.end())
+    if(j.find("deleted_at") != j.end() && !j.at("deleted_at").is_null())
     {
         j.at("deleted_at").get_to(o.m_Deleted_at);
         o.m_Deleted_atIsSet = true;
     } 
-    if(j.find("metadata") != j.end())
+    if(j.find("metadata") != j.end() && !j.at("metadata").is_null())
     {
         j.at("metadata").get_to(o.m_Metadata);
         o.m_MetadataIsSet = true;
@@ -184,19 +184,19 @@ void from_json(const nlohmann::json& j, Message& o)
     j.at("channel").get_to(o.m_Channel);
     j.at("direction").get_to(o.m_Direction);
     j.at("recipient").get_to(o.m_Recipient);
-    if(j.find("subject") != j.end())
+    if(j.find("subject") != j.end() && !j.at("subject").is_null())
     {
         j.at("subject").get_to(o.m_Subject);
         o.m_SubjectIsSet = true;
     } 
     j.at("body").get_to(o.m_Body);
     j.at("status").get_to(o.m_Status);
-    if(j.find("related_object_type") != j.end())
+    if(j.find("related_object_type") != j.end() && !j.at("related_object_type").is_null())
     {
         j.at("related_object_type").get_to(o.m_Related_object_type);
         o.m_Related_object_typeIsSet = true;
     } 
-    if(j.find("related_object_id") != j.end())
+    if(j.find("related_object_id") != j.end() && !j.at("related_object_id").is_null())
     {
         j.at("related_object_id").get_to(o.m_Related_object_id);
         o.m_Related_object_idIsSet = true;

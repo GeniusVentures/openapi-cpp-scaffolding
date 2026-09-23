@@ -111,17 +111,17 @@ void to_json(nlohmann::json& j, const RoleUpdate& o)
 
 void from_json(const nlohmann::json& j, RoleUpdate& o)
 {
-    if(j.find("name") != j.end())
+    if(j.find("name") != j.end() && !j.at("name").is_null())
     {
         j.at("name").get_to(o.m_Name);
         o.m_NameIsSet = true;
     } 
-    if(j.find("scope") != j.end())
+    if(j.find("scope") != j.end() && !j.at("scope").is_null())
     {
         j.at("scope").get_to(o.m_Scope);
         o.m_ScopeIsSet = true;
     } 
-    if(j.find("permissions") != j.end())
+    if(j.find("permissions") != j.end() && !j.at("permissions").is_null())
     {
         j.at("permissions").get_to(o.m_Permissions);
         o.m_PermissionsIsSet = true;

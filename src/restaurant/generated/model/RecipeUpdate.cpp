@@ -104,12 +104,12 @@ void to_json(nlohmann::json& j, const RecipeUpdate& o)
 
 void from_json(const nlohmann::json& j, RecipeUpdate& o)
 {
-    if(j.find("menu_item_id") != j.end())
+    if(j.find("menu_item_id") != j.end() && !j.at("menu_item_id").is_null())
     {
         j.at("menu_item_id").get_to(o.m_Menu_item_id);
         o.m_Menu_item_idIsSet = true;
     } 
-    if(j.find("ingredients") != j.end())
+    if(j.find("ingredients") != j.end() && !j.at("ingredients").is_null())
     {
         j.at("ingredients").get_to(o.m_Ingredients);
         o.m_IngredientsIsSet = true;

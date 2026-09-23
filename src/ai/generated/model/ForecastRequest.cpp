@@ -88,7 +88,7 @@ void from_json(const nlohmann::json& j, ForecastRequest& o)
 {
     j.at("metric").get_to(o.m_Metric);
     j.at("horizon").get_to(o.m_Horizon);
-    if(j.find("filters") != j.end())
+    if(j.find("filters") != j.end() && !j.at("filters").is_null())
     {
         j.at("filters").get_to(o.m_Filters);
         o.m_FiltersIsSet = true;

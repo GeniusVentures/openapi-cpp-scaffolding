@@ -157,45 +157,45 @@ void from_json(const nlohmann::json& j, Customer& o)
     j.at("id").get_to(o.m_Id);
     j.at("tenant_id").get_to(o.m_Tenant_id);
     j.at("organization_id").get_to(o.m_Organization_id);
-    if(j.find("location_id") != j.end())
+    if(j.find("location_id") != j.end() && !j.at("location_id").is_null())
     {
         j.at("location_id").get_to(o.m_Location_id);
         o.m_Location_idIsSet = true;
     } 
     j.at("created_at").get_to(o.m_Created_at);
     j.at("updated_at").get_to(o.m_Updated_at);
-    if(j.find("deleted_at") != j.end())
+    if(j.find("deleted_at") != j.end() && !j.at("deleted_at").is_null())
     {
         j.at("deleted_at").get_to(o.m_Deleted_at);
         o.m_Deleted_atIsSet = true;
     } 
-    if(j.find("metadata") != j.end())
+    if(j.find("metadata") != j.end() && !j.at("metadata").is_null())
     {
         j.at("metadata").get_to(o.m_Metadata);
         o.m_MetadataIsSet = true;
     } 
-    if(j.find("person_id") != j.end())
+    if(j.find("person_id") != j.end() && !j.at("person_id").is_null())
     {
         j.at("person_id").get_to(o.m_Person_id);
         o.m_Person_idIsSet = true;
     } 
-    if(j.find("customer_number") != j.end())
+    if(j.find("customer_number") != j.end() && !j.at("customer_number").is_null())
     {
         j.at("customer_number").get_to(o.m_Customer_number);
         o.m_Customer_numberIsSet = true;
     } 
     j.at("status").get_to(o.m_Status);
-    if(j.find("lifetime_value") != j.end())
+    if(j.find("lifetime_value") != j.end() && !j.at("lifetime_value").is_null())
     {
         j.at("lifetime_value").get_to(o.m_Lifetime_value);
         o.m_Lifetime_valueIsSet = true;
     } 
-    if(j.find("loyalty_points") != j.end())
+    if(j.find("loyalty_points") != j.end() && !j.at("loyalty_points").is_null())
     {
         j.at("loyalty_points").get_to(o.m_Loyalty_points);
         o.m_Loyalty_pointsIsSet = true;
     } 
-    if(j.find("notes") != j.end())
+    if(j.find("notes") != j.end() && !j.at("notes").is_null())
     {
         j.at("notes").get_to(o.m_Notes);
         o.m_NotesIsSet = true;

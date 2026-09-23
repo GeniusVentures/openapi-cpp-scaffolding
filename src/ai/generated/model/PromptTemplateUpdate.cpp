@@ -125,27 +125,27 @@ void to_json(nlohmann::json& j, const PromptTemplateUpdate& o)
 
 void from_json(const nlohmann::json& j, PromptTemplateUpdate& o)
 {
-    if(j.find("name") != j.end())
+    if(j.find("name") != j.end() && !j.at("name").is_null())
     {
         j.at("name").get_to(o.m_Name);
         o.m_NameIsSet = true;
     } 
-    if(j.find("purpose") != j.end())
+    if(j.find("purpose") != j.end() && !j.at("purpose").is_null())
     {
         j.at("purpose").get_to(o.m_Purpose);
         o.m_PurposeIsSet = true;
     } 
-    if(j.find("template") != j.end())
+    if(j.find("template") != j.end() && !j.at("template").is_null())
     {
         j.at("template").get_to(o.m_r_template);
         o.m_r_templateIsSet = true;
     } 
-    if(j.find("variables") != j.end())
+    if(j.find("variables") != j.end() && !j.at("variables").is_null())
     {
         j.at("variables").get_to(o.m_Variables);
         o.m_VariablesIsSet = true;
     } 
-    if(j.find("version") != j.end())
+    if(j.find("version") != j.end() && !j.at("version").is_null())
     {
         j.at("version").get_to(o.m_Version);
         o.m_VersionIsSet = true;

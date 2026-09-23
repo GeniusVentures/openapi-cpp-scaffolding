@@ -93,7 +93,7 @@ void to_json(nlohmann::json& j, const PaymentIntentResponse& o)
 void from_json(const nlohmann::json& j, PaymentIntentResponse& o)
 {
     j.at("provider").get_to(o.m_Provider);
-    if(j.find("client_secret") != j.end())
+    if(j.find("client_secret") != j.end() && !j.at("client_secret").is_null())
     {
         j.at("client_secret").get_to(o.m_Client_secret);
         o.m_Client_secretIsSet = true;

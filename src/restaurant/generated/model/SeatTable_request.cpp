@@ -90,12 +90,12 @@ void to_json(nlohmann::json& j, const SeatTable_request& o)
 void from_json(const nlohmann::json& j, SeatTable_request& o)
 {
     j.at("party_size").get_to(o.m_Party_size);
-    if(j.find("customer_id") != j.end())
+    if(j.find("customer_id") != j.end() && !j.at("customer_id").is_null())
     {
         j.at("customer_id").get_to(o.m_Customer_id);
         o.m_Customer_idIsSet = true;
     } 
-    if(j.find("booking_id") != j.end())
+    if(j.find("booking_id") != j.end() && !j.at("booking_id").is_null())
     {
         j.at("booking_id").get_to(o.m_Booking_id);
         o.m_Booking_idIsSet = true;

@@ -130,22 +130,22 @@ void from_json(const nlohmann::json& j, LocalNodeCreate& o)
 {
     j.at("name").get_to(o.m_Name);
     j.at("status").get_to(o.m_Status);
-    if(j.find("hostname") != j.end())
+    if(j.find("hostname") != j.end() && !j.at("hostname").is_null())
     {
         j.at("hostname").get_to(o.m_Hostname);
         o.m_HostnameIsSet = true;
     } 
-    if(j.find("version") != j.end())
+    if(j.find("version") != j.end() && !j.at("version").is_null())
     {
         j.at("version").get_to(o.m_Version);
         o.m_VersionIsSet = true;
     } 
-    if(j.find("last_seen_at") != j.end())
+    if(j.find("last_seen_at") != j.end() && !j.at("last_seen_at").is_null())
     {
         j.at("last_seen_at").get_to(o.m_Last_seen_at);
         o.m_Last_seen_atIsSet = true;
     } 
-    if(j.find("capabilities") != j.end())
+    if(j.find("capabilities") != j.end() && !j.at("capabilities").is_null())
     {
         j.at("capabilities").get_to(o.m_Capabilities);
         o.m_CapabilitiesIsSet = true;

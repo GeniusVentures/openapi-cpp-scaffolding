@@ -194,56 +194,56 @@ void from_json(const nlohmann::json& j, Organization& o)
     j.at("id").get_to(o.m_Id);
     j.at("tenant_id").get_to(o.m_Tenant_id);
     j.at("organization_id").get_to(o.m_Organization_id);
-    if(j.find("location_id") != j.end())
+    if(j.find("location_id") != j.end() && !j.at("location_id").is_null())
     {
         j.at("location_id").get_to(o.m_Location_id);
         o.m_Location_idIsSet = true;
     } 
     j.at("created_at").get_to(o.m_Created_at);
     j.at("updated_at").get_to(o.m_Updated_at);
-    if(j.find("deleted_at") != j.end())
+    if(j.find("deleted_at") != j.end() && !j.at("deleted_at").is_null())
     {
         j.at("deleted_at").get_to(o.m_Deleted_at);
         o.m_Deleted_atIsSet = true;
     } 
-    if(j.find("metadata") != j.end())
+    if(j.find("metadata") != j.end() && !j.at("metadata").is_null())
     {
         j.at("metadata").get_to(o.m_Metadata);
         o.m_MetadataIsSet = true;
     } 
     j.at("name").get_to(o.m_Name);
-    if(j.find("legal_name") != j.end())
+    if(j.find("legal_name") != j.end() && !j.at("legal_name").is_null())
     {
         j.at("legal_name").get_to(o.m_Legal_name);
         o.m_Legal_nameIsSet = true;
     } 
     j.at("industry").get_to(o.m_Industry);
-    if(j.find("tax_id") != j.end())
+    if(j.find("tax_id") != j.end() && !j.at("tax_id").is_null())
     {
         j.at("tax_id").get_to(o.m_Tax_id);
         o.m_Tax_idIsSet = true;
     } 
-    if(j.find("contact") != j.end())
+    if(j.find("contact") != j.end() && !j.at("contact").is_null())
     {
         j.at("contact").get_to(o.m_Contact);
         o.m_ContactIsSet = true;
     } 
-    if(j.find("address") != j.end())
+    if(j.find("address") != j.end() && !j.at("address").is_null())
     {
         j.at("address").get_to(o.m_Address);
         o.m_AddressIsSet = true;
     } 
-    if(j.find("timezone") != j.end())
+    if(j.find("timezone") != j.end() && !j.at("timezone").is_null())
     {
         j.at("timezone").get_to(o.m_Timezone);
         o.m_TimezoneIsSet = true;
     } 
-    if(j.find("locale") != j.end())
+    if(j.find("locale") != j.end() && !j.at("locale").is_null())
     {
         j.at("locale").get_to(o.m_Locale);
         o.m_LocaleIsSet = true;
     } 
-    if(j.find("default_currency") != j.end())
+    if(j.find("default_currency") != j.end() && !j.at("default_currency").is_null())
     {
         j.at("default_currency").get_to(o.m_Default_currency);
         o.m_Default_currencyIsSet = true;
