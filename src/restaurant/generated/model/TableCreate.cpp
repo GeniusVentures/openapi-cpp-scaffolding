@@ -106,7 +106,7 @@ void to_json(nlohmann::json& j, const TableCreate& o)
 void from_json(const nlohmann::json& j, TableCreate& o)
 {
     j.at("name").get_to(o.m_Name);
-    if(j.find("section") != j.end() && !j.at("section").is_null())
+    if(j.find("section") != j.end())
     {
         j.at("section").get_to(o.m_Section);
         o.m_SectionIsSet = true;
@@ -118,7 +118,7 @@ void from_json(const nlohmann::json& j, TableCreate& o)
         j.at("asset_id").get_to(o.m_Asset_id);
         o.m_Asset_idIsSet = true;
     } 
-    if(j.find("metadata") != j.end() && !j.at("metadata").is_null())
+    if(j.find("metadata") != j.end())
     {
         j.at("metadata").get_to(o.m_Metadata);
         o.m_MetadataIsSet = true;

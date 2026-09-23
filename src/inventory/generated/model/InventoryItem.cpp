@@ -181,7 +181,7 @@ void from_json(const nlohmann::json& j, InventoryItem& o)
         j.at("deleted_at").get_to(o.m_Deleted_at);
         o.m_Deleted_atIsSet = true;
     } 
-    if(j.find("metadata") != j.end() && !j.at("metadata").is_null())
+    if(j.find("metadata") != j.end())
     {
         j.at("metadata").get_to(o.m_Metadata);
         o.m_MetadataIsSet = true;
@@ -192,23 +192,23 @@ void from_json(const nlohmann::json& j, InventoryItem& o)
         o.m_Product_idIsSet = true;
     } 
     j.at("name").get_to(o.m_Name);
-    if(j.find("sku") != j.end() && !j.at("sku").is_null())
+    if(j.find("sku") != j.end())
     {
         j.at("sku").get_to(o.m_Sku);
         o.m_SkuIsSet = true;
     } 
     j.at("unit").get_to(o.m_Unit);
-    if(j.find("quantity_on_hand") != j.end() && !j.at("quantity_on_hand").is_null())
+    if(j.find("quantity_on_hand") != j.end())
     {
         j.at("quantity_on_hand").get_to(o.m_Quantity_on_hand);
         o.m_Quantity_on_handIsSet = true;
     } 
-    if(j.find("reorder_point") != j.end() && !j.at("reorder_point").is_null())
+    if(j.find("reorder_point") != j.end())
     {
         j.at("reorder_point").get_to(o.m_Reorder_point);
         o.m_Reorder_pointIsSet = true;
     } 
-    if(j.find("cost") != j.end() && !j.at("cost").is_null())
+    if(j.find("cost") != j.end())
     {
         j.at("cost").get_to(o.m_Cost);
         o.m_CostIsSet = true;

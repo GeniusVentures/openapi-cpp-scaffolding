@@ -104,27 +104,27 @@ void to_json(nlohmann::json& j, const ServiceUpdate& o)
 
 void from_json(const nlohmann::json& j, ServiceUpdate& o)
 {
-    if(j.find("name") != j.end() && !j.at("name").is_null())
+    if(j.find("name") != j.end())
     {
         j.at("name").get_to(o.m_Name);
         o.m_NameIsSet = true;
     } 
-    if(j.find("description") != j.end() && !j.at("description").is_null())
+    if(j.find("description") != j.end())
     {
         j.at("description").get_to(o.m_Description);
         o.m_DescriptionIsSet = true;
     } 
-    if(j.find("duration_minutes") != j.end() && !j.at("duration_minutes").is_null())
+    if(j.find("duration_minutes") != j.end())
     {
         j.at("duration_minutes").get_to(o.m_Duration_minutes);
         o.m_Duration_minutesIsSet = true;
     } 
-    if(j.find("price") != j.end() && !j.at("price").is_null())
+    if(j.find("price") != j.end())
     {
         j.at("price").get_to(o.m_Price);
         o.m_PriceIsSet = true;
     } 
-    if(j.find("status") != j.end() && !j.at("status").is_null())
+    if(j.find("status") != j.end())
     {
         j.at("status").get_to(o.m_Status);
         o.m_StatusIsSet = true;

@@ -127,7 +127,7 @@ void from_json(const nlohmann::json& j, DeviceCreate& o)
         j.at("local_node_id").get_to(o.m_Local_node_id);
         o.m_Local_node_idIsSet = true;
     } 
-    if(j.find("capabilities") != j.end() && !j.at("capabilities").is_null())
+    if(j.find("capabilities") != j.end())
     {
         j.at("capabilities").get_to(o.m_Capabilities);
         o.m_CapabilitiesIsSet = true;

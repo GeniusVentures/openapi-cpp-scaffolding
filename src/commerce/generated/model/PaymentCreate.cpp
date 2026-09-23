@@ -128,7 +128,7 @@ void from_json(const nlohmann::json& j, PaymentCreate& o)
     j.at("method").get_to(o.m_Method);
     j.at("status").get_to(o.m_Status);
     j.at("amount").get_to(o.m_Amount);
-    if(j.find("provider_reference") != j.end() && !j.at("provider_reference").is_null())
+    if(j.find("provider_reference") != j.end())
     {
         j.at("provider_reference").get_to(o.m_Provider_reference);
         o.m_Provider_referenceIsSet = true;

@@ -153,7 +153,7 @@ void from_json(const nlohmann::json& j, PurchaseOrder& o)
         j.at("deleted_at").get_to(o.m_Deleted_at);
         o.m_Deleted_atIsSet = true;
     } 
-    if(j.find("metadata") != j.end() && !j.at("metadata").is_null())
+    if(j.find("metadata") != j.end())
     {
         j.at("metadata").get_to(o.m_Metadata);
         o.m_MetadataIsSet = true;
@@ -165,7 +165,7 @@ void from_json(const nlohmann::json& j, PurchaseOrder& o)
         j.at("expected_at").get_to(o.m_Expected_at);
         o.m_Expected_atIsSet = true;
     } 
-    if(j.find("total") != j.end() && !j.at("total").is_null())
+    if(j.find("total") != j.end())
     {
         j.at("total").get_to(o.m_Total);
         o.m_TotalIsSet = true;

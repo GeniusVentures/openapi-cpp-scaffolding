@@ -125,17 +125,17 @@ void to_json(nlohmann::json& j, const DeviceUpdate& o)
 
 void from_json(const nlohmann::json& j, DeviceUpdate& o)
 {
-    if(j.find("name") != j.end() && !j.at("name").is_null())
+    if(j.find("name") != j.end())
     {
         j.at("name").get_to(o.m_Name);
         o.m_NameIsSet = true;
     } 
-    if(j.find("type") != j.end() && !j.at("type").is_null())
+    if(j.find("type") != j.end())
     {
         j.at("type").get_to(o.m_Type);
         o.m_TypeIsSet = true;
     } 
-    if(j.find("status") != j.end() && !j.at("status").is_null())
+    if(j.find("status") != j.end())
     {
         j.at("status").get_to(o.m_Status);
         o.m_StatusIsSet = true;
@@ -145,7 +145,7 @@ void from_json(const nlohmann::json& j, DeviceUpdate& o)
         j.at("local_node_id").get_to(o.m_Local_node_id);
         o.m_Local_node_idIsSet = true;
     } 
-    if(j.find("capabilities") != j.end() && !j.at("capabilities").is_null())
+    if(j.find("capabilities") != j.end())
     {
         j.at("capabilities").get_to(o.m_Capabilities);
         o.m_CapabilitiesIsSet = true;

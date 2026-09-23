@@ -155,13 +155,13 @@ void from_json(const nlohmann::json& j, Shift& o)
         j.at("deleted_at").get_to(o.m_Deleted_at);
         o.m_Deleted_atIsSet = true;
     } 
-    if(j.find("metadata") != j.end() && !j.at("metadata").is_null())
+    if(j.find("metadata") != j.end())
     {
         j.at("metadata").get_to(o.m_Metadata);
         o.m_MetadataIsSet = true;
     } 
     j.at("employee_id").get_to(o.m_Employee_id);
-    if(j.find("role") != j.end() && !j.at("role").is_null())
+    if(j.find("role") != j.end())
     {
         j.at("role").get_to(o.m_Role);
         o.m_RoleIsSet = true;

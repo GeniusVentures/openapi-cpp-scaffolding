@@ -140,7 +140,7 @@ void from_json(const nlohmann::json& j, BookingCreate& o)
         j.at("party_size").get_to(o.m_Party_size);
         o.m_Party_sizeIsSet = true;
     } 
-    if(j.find("notes") != j.end() && !j.at("notes").is_null())
+    if(j.find("notes") != j.end())
     {
         j.at("notes").get_to(o.m_Notes);
         o.m_NotesIsSet = true;

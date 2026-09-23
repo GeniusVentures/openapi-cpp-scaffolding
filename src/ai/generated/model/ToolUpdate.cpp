@@ -104,27 +104,27 @@ void to_json(nlohmann::json& j, const ToolUpdate& o)
 
 void from_json(const nlohmann::json& j, ToolUpdate& o)
 {
-    if(j.find("name") != j.end() && !j.at("name").is_null())
+    if(j.find("name") != j.end())
     {
         j.at("name").get_to(o.m_Name);
         o.m_NameIsSet = true;
     } 
-    if(j.find("description") != j.end() && !j.at("description").is_null())
+    if(j.find("description") != j.end())
     {
         j.at("description").get_to(o.m_Description);
         o.m_DescriptionIsSet = true;
     } 
-    if(j.find("type") != j.end() && !j.at("type").is_null())
+    if(j.find("type") != j.end())
     {
         j.at("type").get_to(o.m_Type);
         o.m_TypeIsSet = true;
     } 
-    if(j.find("schema") != j.end() && !j.at("schema").is_null())
+    if(j.find("schema") != j.end())
     {
         j.at("schema").get_to(o.m_Schema);
         o.m_SchemaIsSet = true;
     } 
-    if(j.find("enabled") != j.end() && !j.at("enabled").is_null())
+    if(j.find("enabled") != j.end())
     {
         j.at("enabled").get_to(o.m_Enabled);
         o.m_EnabledIsSet = true;

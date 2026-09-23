@@ -95,7 +95,7 @@ void from_json(const nlohmann::json& j, InventoryAdjustmentRequest& o)
     j.at("inventory_item_id").get_to(o.m_Inventory_item_id);
     j.at("quantity_delta").get_to(o.m_Quantity_delta);
     j.at("reason").get_to(o.m_Reason);
-    if(j.find("reference") != j.end() && !j.at("reference").is_null())
+    if(j.find("reference") != j.end())
     {
         j.at("reference").get_to(o.m_Reference);
         o.m_ReferenceIsSet = true;

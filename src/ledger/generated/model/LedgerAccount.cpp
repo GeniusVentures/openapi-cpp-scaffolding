@@ -154,19 +154,19 @@ void from_json(const nlohmann::json& j, LedgerAccount& o)
         j.at("deleted_at").get_to(o.m_Deleted_at);
         o.m_Deleted_atIsSet = true;
     } 
-    if(j.find("metadata") != j.end() && !j.at("metadata").is_null())
+    if(j.find("metadata") != j.end())
     {
         j.at("metadata").get_to(o.m_Metadata);
         o.m_MetadataIsSet = true;
     } 
     j.at("name").get_to(o.m_Name);
-    if(j.find("code") != j.end() && !j.at("code").is_null())
+    if(j.find("code") != j.end())
     {
         j.at("code").get_to(o.m_Code);
         o.m_CodeIsSet = true;
     } 
     j.at("type").get_to(o.m_Type);
-    if(j.find("status") != j.end() && !j.at("status").is_null())
+    if(j.find("status") != j.end())
     {
         j.at("status").get_to(o.m_Status);
         o.m_StatusIsSet = true;

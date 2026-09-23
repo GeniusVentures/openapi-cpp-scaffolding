@@ -126,7 +126,7 @@ void to_json(nlohmann::json& j, const TokenResponse& o)
 void from_json(const nlohmann::json& j, TokenResponse& o)
 {
     j.at("access_token").get_to(o.m_Access_token);
-    if(j.find("refresh_token") != j.end() && !j.at("refresh_token").is_null())
+    if(j.find("refresh_token") != j.end())
     {
         j.at("refresh_token").get_to(o.m_Refresh_token);
         o.m_Refresh_tokenIsSet = true;

@@ -193,7 +193,7 @@ void from_json(const nlohmann::json& j, Payment& o)
         j.at("deleted_at").get_to(o.m_Deleted_at);
         o.m_Deleted_atIsSet = true;
     } 
-    if(j.find("metadata") != j.end() && !j.at("metadata").is_null())
+    if(j.find("metadata") != j.end())
     {
         j.at("metadata").get_to(o.m_Metadata);
         o.m_MetadataIsSet = true;
@@ -212,22 +212,22 @@ void from_json(const nlohmann::json& j, Payment& o)
     j.at("method").get_to(o.m_Method);
     j.at("status").get_to(o.m_Status);
     j.at("amount").get_to(o.m_Amount);
-    if(j.find("provider_reference") != j.end() && !j.at("provider_reference").is_null())
+    if(j.find("provider_reference") != j.end())
     {
         j.at("provider_reference").get_to(o.m_Provider_reference);
         o.m_Provider_referenceIsSet = true;
     } 
-    if(j.find("tip_amount") != j.end() && !j.at("tip_amount").is_null())
+    if(j.find("tip_amount") != j.end())
     {
         j.at("tip_amount").get_to(o.m_Tip_amount);
         o.m_Tip_amountIsSet = true;
     } 
-    if(j.find("refund_amount") != j.end() && !j.at("refund_amount").is_null())
+    if(j.find("refund_amount") != j.end())
     {
         j.at("refund_amount").get_to(o.m_Refund_amount);
         o.m_Refund_amountIsSet = true;
     } 
-    if(j.find("refund_reason") != j.end() && !j.at("refund_reason").is_null())
+    if(j.find("refund_reason") != j.end())
     {
         j.at("refund_reason").get_to(o.m_Refund_reason);
         o.m_Refund_reasonIsSet = true;

@@ -116,19 +116,19 @@ void from_json(const nlohmann::json& j, LedgerTransactionCreate& o)
 {
     j.at("account_id").get_to(o.m_Account_id);
     j.at("occurred_at").get_to(o.m_Occurred_at);
-    if(j.find("description") != j.end() && !j.at("description").is_null())
+    if(j.find("description") != j.end())
     {
         j.at("description").get_to(o.m_Description);
         o.m_DescriptionIsSet = true;
     } 
     j.at("amount").get_to(o.m_Amount);
     j.at("direction").get_to(o.m_Direction);
-    if(j.find("related_object_type") != j.end() && !j.at("related_object_type").is_null())
+    if(j.find("related_object_type") != j.end())
     {
         j.at("related_object_type").get_to(o.m_Related_object_type);
         o.m_Related_object_typeIsSet = true;
     } 
-    if(j.find("related_object_id") != j.end() && !j.at("related_object_id").is_null())
+    if(j.find("related_object_id") != j.end())
     {
         j.at("related_object_id").get_to(o.m_Related_object_id);
         o.m_Related_object_idIsSet = true;

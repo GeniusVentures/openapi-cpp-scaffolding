@@ -95,12 +95,12 @@ void from_json(const nlohmann::json& j, RiderCreate& o)
 {
     j.at("person_id").get_to(o.m_Person_id);
     j.at("status").get_to(o.m_Status);
-    if(j.find("current_location") != j.end() && !j.at("current_location").is_null())
+    if(j.find("current_location") != j.end())
     {
         j.at("current_location").get_to(o.m_Current_location);
         o.m_Current_locationIsSet = true;
     } 
-    if(j.find("vehicle_type") != j.end() && !j.at("vehicle_type").is_null())
+    if(j.find("vehicle_type") != j.end())
     {
         j.at("vehicle_type").get_to(o.m_Vehicle_type);
         o.m_Vehicle_typeIsSet = true;

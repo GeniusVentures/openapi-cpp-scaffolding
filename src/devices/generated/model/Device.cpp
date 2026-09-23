@@ -179,7 +179,7 @@ void from_json(const nlohmann::json& j, Device& o)
         j.at("deleted_at").get_to(o.m_Deleted_at);
         o.m_Deleted_atIsSet = true;
     } 
-    if(j.find("metadata") != j.end() && !j.at("metadata").is_null())
+    if(j.find("metadata") != j.end())
     {
         j.at("metadata").get_to(o.m_Metadata);
         o.m_MetadataIsSet = true;
@@ -192,7 +192,7 @@ void from_json(const nlohmann::json& j, Device& o)
         j.at("local_node_id").get_to(o.m_Local_node_id);
         o.m_Local_node_idIsSet = true;
     } 
-    if(j.find("capabilities") != j.end() && !j.at("capabilities").is_null())
+    if(j.find("capabilities") != j.end())
     {
         j.at("capabilities").get_to(o.m_Capabilities);
         o.m_CapabilitiesIsSet = true;

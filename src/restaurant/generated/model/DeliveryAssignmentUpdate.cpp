@@ -110,7 +110,7 @@ void to_json(nlohmann::json& j, const DeliveryAssignmentUpdate& o)
 
 void from_json(const nlohmann::json& j, DeliveryAssignmentUpdate& o)
 {
-    if(j.find("order_id") != j.end() && !j.at("order_id").is_null())
+    if(j.find("order_id") != j.end())
     {
         j.at("order_id").get_to(o.m_Order_id);
         o.m_Order_idIsSet = true;
@@ -120,17 +120,17 @@ void from_json(const nlohmann::json& j, DeliveryAssignmentUpdate& o)
         j.at("rider_id").get_to(o.m_Rider_id);
         o.m_Rider_idIsSet = true;
     } 
-    if(j.find("status") != j.end() && !j.at("status").is_null())
+    if(j.find("status") != j.end())
     {
         j.at("status").get_to(o.m_Status);
         o.m_StatusIsSet = true;
     } 
-    if(j.find("pickup_location") != j.end() && !j.at("pickup_location").is_null())
+    if(j.find("pickup_location") != j.end())
     {
         j.at("pickup_location").get_to(o.m_Pickup_location);
         o.m_Pickup_locationIsSet = true;
     } 
-    if(j.find("dropoff_location") != j.end() && !j.at("dropoff_location").is_null())
+    if(j.find("dropoff_location") != j.end())
     {
         j.at("dropoff_location").get_to(o.m_Dropoff_location);
         o.m_Dropoff_locationIsSet = true;

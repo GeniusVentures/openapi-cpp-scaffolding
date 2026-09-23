@@ -115,22 +115,22 @@ void to_json(nlohmann::json& j, const EmployeeCreate& o)
 void from_json(const nlohmann::json& j, EmployeeCreate& o)
 {
     j.at("person_id").get_to(o.m_Person_id);
-    if(j.find("employee_number") != j.end() && !j.at("employee_number").is_null())
+    if(j.find("employee_number") != j.end())
     {
         j.at("employee_number").get_to(o.m_Employee_number);
         o.m_Employee_numberIsSet = true;
     } 
-    if(j.find("department") != j.end() && !j.at("department").is_null())
+    if(j.find("department") != j.end())
     {
         j.at("department").get_to(o.m_Department);
         o.m_DepartmentIsSet = true;
     } 
-    if(j.find("designation") != j.end() && !j.at("designation").is_null())
+    if(j.find("designation") != j.end())
     {
         j.at("designation").get_to(o.m_Designation);
         o.m_DesignationIsSet = true;
     } 
-    if(j.find("hire_date") != j.end() && !j.at("hire_date").is_null())
+    if(j.find("hire_date") != j.end())
     {
         j.at("hire_date").get_to(o.m_Hire_date);
         o.m_Hire_dateIsSet = true;

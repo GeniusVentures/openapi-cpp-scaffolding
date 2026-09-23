@@ -122,12 +122,12 @@ void from_json(const nlohmann::json& j, KitchenTicketCreate& o)
     j.at("order_id").get_to(o.m_Order_id);
     j.at("station").get_to(o.m_Station);
     j.at("status").get_to(o.m_Status);
-    if(j.find("priority") != j.end() && !j.at("priority").is_null())
+    if(j.find("priority") != j.end())
     {
         j.at("priority").get_to(o.m_Priority);
         o.m_PriorityIsSet = true;
     } 
-    if(j.find("items") != j.end() && !j.at("items").is_null())
+    if(j.find("items") != j.end())
     {
         j.at("items").get_to(o.m_Items);
         o.m_ItemsIsSet = true;

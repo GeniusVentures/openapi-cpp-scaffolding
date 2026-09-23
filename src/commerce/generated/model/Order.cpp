@@ -300,12 +300,12 @@ void from_json(const nlohmann::json& j, Order& o)
         j.at("deleted_at").get_to(o.m_Deleted_at);
         o.m_Deleted_atIsSet = true;
     } 
-    if(j.find("metadata") != j.end() && !j.at("metadata").is_null())
+    if(j.find("metadata") != j.end())
     {
         j.at("metadata").get_to(o.m_Metadata);
         o.m_MetadataIsSet = true;
     } 
-    if(j.find("order_number") != j.end() && !j.at("order_number").is_null())
+    if(j.find("order_number") != j.end())
     {
         j.at("order_number").get_to(o.m_Order_number);
         o.m_Order_numberIsSet = true;
@@ -318,28 +318,28 @@ void from_json(const nlohmann::json& j, Order& o)
     j.at("status").get_to(o.m_Status);
     j.at("channel").get_to(o.m_Channel);
     j.at("fulfillment_type").get_to(o.m_Fulfillment_type);
-    if(j.find("subtotal") != j.end() && !j.at("subtotal").is_null())
+    if(j.find("subtotal") != j.end())
     {
         j.at("subtotal").get_to(o.m_Subtotal);
         o.m_SubtotalIsSet = true;
     } 
-    if(j.find("tax_total") != j.end() && !j.at("tax_total").is_null())
+    if(j.find("tax_total") != j.end())
     {
         j.at("tax_total").get_to(o.m_Tax_total);
         o.m_Tax_totalIsSet = true;
     } 
-    if(j.find("discount_total") != j.end() && !j.at("discount_total").is_null())
+    if(j.find("discount_total") != j.end())
     {
         j.at("discount_total").get_to(o.m_Discount_total);
         o.m_Discount_totalIsSet = true;
     } 
-    if(j.find("tip_total") != j.end() && !j.at("tip_total").is_null())
+    if(j.find("tip_total") != j.end())
     {
         j.at("tip_total").get_to(o.m_Tip_total);
         o.m_Tip_totalIsSet = true;
     } 
     j.at("total").get_to(o.m_Total);
-    if(j.find("lines") != j.end() && !j.at("lines").is_null())
+    if(j.find("lines") != j.end())
     {
         j.at("lines").get_to(o.m_Lines);
         o.m_LinesIsSet = true;
@@ -359,17 +359,17 @@ void from_json(const nlohmann::json& j, Order& o)
         j.at("guest_count").get_to(o.m_Guest_count);
         o.m_Guest_countIsSet = true;
     } 
-    if(j.find("payment_status") != j.end() && !j.at("payment_status").is_null())
+    if(j.find("payment_status") != j.end())
     {
         j.at("payment_status").get_to(o.m_Payment_status);
         o.m_Payment_statusIsSet = true;
     } 
-    if(j.find("discounts") != j.end() && !j.at("discounts").is_null())
+    if(j.find("discounts") != j.end())
     {
         j.at("discounts").get_to(o.m_Discounts);
         o.m_DiscountsIsSet = true;
     } 
-    if(j.find("service_charges") != j.end() && !j.at("service_charges").is_null())
+    if(j.find("service_charges") != j.end())
     {
         j.at("service_charges").get_to(o.m_Service_charges);
         o.m_Service_chargesIsSet = true;

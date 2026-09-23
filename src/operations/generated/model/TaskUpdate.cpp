@@ -119,22 +119,22 @@ void to_json(nlohmann::json& j, const TaskUpdate& o)
 
 void from_json(const nlohmann::json& j, TaskUpdate& o)
 {
-    if(j.find("title") != j.end() && !j.at("title").is_null())
+    if(j.find("title") != j.end())
     {
         j.at("title").get_to(o.m_Title);
         o.m_TitleIsSet = true;
     } 
-    if(j.find("description") != j.end() && !j.at("description").is_null())
+    if(j.find("description") != j.end())
     {
         j.at("description").get_to(o.m_Description);
         o.m_DescriptionIsSet = true;
     } 
-    if(j.find("status") != j.end() && !j.at("status").is_null())
+    if(j.find("status") != j.end())
     {
         j.at("status").get_to(o.m_Status);
         o.m_StatusIsSet = true;
     } 
-    if(j.find("priority") != j.end() && !j.at("priority").is_null())
+    if(j.find("priority") != j.end())
     {
         j.at("priority").get_to(o.m_Priority);
         o.m_PriorityIsSet = true;

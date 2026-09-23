@@ -146,12 +146,12 @@ void from_json(const nlohmann::json& j, Address& o)
         o.m_Line2IsSet = true;
     } 
     j.at("city").get_to(o.m_City);
-    if(j.find("region") != j.end() && !j.at("region").is_null())
+    if(j.find("region") != j.end())
     {
         j.at("region").get_to(o.m_Region);
         o.m_RegionIsSet = true;
     } 
-    if(j.find("postal_code") != j.end() && !j.at("postal_code").is_null())
+    if(j.find("postal_code") != j.end())
     {
         j.at("postal_code").get_to(o.m_Postal_code);
         o.m_Postal_codeIsSet = true;

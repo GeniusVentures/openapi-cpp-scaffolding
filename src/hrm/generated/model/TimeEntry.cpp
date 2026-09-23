@@ -161,7 +161,7 @@ void from_json(const nlohmann::json& j, TimeEntry& o)
         j.at("deleted_at").get_to(o.m_Deleted_at);
         o.m_Deleted_atIsSet = true;
     } 
-    if(j.find("metadata") != j.end() && !j.at("metadata").is_null())
+    if(j.find("metadata") != j.end())
     {
         j.at("metadata").get_to(o.m_Metadata);
         o.m_MetadataIsSet = true;
@@ -173,12 +173,12 @@ void from_json(const nlohmann::json& j, TimeEntry& o)
         j.at("clock_out_at").get_to(o.m_Clock_out_at);
         o.m_Clock_out_atIsSet = true;
     } 
-    if(j.find("source") != j.end() && !j.at("source").is_null())
+    if(j.find("source") != j.end())
     {
         j.at("source").get_to(o.m_Source);
         o.m_SourceIsSet = true;
     } 
-    if(j.find("approved") != j.end() && !j.at("approved").is_null())
+    if(j.find("approved") != j.end())
     {
         j.at("approved").get_to(o.m_Approved);
         o.m_ApprovedIsSet = true;

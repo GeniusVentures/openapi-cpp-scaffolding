@@ -153,19 +153,19 @@ void from_json(const nlohmann::json& j, Ingredient& o)
         j.at("deleted_at").get_to(o.m_Deleted_at);
         o.m_Deleted_atIsSet = true;
     } 
-    if(j.find("metadata") != j.end() && !j.at("metadata").is_null())
+    if(j.find("metadata") != j.end())
     {
         j.at("metadata").get_to(o.m_Metadata);
         o.m_MetadataIsSet = true;
     } 
-    if(j.find("inventory_item_id") != j.end() && !j.at("inventory_item_id").is_null())
+    if(j.find("inventory_item_id") != j.end())
     {
         j.at("inventory_item_id").get_to(o.m_Inventory_item_id);
         o.m_Inventory_item_idIsSet = true;
     } 
     j.at("name").get_to(o.m_Name);
     j.at("unit").get_to(o.m_Unit);
-    if(j.find("cost") != j.end() && !j.at("cost").is_null())
+    if(j.find("cost") != j.end())
     {
         j.at("cost").get_to(o.m_Cost);
         o.m_CostIsSet = true;

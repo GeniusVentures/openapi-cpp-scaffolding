@@ -159,37 +159,37 @@ void to_json(nlohmann::json& j, const AgentUpdate& o)
 
 void from_json(const nlohmann::json& j, AgentUpdate& o)
 {
-    if(j.find("name") != j.end() && !j.at("name").is_null())
+    if(j.find("name") != j.end())
     {
         j.at("name").get_to(o.m_Name);
         o.m_NameIsSet = true;
     } 
-    if(j.find("description") != j.end() && !j.at("description").is_null())
+    if(j.find("description") != j.end())
     {
         j.at("description").get_to(o.m_Description);
         o.m_DescriptionIsSet = true;
     } 
-    if(j.find("status") != j.end() && !j.at("status").is_null())
+    if(j.find("status") != j.end())
     {
         j.at("status").get_to(o.m_Status);
         o.m_StatusIsSet = true;
     } 
-    if(j.find("model") != j.end() && !j.at("model").is_null())
+    if(j.find("model") != j.end())
     {
         j.at("model").get_to(o.m_Model);
         o.m_ModelIsSet = true;
     } 
-    if(j.find("instructions") != j.end() && !j.at("instructions").is_null())
+    if(j.find("instructions") != j.end())
     {
         j.at("instructions").get_to(o.m_Instructions);
         o.m_InstructionsIsSet = true;
     } 
-    if(j.find("tool_ids") != j.end() && !j.at("tool_ids").is_null())
+    if(j.find("tool_ids") != j.end())
     {
         j.at("tool_ids").get_to(o.m_Tool_ids);
         o.m_Tool_idsIsSet = true;
     } 
-    if(j.find("knowledge_base_ids") != j.end() && !j.at("knowledge_base_ids").is_null())
+    if(j.find("knowledge_base_ids") != j.end())
     {
         j.at("knowledge_base_ids").get_to(o.m_Knowledge_base_ids);
         o.m_Knowledge_base_idsIsSet = true;

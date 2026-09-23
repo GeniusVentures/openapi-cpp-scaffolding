@@ -165,6 +165,8 @@ file(GLOB _GENERATED_COMMERCE_MODEL_SRCS
     "${CMAKE_CURRENT_SOURCE_DIR}/../src/commerce/generated/model/*.cpp")
 file(GLOB _GENERATED_LOCATIONS_MODEL_SRCS
     "${CMAKE_CURRENT_SOURCE_DIR}/../src/locations/generated/model/*.cpp")
+file(GLOB _GENERATED_IDENTITY_MODEL_SRCS
+    "${CMAKE_CURRENT_SOURCE_DIR}/../src/identity/generated/model/*.cpp")
 set(_COMMERCE_MODEL_FILE_NAMES "")
 foreach(_src ${_GENERATED_COMMERCE_MODEL_SRCS})
     get_filename_component(_name "${_src}" NAME)
@@ -176,13 +178,21 @@ foreach(_src ${_GENERATED_LOCATIONS_MODEL_SRCS})
         list(REMOVE_ITEM _GENERATED_LOCATIONS_MODEL_SRCS "${_src}")
     endif()
 endforeach()
+foreach(_src ${_GENERATED_IDENTITY_MODEL_SRCS})
+    get_filename_component(_name "${_src}" NAME)
+    if("${_name}" IN_LIST _COMMERCE_MODEL_FILE_NAMES)
+        list(REMOVE_ITEM _GENERATED_IDENTITY_MODEL_SRCS "${_src}")
+    endif()
+endforeach()
 add_unittest(test_generated_models
     test_generated_models.cpp
     ${_GENERATED_COMMERCE_MODEL_SRCS}
     ${_GENERATED_LOCATIONS_MODEL_SRCS}
+    ${_GENERATED_IDENTITY_MODEL_SRCS}
 )
 target_include_directories(test_generated_models PRIVATE
     "${CMAKE_CURRENT_SOURCE_DIR}/../src/commerce/generated/model"
     "${CMAKE_CURRENT_SOURCE_DIR}/../src/locations/generated/model"
+    "${CMAKE_CURRENT_SOURCE_DIR}/../src/identity/generated/model"
 )
 target_link_libraries(test_generated_models PRIVATE nlohmann_json::nlohmann_json)

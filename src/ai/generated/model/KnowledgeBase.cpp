@@ -154,19 +154,19 @@ void from_json(const nlohmann::json& j, KnowledgeBase& o)
         j.at("deleted_at").get_to(o.m_Deleted_at);
         o.m_Deleted_atIsSet = true;
     } 
-    if(j.find("metadata") != j.end() && !j.at("metadata").is_null())
+    if(j.find("metadata") != j.end())
     {
         j.at("metadata").get_to(o.m_Metadata);
         o.m_MetadataIsSet = true;
     } 
     j.at("name").get_to(o.m_Name);
-    if(j.find("description") != j.end() && !j.at("description").is_null())
+    if(j.find("description") != j.end())
     {
         j.at("description").get_to(o.m_Description);
         o.m_DescriptionIsSet = true;
     } 
     j.at("status").get_to(o.m_Status);
-    if(j.find("document_count") != j.end() && !j.at("document_count").is_null())
+    if(j.find("document_count") != j.end())
     {
         j.at("document_count").get_to(o.m_Document_count);
         o.m_Document_countIsSet = true;

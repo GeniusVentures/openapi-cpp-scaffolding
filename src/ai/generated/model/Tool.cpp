@@ -158,20 +158,20 @@ void from_json(const nlohmann::json& j, Tool& o)
         j.at("deleted_at").get_to(o.m_Deleted_at);
         o.m_Deleted_atIsSet = true;
     } 
-    if(j.find("metadata") != j.end() && !j.at("metadata").is_null())
+    if(j.find("metadata") != j.end())
     {
         j.at("metadata").get_to(o.m_Metadata);
         o.m_MetadataIsSet = true;
     } 
     j.at("name").get_to(o.m_Name);
-    if(j.find("description") != j.end() && !j.at("description").is_null())
+    if(j.find("description") != j.end())
     {
         j.at("description").get_to(o.m_Description);
         o.m_DescriptionIsSet = true;
     } 
     j.at("type").get_to(o.m_Type);
     j.at("schema").get_to(o.m_Schema);
-    if(j.find("enabled") != j.end() && !j.at("enabled").is_null())
+    if(j.find("enabled") != j.end())
     {
         j.at("enabled").get_to(o.m_Enabled);
         o.m_EnabledIsSet = true;

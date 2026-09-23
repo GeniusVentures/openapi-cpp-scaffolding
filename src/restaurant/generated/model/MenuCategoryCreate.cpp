@@ -96,12 +96,12 @@ void from_json(const nlohmann::json& j, MenuCategoryCreate& o)
 {
     j.at("menu_id").get_to(o.m_Menu_id);
     j.at("name").get_to(o.m_Name);
-    if(j.find("sort_order") != j.end() && !j.at("sort_order").is_null())
+    if(j.find("sort_order") != j.end())
     {
         j.at("sort_order").get_to(o.m_Sort_order);
         o.m_Sort_orderIsSet = true;
     } 
-    if(j.find("status") != j.end() && !j.at("status").is_null())
+    if(j.find("status") != j.end())
     {
         j.at("status").get_to(o.m_Status);
         o.m_StatusIsSet = true;

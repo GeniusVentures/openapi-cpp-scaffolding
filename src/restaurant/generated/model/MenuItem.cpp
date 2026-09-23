@@ -221,7 +221,7 @@ void from_json(const nlohmann::json& j, MenuItem& o)
         j.at("deleted_at").get_to(o.m_Deleted_at);
         o.m_Deleted_atIsSet = true;
     } 
-    if(j.find("metadata") != j.end() && !j.at("metadata").is_null())
+    if(j.find("metadata") != j.end())
     {
         j.at("metadata").get_to(o.m_Metadata);
         o.m_MetadataIsSet = true;
@@ -233,19 +233,19 @@ void from_json(const nlohmann::json& j, MenuItem& o)
         o.m_Product_idIsSet = true;
     } 
     j.at("name").get_to(o.m_Name);
-    if(j.find("description") != j.end() && !j.at("description").is_null())
+    if(j.find("description") != j.end())
     {
         j.at("description").get_to(o.m_Description);
         o.m_DescriptionIsSet = true;
     } 
     j.at("price").get_to(o.m_Price);
     j.at("status").get_to(o.m_Status);
-    if(j.find("allergens") != j.end() && !j.at("allergens").is_null())
+    if(j.find("allergens") != j.end())
     {
         j.at("allergens").get_to(o.m_Allergens);
         o.m_AllergensIsSet = true;
     } 
-    if(j.find("modifier_group_ids") != j.end() && !j.at("modifier_group_ids").is_null())
+    if(j.find("modifier_group_ids") != j.end())
     {
         j.at("modifier_group_ids").get_to(o.m_Modifier_group_ids);
         o.m_Modifier_group_idsIsSet = true;

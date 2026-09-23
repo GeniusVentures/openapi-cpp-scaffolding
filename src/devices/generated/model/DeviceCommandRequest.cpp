@@ -89,12 +89,12 @@ void to_json(nlohmann::json& j, const DeviceCommandRequest& o)
 void from_json(const nlohmann::json& j, DeviceCommandRequest& o)
 {
     j.at("command").get_to(o.m_Command);
-    if(j.find("payload") != j.end() && !j.at("payload").is_null())
+    if(j.find("payload") != j.end())
     {
         j.at("payload").get_to(o.m_Payload);
         o.m_PayloadIsSet = true;
     } 
-    if(j.find("idempotency_key") != j.end() && !j.at("idempotency_key").is_null())
+    if(j.find("idempotency_key") != j.end())
     {
         j.at("idempotency_key").get_to(o.m_Idempotency_key);
         o.m_Idempotency_keyIsSet = true;

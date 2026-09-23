@@ -176,7 +176,7 @@ void from_json(const nlohmann::json& j, Message& o)
         j.at("deleted_at").get_to(o.m_Deleted_at);
         o.m_Deleted_atIsSet = true;
     } 
-    if(j.find("metadata") != j.end() && !j.at("metadata").is_null())
+    if(j.find("metadata") != j.end())
     {
         j.at("metadata").get_to(o.m_Metadata);
         o.m_MetadataIsSet = true;
@@ -184,19 +184,19 @@ void from_json(const nlohmann::json& j, Message& o)
     j.at("channel").get_to(o.m_Channel);
     j.at("direction").get_to(o.m_Direction);
     j.at("recipient").get_to(o.m_Recipient);
-    if(j.find("subject") != j.end() && !j.at("subject").is_null())
+    if(j.find("subject") != j.end())
     {
         j.at("subject").get_to(o.m_Subject);
         o.m_SubjectIsSet = true;
     } 
     j.at("body").get_to(o.m_Body);
     j.at("status").get_to(o.m_Status);
-    if(j.find("related_object_type") != j.end() && !j.at("related_object_type").is_null())
+    if(j.find("related_object_type") != j.end())
     {
         j.at("related_object_type").get_to(o.m_Related_object_type);
         o.m_Related_object_typeIsSet = true;
     } 
-    if(j.find("related_object_id") != j.end() && !j.at("related_object_id").is_null())
+    if(j.find("related_object_id") != j.end())
     {
         j.at("related_object_id").get_to(o.m_Related_object_id);
         o.m_Related_object_idIsSet = true;

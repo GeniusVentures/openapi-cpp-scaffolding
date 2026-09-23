@@ -112,27 +112,27 @@ void to_json(nlohmann::json& j, const AssetUpdate& o)
 
 void from_json(const nlohmann::json& j, AssetUpdate& o)
 {
-    if(j.find("name") != j.end() && !j.at("name").is_null())
+    if(j.find("name") != j.end())
     {
         j.at("name").get_to(o.m_Name);
         o.m_NameIsSet = true;
     } 
-    if(j.find("type") != j.end() && !j.at("type").is_null())
+    if(j.find("type") != j.end())
     {
         j.at("type").get_to(o.m_Type);
         o.m_TypeIsSet = true;
     } 
-    if(j.find("serial_number") != j.end() && !j.at("serial_number").is_null())
+    if(j.find("serial_number") != j.end())
     {
         j.at("serial_number").get_to(o.m_Serial_number);
         o.m_Serial_numberIsSet = true;
     } 
-    if(j.find("status") != j.end() && !j.at("status").is_null())
+    if(j.find("status") != j.end())
     {
         j.at("status").get_to(o.m_Status);
         o.m_StatusIsSet = true;
     } 
-    if(j.find("location_id") != j.end() && !j.at("location_id").is_null())
+    if(j.find("location_id") != j.end())
     {
         j.at("location_id").get_to(o.m_Location_id);
         o.m_Location_idIsSet = true;

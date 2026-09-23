@@ -103,27 +103,27 @@ void to_json(nlohmann::json& j, const VendorUpdate& o)
 
 void from_json(const nlohmann::json& j, VendorUpdate& o)
 {
-    if(j.find("name") != j.end() && !j.at("name").is_null())
+    if(j.find("name") != j.end())
     {
         j.at("name").get_to(o.m_Name);
         o.m_NameIsSet = true;
     } 
-    if(j.find("contact") != j.end() && !j.at("contact").is_null())
+    if(j.find("contact") != j.end())
     {
         j.at("contact").get_to(o.m_Contact);
         o.m_ContactIsSet = true;
     } 
-    if(j.find("address") != j.end() && !j.at("address").is_null())
+    if(j.find("address") != j.end())
     {
         j.at("address").get_to(o.m_Address);
         o.m_AddressIsSet = true;
     } 
-    if(j.find("status") != j.end() && !j.at("status").is_null())
+    if(j.find("status") != j.end())
     {
         j.at("status").get_to(o.m_Status);
         o.m_StatusIsSet = true;
     } 
-    if(j.find("payment_terms") != j.end() && !j.at("payment_terms").is_null())
+    if(j.find("payment_terms") != j.end())
     {
         j.at("payment_terms").get_to(o.m_Payment_terms);
         o.m_Payment_termsIsSet = true;

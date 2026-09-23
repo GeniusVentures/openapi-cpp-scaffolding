@@ -206,7 +206,7 @@ void from_json(const nlohmann::json& j, Organization& o)
         j.at("deleted_at").get_to(o.m_Deleted_at);
         o.m_Deleted_atIsSet = true;
     } 
-    if(j.find("metadata") != j.end() && !j.at("metadata").is_null())
+    if(j.find("metadata") != j.end())
     {
         j.at("metadata").get_to(o.m_Metadata);
         o.m_MetadataIsSet = true;
@@ -223,27 +223,27 @@ void from_json(const nlohmann::json& j, Organization& o)
         j.at("tax_id").get_to(o.m_Tax_id);
         o.m_Tax_idIsSet = true;
     } 
-    if(j.find("contact") != j.end() && !j.at("contact").is_null())
+    if(j.find("contact") != j.end())
     {
         j.at("contact").get_to(o.m_Contact);
         o.m_ContactIsSet = true;
     } 
-    if(j.find("address") != j.end() && !j.at("address").is_null())
+    if(j.find("address") != j.end())
     {
         j.at("address").get_to(o.m_Address);
         o.m_AddressIsSet = true;
     } 
-    if(j.find("timezone") != j.end() && !j.at("timezone").is_null())
+    if(j.find("timezone") != j.end())
     {
         j.at("timezone").get_to(o.m_Timezone);
         o.m_TimezoneIsSet = true;
     } 
-    if(j.find("locale") != j.end() && !j.at("locale").is_null())
+    if(j.find("locale") != j.end())
     {
         j.at("locale").get_to(o.m_Locale);
         o.m_LocaleIsSet = true;
     } 
-    if(j.find("default_currency") != j.end() && !j.at("default_currency").is_null())
+    if(j.find("default_currency") != j.end())
     {
         j.at("default_currency").get_to(o.m_Default_currency);
         o.m_Default_currencyIsSet = true;

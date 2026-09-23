@@ -123,27 +123,27 @@ void from_json(const nlohmann::json& j, InventoryItemUpdate& o)
         j.at("product_id").get_to(o.m_Product_id);
         o.m_Product_idIsSet = true;
     } 
-    if(j.find("name") != j.end() && !j.at("name").is_null())
+    if(j.find("name") != j.end())
     {
         j.at("name").get_to(o.m_Name);
         o.m_NameIsSet = true;
     } 
-    if(j.find("sku") != j.end() && !j.at("sku").is_null())
+    if(j.find("sku") != j.end())
     {
         j.at("sku").get_to(o.m_Sku);
         o.m_SkuIsSet = true;
     } 
-    if(j.find("unit") != j.end() && !j.at("unit").is_null())
+    if(j.find("unit") != j.end())
     {
         j.at("unit").get_to(o.m_Unit);
         o.m_UnitIsSet = true;
     } 
-    if(j.find("reorder_point") != j.end() && !j.at("reorder_point").is_null())
+    if(j.find("reorder_point") != j.end())
     {
         j.at("reorder_point").get_to(o.m_Reorder_point);
         o.m_Reorder_pointIsSet = true;
     } 
-    if(j.find("cost") != j.end() && !j.at("cost").is_null())
+    if(j.find("cost") != j.end())
     {
         j.at("cost").get_to(o.m_Cost);
         o.m_CostIsSet = true;

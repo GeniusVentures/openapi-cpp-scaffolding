@@ -160,47 +160,47 @@ void from_json(const nlohmann::json& j, OrderUpdate& o)
         j.at("customer_id").get_to(o.m_Customer_id);
         o.m_Customer_idIsSet = true;
     } 
-    if(j.find("status") != j.end() && !j.at("status").is_null())
+    if(j.find("status") != j.end())
     {
         j.at("status").get_to(o.m_Status);
         o.m_StatusIsSet = true;
     } 
-    if(j.find("channel") != j.end() && !j.at("channel").is_null())
+    if(j.find("channel") != j.end())
     {
         j.at("channel").get_to(o.m_Channel);
         o.m_ChannelIsSet = true;
     } 
-    if(j.find("fulfillment_type") != j.end() && !j.at("fulfillment_type").is_null())
+    if(j.find("fulfillment_type") != j.end())
     {
         j.at("fulfillment_type").get_to(o.m_Fulfillment_type);
         o.m_Fulfillment_typeIsSet = true;
     } 
-    if(j.find("subtotal") != j.end() && !j.at("subtotal").is_null())
+    if(j.find("subtotal") != j.end())
     {
         j.at("subtotal").get_to(o.m_Subtotal);
         o.m_SubtotalIsSet = true;
     } 
-    if(j.find("tax_total") != j.end() && !j.at("tax_total").is_null())
+    if(j.find("tax_total") != j.end())
     {
         j.at("tax_total").get_to(o.m_Tax_total);
         o.m_Tax_totalIsSet = true;
     } 
-    if(j.find("discount_total") != j.end() && !j.at("discount_total").is_null())
+    if(j.find("discount_total") != j.end())
     {
         j.at("discount_total").get_to(o.m_Discount_total);
         o.m_Discount_totalIsSet = true;
     } 
-    if(j.find("tip_total") != j.end() && !j.at("tip_total").is_null())
+    if(j.find("tip_total") != j.end())
     {
         j.at("tip_total").get_to(o.m_Tip_total);
         o.m_Tip_totalIsSet = true;
     } 
-    if(j.find("total") != j.end() && !j.at("total").is_null())
+    if(j.find("total") != j.end())
     {
         j.at("total").get_to(o.m_Total);
         o.m_TotalIsSet = true;
     } 
-    if(j.find("lines") != j.end() && !j.at("lines").is_null())
+    if(j.find("lines") != j.end())
     {
         j.at("lines").get_to(o.m_Lines);
         o.m_LinesIsSet = true;

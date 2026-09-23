@@ -179,7 +179,7 @@ void from_json(const nlohmann::json& j, KitchenTicket& o)
         j.at("deleted_at").get_to(o.m_Deleted_at);
         o.m_Deleted_atIsSet = true;
     } 
-    if(j.find("metadata") != j.end() && !j.at("metadata").is_null())
+    if(j.find("metadata") != j.end())
     {
         j.at("metadata").get_to(o.m_Metadata);
         o.m_MetadataIsSet = true;
@@ -187,12 +187,12 @@ void from_json(const nlohmann::json& j, KitchenTicket& o)
     j.at("order_id").get_to(o.m_Order_id);
     j.at("station").get_to(o.m_Station);
     j.at("status").get_to(o.m_Status);
-    if(j.find("priority") != j.end() && !j.at("priority").is_null())
+    if(j.find("priority") != j.end())
     {
         j.at("priority").get_to(o.m_Priority);
         o.m_PriorityIsSet = true;
     } 
-    if(j.find("items") != j.end() && !j.at("items").is_null())
+    if(j.find("items") != j.end())
     {
         j.at("items").get_to(o.m_Items);
         o.m_ItemsIsSet = true;

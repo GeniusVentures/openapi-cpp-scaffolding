@@ -213,30 +213,30 @@ void from_json(const nlohmann::json& j, Agent& o)
         j.at("deleted_at").get_to(o.m_Deleted_at);
         o.m_Deleted_atIsSet = true;
     } 
-    if(j.find("metadata") != j.end() && !j.at("metadata").is_null())
+    if(j.find("metadata") != j.end())
     {
         j.at("metadata").get_to(o.m_Metadata);
         o.m_MetadataIsSet = true;
     } 
     j.at("name").get_to(o.m_Name);
-    if(j.find("description") != j.end() && !j.at("description").is_null())
+    if(j.find("description") != j.end())
     {
         j.at("description").get_to(o.m_Description);
         o.m_DescriptionIsSet = true;
     } 
     j.at("status").get_to(o.m_Status);
     j.at("model").get_to(o.m_Model);
-    if(j.find("instructions") != j.end() && !j.at("instructions").is_null())
+    if(j.find("instructions") != j.end())
     {
         j.at("instructions").get_to(o.m_Instructions);
         o.m_InstructionsIsSet = true;
     } 
-    if(j.find("tool_ids") != j.end() && !j.at("tool_ids").is_null())
+    if(j.find("tool_ids") != j.end())
     {
         j.at("tool_ids").get_to(o.m_Tool_ids);
         o.m_Tool_idsIsSet = true;
     } 
-    if(j.find("knowledge_base_ids") != j.end() && !j.at("knowledge_base_ids").is_null())
+    if(j.find("knowledge_base_ids") != j.end())
     {
         j.at("knowledge_base_ids").get_to(o.m_Knowledge_base_ids);
         o.m_Knowledge_base_idsIsSet = true;

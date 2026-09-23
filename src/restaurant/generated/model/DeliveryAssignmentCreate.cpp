@@ -113,12 +113,12 @@ void from_json(const nlohmann::json& j, DeliveryAssignmentCreate& o)
         o.m_Rider_idIsSet = true;
     } 
     j.at("status").get_to(o.m_Status);
-    if(j.find("pickup_location") != j.end() && !j.at("pickup_location").is_null())
+    if(j.find("pickup_location") != j.end())
     {
         j.at("pickup_location").get_to(o.m_Pickup_location);
         o.m_Pickup_locationIsSet = true;
     } 
-    if(j.find("dropoff_location") != j.end() && !j.at("dropoff_location").is_null())
+    if(j.find("dropoff_location") != j.end())
     {
         j.at("dropoff_location").get_to(o.m_Dropoff_location);
         o.m_Dropoff_locationIsSet = true;

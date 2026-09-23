@@ -114,7 +114,7 @@ void to_json(nlohmann::json& j, const TaskCreate& o)
 void from_json(const nlohmann::json& j, TaskCreate& o)
 {
     j.at("title").get_to(o.m_Title);
-    if(j.find("description") != j.end() && !j.at("description").is_null())
+    if(j.find("description") != j.end())
     {
         j.at("description").get_to(o.m_Description);
         o.m_DescriptionIsSet = true;

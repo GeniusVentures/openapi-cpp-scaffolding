@@ -172,7 +172,7 @@ void from_json(const nlohmann::json& j, Document& o)
         j.at("deleted_at").get_to(o.m_Deleted_at);
         o.m_Deleted_atIsSet = true;
     } 
-    if(j.find("metadata") != j.end() && !j.at("metadata").is_null())
+    if(j.find("metadata") != j.end())
     {
         j.at("metadata").get_to(o.m_Metadata);
         o.m_MetadataIsSet = true;
@@ -180,7 +180,7 @@ void from_json(const nlohmann::json& j, Document& o)
     j.at("title").get_to(o.m_Title);
     j.at("type").get_to(o.m_Type);
     j.at("status").get_to(o.m_Status);
-    if(j.find("file") != j.end() && !j.at("file").is_null())
+    if(j.find("file") != j.end())
     {
         j.at("file").get_to(o.m_file);
         o.m_fileIsSet = true;
@@ -190,12 +190,12 @@ void from_json(const nlohmann::json& j, Document& o)
         j.at("extracted_text").get_to(o.m_Extracted_text);
         o.m_Extracted_textIsSet = true;
     } 
-    if(j.find("related_object_type") != j.end() && !j.at("related_object_type").is_null())
+    if(j.find("related_object_type") != j.end())
     {
         j.at("related_object_type").get_to(o.m_Related_object_type);
         o.m_Related_object_typeIsSet = true;
     } 
-    if(j.find("related_object_id") != j.end() && !j.at("related_object_id").is_null())
+    if(j.find("related_object_id") != j.end())
     {
         j.at("related_object_id").get_to(o.m_Related_object_id);
         o.m_Related_object_idIsSet = true;

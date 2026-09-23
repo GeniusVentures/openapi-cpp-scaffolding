@@ -132,22 +132,22 @@ void to_json(nlohmann::json& j, const LocalNodeUpdate& o)
 
 void from_json(const nlohmann::json& j, LocalNodeUpdate& o)
 {
-    if(j.find("name") != j.end() && !j.at("name").is_null())
+    if(j.find("name") != j.end())
     {
         j.at("name").get_to(o.m_Name);
         o.m_NameIsSet = true;
     } 
-    if(j.find("status") != j.end() && !j.at("status").is_null())
+    if(j.find("status") != j.end())
     {
         j.at("status").get_to(o.m_Status);
         o.m_StatusIsSet = true;
     } 
-    if(j.find("hostname") != j.end() && !j.at("hostname").is_null())
+    if(j.find("hostname") != j.end())
     {
         j.at("hostname").get_to(o.m_Hostname);
         o.m_HostnameIsSet = true;
     } 
-    if(j.find("version") != j.end() && !j.at("version").is_null())
+    if(j.find("version") != j.end())
     {
         j.at("version").get_to(o.m_Version);
         o.m_VersionIsSet = true;
@@ -157,7 +157,7 @@ void from_json(const nlohmann::json& j, LocalNodeUpdate& o)
         j.at("last_seen_at").get_to(o.m_Last_seen_at);
         o.m_Last_seen_atIsSet = true;
     } 
-    if(j.find("capabilities") != j.end() && !j.at("capabilities").is_null())
+    if(j.find("capabilities") != j.end())
     {
         j.at("capabilities").get_to(o.m_Capabilities);
         o.m_CapabilitiesIsSet = true;

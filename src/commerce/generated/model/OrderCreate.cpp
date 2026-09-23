@@ -171,28 +171,28 @@ void from_json(const nlohmann::json& j, OrderCreate& o)
     } 
     j.at("channel").get_to(o.m_Channel);
     j.at("fulfillment_type").get_to(o.m_Fulfillment_type);
-    if(j.find("subtotal") != j.end() && !j.at("subtotal").is_null())
+    if(j.find("subtotal") != j.end())
     {
         j.at("subtotal").get_to(o.m_Subtotal);
         o.m_SubtotalIsSet = true;
     } 
-    if(j.find("tax_total") != j.end() && !j.at("tax_total").is_null())
+    if(j.find("tax_total") != j.end())
     {
         j.at("tax_total").get_to(o.m_Tax_total);
         o.m_Tax_totalIsSet = true;
     } 
-    if(j.find("discount_total") != j.end() && !j.at("discount_total").is_null())
+    if(j.find("discount_total") != j.end())
     {
         j.at("discount_total").get_to(o.m_Discount_total);
         o.m_Discount_totalIsSet = true;
     } 
-    if(j.find("tip_total") != j.end() && !j.at("tip_total").is_null())
+    if(j.find("tip_total") != j.end())
     {
         j.at("tip_total").get_to(o.m_Tip_total);
         o.m_Tip_totalIsSet = true;
     } 
     j.at("total").get_to(o.m_Total);
-    if(j.find("lines") != j.end() && !j.at("lines").is_null())
+    if(j.find("lines") != j.end())
     {
         j.at("lines").get_to(o.m_Lines);
         o.m_LinesIsSet = true;

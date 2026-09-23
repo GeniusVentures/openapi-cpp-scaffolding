@@ -224,13 +224,13 @@ void from_json(const nlohmann::json& j, Location& o)
         j.at("deleted_at").get_to(o.m_Deleted_at);
         o.m_Deleted_atIsSet = true;
     } 
-    if(j.find("metadata") != j.end() && !j.at("metadata").is_null())
+    if(j.find("metadata") != j.end())
     {
         j.at("metadata").get_to(o.m_Metadata);
         o.m_MetadataIsSet = true;
     } 
     j.at("name").get_to(o.m_Name);
-    if(j.find("code") != j.end() && !j.at("code").is_null())
+    if(j.find("code") != j.end())
     {
         j.at("code").get_to(o.m_Code);
         o.m_CodeIsSet = true;
@@ -242,22 +242,22 @@ void from_json(const nlohmann::json& j, Location& o)
         j.at("tax_rate").get_to(o.m_Tax_rate);
         o.m_Tax_rateIsSet = true;
     } 
-    if(j.find("address") != j.end() && !j.at("address").is_null())
+    if(j.find("address") != j.end())
     {
         j.at("address").get_to(o.m_Address);
         o.m_AddressIsSet = true;
     } 
-    if(j.find("contact") != j.end() && !j.at("contact").is_null())
+    if(j.find("contact") != j.end())
     {
         j.at("contact").get_to(o.m_Contact);
         o.m_ContactIsSet = true;
     } 
-    if(j.find("timezone") != j.end() && !j.at("timezone").is_null())
+    if(j.find("timezone") != j.end())
     {
         j.at("timezone").get_to(o.m_Timezone);
         o.m_TimezoneIsSet = true;
     } 
-    if(j.find("hours") != j.end() && !j.at("hours").is_null())
+    if(j.find("hours") != j.end())
     {
         j.at("hours").get_to(o.m_Hours);
         o.m_HoursIsSet = true;

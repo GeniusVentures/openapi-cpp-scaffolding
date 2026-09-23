@@ -125,27 +125,27 @@ void to_json(nlohmann::json& j, const KitchenTicketUpdate& o)
 
 void from_json(const nlohmann::json& j, KitchenTicketUpdate& o)
 {
-    if(j.find("order_id") != j.end() && !j.at("order_id").is_null())
+    if(j.find("order_id") != j.end())
     {
         j.at("order_id").get_to(o.m_Order_id);
         o.m_Order_idIsSet = true;
     } 
-    if(j.find("station") != j.end() && !j.at("station").is_null())
+    if(j.find("station") != j.end())
     {
         j.at("station").get_to(o.m_Station);
         o.m_StationIsSet = true;
     } 
-    if(j.find("status") != j.end() && !j.at("status").is_null())
+    if(j.find("status") != j.end())
     {
         j.at("status").get_to(o.m_Status);
         o.m_StatusIsSet = true;
     } 
-    if(j.find("priority") != j.end() && !j.at("priority").is_null())
+    if(j.find("priority") != j.end())
     {
         j.at("priority").get_to(o.m_Priority);
         o.m_PriorityIsSet = true;
     } 
-    if(j.find("items") != j.end() && !j.at("items").is_null())
+    if(j.find("items") != j.end())
     {
         j.at("items").get_to(o.m_Items);
         o.m_ItemsIsSet = true;

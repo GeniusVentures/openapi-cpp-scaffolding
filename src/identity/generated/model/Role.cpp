@@ -167,14 +167,14 @@ void from_json(const nlohmann::json& j, Role& o)
         j.at("deleted_at").get_to(o.m_Deleted_at);
         o.m_Deleted_atIsSet = true;
     } 
-    if(j.find("metadata") != j.end() && !j.at("metadata").is_null())
+    if(j.find("metadata") != j.end())
     {
         j.at("metadata").get_to(o.m_Metadata);
         o.m_MetadataIsSet = true;
     } 
     j.at("name").get_to(o.m_Name);
     j.at("scope").get_to(o.m_Scope);
-    if(j.find("permissions") != j.end() && !j.at("permissions").is_null())
+    if(j.find("permissions") != j.end())
     {
         j.at("permissions").get_to(o.m_Permissions);
         o.m_PermissionsIsSet = true;

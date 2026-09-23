@@ -119,19 +119,19 @@ void from_json(const nlohmann::json& j, MessageCreate& o)
     j.at("channel").get_to(o.m_Channel);
     j.at("direction").get_to(o.m_Direction);
     j.at("recipient").get_to(o.m_Recipient);
-    if(j.find("subject") != j.end() && !j.at("subject").is_null())
+    if(j.find("subject") != j.end())
     {
         j.at("subject").get_to(o.m_Subject);
         o.m_SubjectIsSet = true;
     } 
     j.at("body").get_to(o.m_Body);
     j.at("status").get_to(o.m_Status);
-    if(j.find("related_object_type") != j.end() && !j.at("related_object_type").is_null())
+    if(j.find("related_object_type") != j.end())
     {
         j.at("related_object_type").get_to(o.m_Related_object_type);
         o.m_Related_object_typeIsSet = true;
     } 
-    if(j.find("related_object_id") != j.end() && !j.at("related_object_id").is_null())
+    if(j.find("related_object_id") != j.end())
     {
         j.at("related_object_id").get_to(o.m_Related_object_id);
         o.m_Related_object_idIsSet = true;

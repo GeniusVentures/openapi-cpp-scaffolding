@@ -8,8 +8,11 @@
  * documented "field": null representation of an absent optional threw
  * nlohmann::json::type_error from from_json (PR #4 round-2 P2s:
  * OrderCreate.table_id for tableless quick-orders, Location.tax_rate for an
- * unconfigured rate). fix_generated_destructors.py now guards every
- * optional-field block at generation time; these tests pin the behavior
+ * unconfigured rate). fix_generated_destructors.py now guards those blocks
+ * at generation time — but ONLY for schema-nullable properties (PR #4
+ * round-4 P2): a null on a NON-nullable optional (UserUpdate.email) is a
+ * client error and must keep throwing so the handler answers 400 instead of
+ * silently treating the field as omitted. These tests pin both behaviors
  * against the tracked generated trees.
  */
 
@@ -19,9 +22,11 @@
 
 #include "Location.h"
 #include "OrderCreate.h"
+#include "UserUpdate.h"
 
 using org::openapitools::server::model::Location;
 using org::openapitools::server::model::OrderCreate;
+using org::openapitools::server::model::UserUpdate;
 
 TEST(OrderCreateGeneratedModel, NullTableIdLeavesFieldUnset)
 {
@@ -59,4 +64,18 @@ TEST(LocationGeneratedModel, NullTaxRateLeavesFieldUnset)
     ASSERT_NO_THROW(parsed.get_to(location));
     EXPECT_FALSE(location.taxRateIsSet());
     EXPECT_EQ("Downtown", location.getName());
+}
+
+TEST(UserUpdateGeneratedModel, NullEmailOnNonNullableOptionalThrows)
+{
+    // email is optional but NOT nullable in identity_openapi.json — an
+    // explicit null is a client error, not an omission, so from_json must
+    // throw (the handler's error path answers 400) instead of quietly
+    // leaving emailIsSet() false.
+    const auto parsed = nlohmann::json::parse(R"({
+        "email": null
+    })");
+
+    UserUpdate update;
+    EXPECT_THROW(parsed.get_to(update), nlohmann::json::type_error);
 }

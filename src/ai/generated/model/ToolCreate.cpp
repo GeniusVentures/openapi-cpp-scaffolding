@@ -99,14 +99,14 @@ void to_json(nlohmann::json& j, const ToolCreate& o)
 void from_json(const nlohmann::json& j, ToolCreate& o)
 {
     j.at("name").get_to(o.m_Name);
-    if(j.find("description") != j.end() && !j.at("description").is_null())
+    if(j.find("description") != j.end())
     {
         j.at("description").get_to(o.m_Description);
         o.m_DescriptionIsSet = true;
     } 
     j.at("type").get_to(o.m_Type);
     j.at("schema").get_to(o.m_Schema);
-    if(j.find("enabled") != j.end() && !j.at("enabled").is_null())
+    if(j.find("enabled") != j.end())
     {
         j.at("enabled").get_to(o.m_Enabled);
         o.m_EnabledIsSet = true;

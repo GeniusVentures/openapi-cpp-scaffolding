@@ -105,10 +105,16 @@ foreach(SPEC_FILE ${SPEC_FILES})
         LOG ON
     )
 
-    # Step 2: Fix generated code issues (destructor syntax)
+    # Step 2: Fix generated code issues (destructor syntax, null guards)
+    # Direct invocation with the model DIRECTORY and --spec: no POSIX shell
+    # (native Windows builds have none), and the script reads nullability
+    # from the spec — only schema-nullable optionals get null guards.
     if(PYTHON3_EXECUTABLE)
         ExternalProject_Add_Step(${PREFIX}_api_ep fix_generated
-            COMMAND sh -c "${PYTHON3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/../scripts/fix_generated_destructors.py ${GEN_DIR}/model/*.cpp"
+            COMMAND ${PYTHON3_EXECUTABLE}
+                ${CMAKE_CURRENT_SOURCE_DIR}/../scripts/fix_generated_destructors.py
+                --spec ${SPEC_FILE}
+                ${GEN_DIR}/model
             DEPENDEES generate_code
             WORKING_DIRECTORY "${_EP_WORK_DIR}"
             COMMENT "Fixing generated code for ${PREFIX}"

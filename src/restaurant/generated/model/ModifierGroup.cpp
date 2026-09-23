@@ -183,28 +183,28 @@ void from_json(const nlohmann::json& j, ModifierGroup& o)
         j.at("deleted_at").get_to(o.m_Deleted_at);
         o.m_Deleted_atIsSet = true;
     } 
-    if(j.find("metadata") != j.end() && !j.at("metadata").is_null())
+    if(j.find("metadata") != j.end())
     {
         j.at("metadata").get_to(o.m_Metadata);
         o.m_MetadataIsSet = true;
     } 
     j.at("name").get_to(o.m_Name);
-    if(j.find("min_selected") != j.end() && !j.at("min_selected").is_null())
+    if(j.find("min_selected") != j.end())
     {
         j.at("min_selected").get_to(o.m_Min_selected);
         o.m_Min_selectedIsSet = true;
     } 
-    if(j.find("max_selected") != j.end() && !j.at("max_selected").is_null())
+    if(j.find("max_selected") != j.end())
     {
         j.at("max_selected").get_to(o.m_Max_selected);
         o.m_Max_selectedIsSet = true;
     } 
-    if(j.find("required") != j.end() && !j.at("required").is_null())
+    if(j.find("required") != j.end())
     {
         j.at("required").get_to(o.m_Required);
         o.m_RequiredIsSet = true;
     } 
-    if(j.find("modifiers") != j.end() && !j.at("modifiers").is_null())
+    if(j.find("modifiers") != j.end())
     {
         j.at("modifiers").get_to(o.m_Modifiers);
         o.m_ModifiersIsSet = true;

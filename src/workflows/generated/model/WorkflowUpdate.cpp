@@ -117,22 +117,22 @@ void to_json(nlohmann::json& j, const WorkflowUpdate& o)
 
 void from_json(const nlohmann::json& j, WorkflowUpdate& o)
 {
-    if(j.find("name") != j.end() && !j.at("name").is_null())
+    if(j.find("name") != j.end())
     {
         j.at("name").get_to(o.m_Name);
         o.m_NameIsSet = true;
     } 
-    if(j.find("status") != j.end() && !j.at("status").is_null())
+    if(j.find("status") != j.end())
     {
         j.at("status").get_to(o.m_Status);
         o.m_StatusIsSet = true;
     } 
-    if(j.find("trigger") != j.end() && !j.at("trigger").is_null())
+    if(j.find("trigger") != j.end())
     {
         j.at("trigger").get_to(o.m_Trigger);
         o.m_TriggerIsSet = true;
     } 
-    if(j.find("steps") != j.end() && !j.at("steps").is_null())
+    if(j.find("steps") != j.end())
     {
         j.at("steps").get_to(o.m_Steps);
         o.m_StepsIsSet = true;

@@ -164,7 +164,7 @@ void from_json(const nlohmann::json& j, AgentRun& o)
         j.at("deleted_at").get_to(o.m_Deleted_at);
         o.m_Deleted_atIsSet = true;
     } 
-    if(j.find("metadata") != j.end() && !j.at("metadata").is_null())
+    if(j.find("metadata") != j.end())
     {
         j.at("metadata").get_to(o.m_Metadata);
         o.m_MetadataIsSet = true;
@@ -172,7 +172,7 @@ void from_json(const nlohmann::json& j, AgentRun& o)
     j.at("agent_id").get_to(o.m_Agent_id);
     j.at("status").get_to(o.m_Status);
     j.at("input").get_to(o.m_Input);
-    if(j.find("output") != j.end() && !j.at("output").is_null())
+    if(j.find("output") != j.end())
     {
         j.at("output").get_to(o.m_Output);
         o.m_OutputIsSet = true;

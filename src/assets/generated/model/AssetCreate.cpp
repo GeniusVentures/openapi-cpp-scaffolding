@@ -108,13 +108,13 @@ void from_json(const nlohmann::json& j, AssetCreate& o)
 {
     j.at("name").get_to(o.m_Name);
     j.at("type").get_to(o.m_Type);
-    if(j.find("serial_number") != j.end() && !j.at("serial_number").is_null())
+    if(j.find("serial_number") != j.end())
     {
         j.at("serial_number").get_to(o.m_Serial_number);
         o.m_Serial_numberIsSet = true;
     } 
     j.at("status").get_to(o.m_Status);
-    if(j.find("location_id") != j.end() && !j.at("location_id").is_null())
+    if(j.find("location_id") != j.end())
     {
         j.at("location_id").get_to(o.m_Location_id);
         o.m_Location_idIsSet = true;

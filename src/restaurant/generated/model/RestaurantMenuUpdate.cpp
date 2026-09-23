@@ -117,22 +117,22 @@ void to_json(nlohmann::json& j, const RestaurantMenuUpdate& o)
 
 void from_json(const nlohmann::json& j, RestaurantMenuUpdate& o)
 {
-    if(j.find("name") != j.end() && !j.at("name").is_null())
+    if(j.find("name") != j.end())
     {
         j.at("name").get_to(o.m_Name);
         o.m_NameIsSet = true;
     } 
-    if(j.find("status") != j.end() && !j.at("status").is_null())
+    if(j.find("status") != j.end())
     {
         j.at("status").get_to(o.m_Status);
         o.m_StatusIsSet = true;
     } 
-    if(j.find("location_ids") != j.end() && !j.at("location_ids").is_null())
+    if(j.find("location_ids") != j.end())
     {
         j.at("location_ids").get_to(o.m_Location_ids);
         o.m_Location_idsIsSet = true;
     } 
-    if(j.find("availability") != j.end() && !j.at("availability").is_null())
+    if(j.find("availability") != j.end())
     {
         j.at("availability").get_to(o.m_Availability);
         o.m_AvailabilityIsSet = true;

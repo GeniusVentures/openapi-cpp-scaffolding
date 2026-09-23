@@ -147,7 +147,7 @@ void from_json(const nlohmann::json& j, Asset& o)
     j.at("id").get_to(o.m_Id);
     j.at("tenant_id").get_to(o.m_Tenant_id);
     j.at("organization_id").get_to(o.m_Organization_id);
-    if(j.find("location_id") != j.end() && !j.at("location_id").is_null())
+    if(j.find("location_id") != j.end())
     {
         j.at("location_id").get_to(o.m_Location_id);
         o.m_Location_idIsSet = true;
@@ -159,14 +159,14 @@ void from_json(const nlohmann::json& j, Asset& o)
         j.at("deleted_at").get_to(o.m_Deleted_at);
         o.m_Deleted_atIsSet = true;
     } 
-    if(j.find("metadata") != j.end() && !j.at("metadata").is_null())
+    if(j.find("metadata") != j.end())
     {
         j.at("metadata").get_to(o.m_Metadata);
         o.m_MetadataIsSet = true;
     } 
     j.at("name").get_to(o.m_Name);
     j.at("type").get_to(o.m_Type);
-    if(j.find("serial_number") != j.end() && !j.at("serial_number").is_null())
+    if(j.find("serial_number") != j.end())
     {
         j.at("serial_number").get_to(o.m_Serial_number);
         o.m_Serial_numberIsSet = true;

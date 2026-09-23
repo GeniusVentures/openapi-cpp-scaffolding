@@ -131,47 +131,47 @@ void to_json(nlohmann::json& j, const OrganizationUpdate& o)
 
 void from_json(const nlohmann::json& j, OrganizationUpdate& o)
 {
-    if(j.find("name") != j.end() && !j.at("name").is_null())
+    if(j.find("name") != j.end())
     {
         j.at("name").get_to(o.m_Name);
         o.m_NameIsSet = true;
     } 
-    if(j.find("legal_name") != j.end() && !j.at("legal_name").is_null())
+    if(j.find("legal_name") != j.end())
     {
         j.at("legal_name").get_to(o.m_Legal_name);
         o.m_Legal_nameIsSet = true;
     } 
-    if(j.find("industry") != j.end() && !j.at("industry").is_null())
+    if(j.find("industry") != j.end())
     {
         j.at("industry").get_to(o.m_Industry);
         o.m_IndustryIsSet = true;
     } 
-    if(j.find("tax_id") != j.end() && !j.at("tax_id").is_null())
+    if(j.find("tax_id") != j.end())
     {
         j.at("tax_id").get_to(o.m_Tax_id);
         o.m_Tax_idIsSet = true;
     } 
-    if(j.find("contact") != j.end() && !j.at("contact").is_null())
+    if(j.find("contact") != j.end())
     {
         j.at("contact").get_to(o.m_Contact);
         o.m_ContactIsSet = true;
     } 
-    if(j.find("address") != j.end() && !j.at("address").is_null())
+    if(j.find("address") != j.end())
     {
         j.at("address").get_to(o.m_Address);
         o.m_AddressIsSet = true;
     } 
-    if(j.find("timezone") != j.end() && !j.at("timezone").is_null())
+    if(j.find("timezone") != j.end())
     {
         j.at("timezone").get_to(o.m_Timezone);
         o.m_TimezoneIsSet = true;
     } 
-    if(j.find("locale") != j.end() && !j.at("locale").is_null())
+    if(j.find("locale") != j.end())
     {
         j.at("locale").get_to(o.m_Locale);
         o.m_LocaleIsSet = true;
     } 
-    if(j.find("default_currency") != j.end() && !j.at("default_currency").is_null())
+    if(j.find("default_currency") != j.end())
     {
         j.at("default_currency").get_to(o.m_Default_currency);
         o.m_Default_currencyIsSet = true;

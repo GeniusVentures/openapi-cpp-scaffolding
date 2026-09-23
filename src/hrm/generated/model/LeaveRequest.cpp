@@ -160,7 +160,7 @@ void from_json(const nlohmann::json& j, LeaveRequest& o)
         j.at("deleted_at").get_to(o.m_Deleted_at);
         o.m_Deleted_atIsSet = true;
     } 
-    if(j.find("metadata") != j.end() && !j.at("metadata").is_null())
+    if(j.find("metadata") != j.end())
     {
         j.at("metadata").get_to(o.m_Metadata);
         o.m_MetadataIsSet = true;
@@ -169,7 +169,7 @@ void from_json(const nlohmann::json& j, LeaveRequest& o)
     j.at("type").get_to(o.m_Type);
     j.at("window").get_to(o.m_Window);
     j.at("status").get_to(o.m_Status);
-    if(j.find("reason") != j.end() && !j.at("reason").is_null())
+    if(j.find("reason") != j.end())
     {
         j.at("reason").get_to(o.m_Reason);
         o.m_ReasonIsSet = true;

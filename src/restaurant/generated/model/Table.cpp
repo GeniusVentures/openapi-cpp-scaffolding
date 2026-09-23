@@ -214,13 +214,13 @@ void from_json(const nlohmann::json& j, Table& o)
         j.at("deleted_at").get_to(o.m_Deleted_at);
         o.m_Deleted_atIsSet = true;
     } 
-    if(j.find("metadata") != j.end() && !j.at("metadata").is_null())
+    if(j.find("metadata") != j.end())
     {
         j.at("metadata").get_to(o.m_Metadata);
         o.m_MetadataIsSet = true;
     } 
     j.at("name").get_to(o.m_Name);
-    if(j.find("section") != j.end() && !j.at("section").is_null())
+    if(j.find("section") != j.end())
     {
         j.at("section").get_to(o.m_Section);
         o.m_SectionIsSet = true;
@@ -247,12 +247,12 @@ void from_json(const nlohmann::json& j, Table& o)
         j.at("opened_at").get_to(o.m_Opened_at);
         o.m_Opened_atIsSet = true;
     } 
-    if(j.find("open_order_ids") != j.end() && !j.at("open_order_ids").is_null())
+    if(j.find("open_order_ids") != j.end())
     {
         j.at("open_order_ids").get_to(o.m_Open_order_ids);
         o.m_Open_order_idsIsSet = true;
     } 
-    if(j.find("pos_status") != j.end() && !j.at("pos_status").is_null())
+    if(j.find("pos_status") != j.end())
     {
         j.at("pos_status").get_to(o.m_Pos_status);
         o.m_Pos_statusIsSet = true;

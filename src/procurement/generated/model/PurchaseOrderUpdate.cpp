@@ -97,12 +97,12 @@ void to_json(nlohmann::json& j, const PurchaseOrderUpdate& o)
 
 void from_json(const nlohmann::json& j, PurchaseOrderUpdate& o)
 {
-    if(j.find("vendor_id") != j.end() && !j.at("vendor_id").is_null())
+    if(j.find("vendor_id") != j.end())
     {
         j.at("vendor_id").get_to(o.m_Vendor_id);
         o.m_Vendor_idIsSet = true;
     } 
-    if(j.find("status") != j.end() && !j.at("status").is_null())
+    if(j.find("status") != j.end())
     {
         j.at("status").get_to(o.m_Status);
         o.m_StatusIsSet = true;
@@ -112,7 +112,7 @@ void from_json(const nlohmann::json& j, PurchaseOrderUpdate& o)
         j.at("expected_at").get_to(o.m_Expected_at);
         o.m_Expected_atIsSet = true;
     } 
-    if(j.find("total") != j.end() && !j.at("total").is_null())
+    if(j.find("total") != j.end())
     {
         j.at("total").get_to(o.m_Total);
         o.m_TotalIsSet = true;

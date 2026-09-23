@@ -188,19 +188,19 @@ void from_json(const nlohmann::json& j, LocalNode& o)
         j.at("deleted_at").get_to(o.m_Deleted_at);
         o.m_Deleted_atIsSet = true;
     } 
-    if(j.find("metadata") != j.end() && !j.at("metadata").is_null())
+    if(j.find("metadata") != j.end())
     {
         j.at("metadata").get_to(o.m_Metadata);
         o.m_MetadataIsSet = true;
     } 
     j.at("name").get_to(o.m_Name);
     j.at("status").get_to(o.m_Status);
-    if(j.find("hostname") != j.end() && !j.at("hostname").is_null())
+    if(j.find("hostname") != j.end())
     {
         j.at("hostname").get_to(o.m_Hostname);
         o.m_HostnameIsSet = true;
     } 
-    if(j.find("version") != j.end() && !j.at("version").is_null())
+    if(j.find("version") != j.end())
     {
         j.at("version").get_to(o.m_Version);
         o.m_VersionIsSet = true;
@@ -210,7 +210,7 @@ void from_json(const nlohmann::json& j, LocalNode& o)
         j.at("last_seen_at").get_to(o.m_Last_seen_at);
         o.m_Last_seen_atIsSet = true;
     } 
-    if(j.find("capabilities") != j.end() && !j.at("capabilities").is_null())
+    if(j.find("capabilities") != j.end())
     {
         j.at("capabilities").get_to(o.m_Capabilities);
         o.m_CapabilitiesIsSet = true;

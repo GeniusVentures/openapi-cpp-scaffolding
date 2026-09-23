@@ -98,22 +98,22 @@ void to_json(nlohmann::json& j, const MenuCategoryUpdate& o)
 
 void from_json(const nlohmann::json& j, MenuCategoryUpdate& o)
 {
-    if(j.find("menu_id") != j.end() && !j.at("menu_id").is_null())
+    if(j.find("menu_id") != j.end())
     {
         j.at("menu_id").get_to(o.m_Menu_id);
         o.m_Menu_idIsSet = true;
     } 
-    if(j.find("name") != j.end() && !j.at("name").is_null())
+    if(j.find("name") != j.end())
     {
         j.at("name").get_to(o.m_Name);
         o.m_NameIsSet = true;
     } 
-    if(j.find("sort_order") != j.end() && !j.at("sort_order").is_null())
+    if(j.find("sort_order") != j.end())
     {
         j.at("sort_order").get_to(o.m_Sort_order);
         o.m_Sort_orderIsSet = true;
     } 
-    if(j.find("status") != j.end() && !j.at("status").is_null())
+    if(j.find("status") != j.end())
     {
         j.at("status").get_to(o.m_Status);
         o.m_StatusIsSet = true;

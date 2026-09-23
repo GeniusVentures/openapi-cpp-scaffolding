@@ -110,22 +110,22 @@ void to_json(nlohmann::json& j, const AgentRunUpdate& o)
 
 void from_json(const nlohmann::json& j, AgentRunUpdate& o)
 {
-    if(j.find("agent_id") != j.end() && !j.at("agent_id").is_null())
+    if(j.find("agent_id") != j.end())
     {
         j.at("agent_id").get_to(o.m_Agent_id);
         o.m_Agent_idIsSet = true;
     } 
-    if(j.find("status") != j.end() && !j.at("status").is_null())
+    if(j.find("status") != j.end())
     {
         j.at("status").get_to(o.m_Status);
         o.m_StatusIsSet = true;
     } 
-    if(j.find("input") != j.end() && !j.at("input").is_null())
+    if(j.find("input") != j.end())
     {
         j.at("input").get_to(o.m_Input);
         o.m_InputIsSet = true;
     } 
-    if(j.find("output") != j.end() && !j.at("output").is_null())
+    if(j.find("output") != j.end())
     {
         j.at("output").get_to(o.m_Output);
         o.m_OutputIsSet = true;

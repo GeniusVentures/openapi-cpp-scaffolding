@@ -100,7 +100,7 @@ void from_json(const nlohmann::json& j, PurchaseOrderCreate& o)
         j.at("expected_at").get_to(o.m_Expected_at);
         o.m_Expected_atIsSet = true;
     } 
-    if(j.find("total") != j.end() && !j.at("total").is_null())
+    if(j.find("total") != j.end())
     {
         j.at("total").get_to(o.m_Total);
         o.m_TotalIsSet = true;

@@ -97,22 +97,22 @@ void to_json(nlohmann::json& j, const ShiftUpdate& o)
 
 void from_json(const nlohmann::json& j, ShiftUpdate& o)
 {
-    if(j.find("employee_id") != j.end() && !j.at("employee_id").is_null())
+    if(j.find("employee_id") != j.end())
     {
         j.at("employee_id").get_to(o.m_Employee_id);
         o.m_Employee_idIsSet = true;
     } 
-    if(j.find("role") != j.end() && !j.at("role").is_null())
+    if(j.find("role") != j.end())
     {
         j.at("role").get_to(o.m_Role);
         o.m_RoleIsSet = true;
     } 
-    if(j.find("window") != j.end() && !j.at("window").is_null())
+    if(j.find("window") != j.end())
     {
         j.at("window").get_to(o.m_Window);
         o.m_WindowIsSet = true;
     } 
-    if(j.find("status") != j.end() && !j.at("status").is_null())
+    if(j.find("status") != j.end())
     {
         j.at("status").get_to(o.m_Status);
         o.m_StatusIsSet = true;

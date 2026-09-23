@@ -118,22 +118,22 @@ void to_json(nlohmann::json& j, const UserUpdate& o)
 
 void from_json(const nlohmann::json& j, UserUpdate& o)
 {
-    if(j.find("email") != j.end() && !j.at("email").is_null())
+    if(j.find("email") != j.end())
     {
         j.at("email").get_to(o.m_Email);
         o.m_EmailIsSet = true;
     } 
-    if(j.find("display_name") != j.end() && !j.at("display_name").is_null())
+    if(j.find("display_name") != j.end())
     {
         j.at("display_name").get_to(o.m_Display_name);
         o.m_Display_nameIsSet = true;
     } 
-    if(j.find("person_id") != j.end() && !j.at("person_id").is_null())
+    if(j.find("person_id") != j.end())
     {
         j.at("person_id").get_to(o.m_Person_id);
         o.m_Person_idIsSet = true;
     } 
-    if(j.find("role_ids") != j.end() && !j.at("role_ids").is_null())
+    if(j.find("role_ids") != j.end())
     {
         j.at("role_ids").get_to(o.m_Role_ids);
         o.m_Role_idsIsSet = true;

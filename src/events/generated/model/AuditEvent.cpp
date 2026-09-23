@@ -194,7 +194,7 @@ void from_json(const nlohmann::json& j, AuditEvent& o)
         j.at("deleted_at").get_to(o.m_Deleted_at);
         o.m_Deleted_atIsSet = true;
     } 
-    if(j.find("metadata") != j.end() && !j.at("metadata").is_null())
+    if(j.find("metadata") != j.end())
     {
         j.at("metadata").get_to(o.m_Metadata);
         o.m_MetadataIsSet = true;
@@ -207,12 +207,12 @@ void from_json(const nlohmann::json& j, AuditEvent& o)
         o.m_Manager_user_idIsSet = true;
     } 
     j.at("action").get_to(o.m_Action);
-    if(j.find("reason") != j.end() && !j.at("reason").is_null())
+    if(j.find("reason") != j.end())
     {
         j.at("reason").get_to(o.m_Reason);
         o.m_ReasonIsSet = true;
     } 
-    if(j.find("reason_code") != j.end() && !j.at("reason_code").is_null())
+    if(j.find("reason_code") != j.end())
     {
         j.at("reason_code").get_to(o.m_Reason_code);
         o.m_Reason_codeIsSet = true;
@@ -225,7 +225,7 @@ void from_json(const nlohmann::json& j, AuditEvent& o)
         j.at("ip_address").get_to(o.m_Ip_address);
         o.m_Ip_addressIsSet = true;
     } 
-    if(j.find("changes") != j.end() && !j.at("changes").is_null())
+    if(j.find("changes") != j.end())
     {
         j.at("changes").get_to(o.m_Changes);
         o.m_ChangesIsSet = true;

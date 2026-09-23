@@ -156,31 +156,31 @@ void to_json(nlohmann::json& j, const OrderLine& o)
 
 void from_json(const nlohmann::json& j, OrderLine& o)
 {
-    if(j.find("id") != j.end() && !j.at("id").is_null())
+    if(j.find("id") != j.end())
     {
         j.at("id").get_to(o.m_Id);
         o.m_IdIsSet = true;
     } 
     j.at("product_id").get_to(o.m_Product_id);
-    if(j.find("description") != j.end() && !j.at("description").is_null())
+    if(j.find("description") != j.end())
     {
         j.at("description").get_to(o.m_Description);
         o.m_DescriptionIsSet = true;
     } 
     j.at("quantity").get_to(o.m_Quantity);
     j.at("unit_price").get_to(o.m_Unit_price);
-    if(j.find("discount_total") != j.end() && !j.at("discount_total").is_null())
+    if(j.find("discount_total") != j.end())
     {
         j.at("discount_total").get_to(o.m_Discount_total);
         o.m_Discount_totalIsSet = true;
     } 
-    if(j.find("tax_total") != j.end() && !j.at("tax_total").is_null())
+    if(j.find("tax_total") != j.end())
     {
         j.at("tax_total").get_to(o.m_Tax_total);
         o.m_Tax_totalIsSet = true;
     } 
     j.at("line_total").get_to(o.m_Line_total);
-    if(j.find("modifiers") != j.end() && !j.at("modifiers").is_null())
+    if(j.find("modifiers") != j.end())
     {
         j.at("modifiers").get_to(o.m_Modifiers);
         o.m_ModifiersIsSet = true;

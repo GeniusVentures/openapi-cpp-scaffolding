@@ -116,12 +116,12 @@ void from_json(const nlohmann::json& j, UserCreate& o)
 {
     j.at("email").get_to(o.m_Email);
     j.at("display_name").get_to(o.m_Display_name);
-    if(j.find("person_id") != j.end() && !j.at("person_id").is_null())
+    if(j.find("person_id") != j.end())
     {
         j.at("person_id").get_to(o.m_Person_id);
         o.m_Person_idIsSet = true;
     } 
-    if(j.find("role_ids") != j.end() && !j.at("role_ids").is_null())
+    if(j.find("role_ids") != j.end())
     {
         j.at("role_ids").get_to(o.m_Role_ids);
         o.m_Role_idsIsSet = true;

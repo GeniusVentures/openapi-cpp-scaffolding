@@ -97,17 +97,17 @@ void to_json(nlohmann::json& j, const OrderStatusUpdateRequest& o)
 void from_json(const nlohmann::json& j, OrderStatusUpdateRequest& o)
 {
     j.at("status").get_to(o.m_Status);
-    if(j.find("reason") != j.end() && !j.at("reason").is_null())
+    if(j.find("reason") != j.end())
     {
         j.at("reason").get_to(o.m_Reason);
         o.m_ReasonIsSet = true;
     } 
-    if(j.find("reason_code") != j.end() && !j.at("reason_code").is_null())
+    if(j.find("reason_code") != j.end())
     {
         j.at("reason_code").get_to(o.m_Reason_code);
         o.m_Reason_codeIsSet = true;
     } 
-    if(j.find("notify_customer") != j.end() && !j.at("notify_customer").is_null())
+    if(j.find("notify_customer") != j.end())
     {
         j.at("notify_customer").get_to(o.m_Notify_customer);
         o.m_Notify_customerIsSet = true;

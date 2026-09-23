@@ -97,22 +97,22 @@ void to_json(nlohmann::json& j, const IntegrationUpdate& o)
 
 void from_json(const nlohmann::json& j, IntegrationUpdate& o)
 {
-    if(j.find("name") != j.end() && !j.at("name").is_null())
+    if(j.find("name") != j.end())
     {
         j.at("name").get_to(o.m_Name);
         o.m_NameIsSet = true;
     } 
-    if(j.find("provider") != j.end() && !j.at("provider").is_null())
+    if(j.find("provider") != j.end())
     {
         j.at("provider").get_to(o.m_Provider);
         o.m_ProviderIsSet = true;
     } 
-    if(j.find("status") != j.end() && !j.at("status").is_null())
+    if(j.find("status") != j.end())
     {
         j.at("status").get_to(o.m_Status);
         o.m_StatusIsSet = true;
     } 
-    if(j.find("config") != j.end() && !j.at("config").is_null())
+    if(j.find("config") != j.end())
     {
         j.at("config").get_to(o.m_Config);
         o.m_ConfigIsSet = true;

@@ -169,7 +169,7 @@ void from_json(const nlohmann::json& j, Customer& o)
         j.at("deleted_at").get_to(o.m_Deleted_at);
         o.m_Deleted_atIsSet = true;
     } 
-    if(j.find("metadata") != j.end() && !j.at("metadata").is_null())
+    if(j.find("metadata") != j.end())
     {
         j.at("metadata").get_to(o.m_Metadata);
         o.m_MetadataIsSet = true;
@@ -179,23 +179,23 @@ void from_json(const nlohmann::json& j, Customer& o)
         j.at("person_id").get_to(o.m_Person_id);
         o.m_Person_idIsSet = true;
     } 
-    if(j.find("customer_number") != j.end() && !j.at("customer_number").is_null())
+    if(j.find("customer_number") != j.end())
     {
         j.at("customer_number").get_to(o.m_Customer_number);
         o.m_Customer_numberIsSet = true;
     } 
     j.at("status").get_to(o.m_Status);
-    if(j.find("lifetime_value") != j.end() && !j.at("lifetime_value").is_null())
+    if(j.find("lifetime_value") != j.end())
     {
         j.at("lifetime_value").get_to(o.m_Lifetime_value);
         o.m_Lifetime_valueIsSet = true;
     } 
-    if(j.find("loyalty_points") != j.end() && !j.at("loyalty_points").is_null())
+    if(j.find("loyalty_points") != j.end())
     {
         j.at("loyalty_points").get_to(o.m_Loyalty_points);
         o.m_Loyalty_pointsIsSet = true;
     } 
-    if(j.find("notes") != j.end() && !j.at("notes").is_null())
+    if(j.find("notes") != j.end())
     {
         j.at("notes").get_to(o.m_Notes);
         o.m_NotesIsSet = true;

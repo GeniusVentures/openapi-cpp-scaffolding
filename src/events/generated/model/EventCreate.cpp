@@ -112,7 +112,7 @@ void from_json(const nlohmann::json& j, EventCreate& o)
     j.at("object_type").get_to(o.m_Object_type);
     j.at("object_id").get_to(o.m_Object_id);
     j.at("occurred_at").get_to(o.m_Occurred_at);
-    if(j.find("payload") != j.end() && !j.at("payload").is_null())
+    if(j.find("payload") != j.end())
     {
         j.at("payload").get_to(o.m_Payload);
         o.m_PayloadIsSet = true;

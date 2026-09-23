@@ -166,7 +166,7 @@ void from_json(const nlohmann::json& j, DeliveryAssignment& o)
         j.at("deleted_at").get_to(o.m_Deleted_at);
         o.m_Deleted_atIsSet = true;
     } 
-    if(j.find("metadata") != j.end() && !j.at("metadata").is_null())
+    if(j.find("metadata") != j.end())
     {
         j.at("metadata").get_to(o.m_Metadata);
         o.m_MetadataIsSet = true;
@@ -178,12 +178,12 @@ void from_json(const nlohmann::json& j, DeliveryAssignment& o)
         o.m_Rider_idIsSet = true;
     } 
     j.at("status").get_to(o.m_Status);
-    if(j.find("pickup_location") != j.end() && !j.at("pickup_location").is_null())
+    if(j.find("pickup_location") != j.end())
     {
         j.at("pickup_location").get_to(o.m_Pickup_location);
         o.m_Pickup_locationIsSet = true;
     } 
-    if(j.find("dropoff_location") != j.end() && !j.at("dropoff_location").is_null())
+    if(j.find("dropoff_location") != j.end())
     {
         j.at("dropoff_location").get_to(o.m_Dropoff_location);
         o.m_Dropoff_locationIsSet = true;

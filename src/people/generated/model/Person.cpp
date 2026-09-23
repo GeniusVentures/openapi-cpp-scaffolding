@@ -209,33 +209,33 @@ void from_json(const nlohmann::json& j, Person& o)
         j.at("deleted_at").get_to(o.m_Deleted_at);
         o.m_Deleted_atIsSet = true;
     } 
-    if(j.find("metadata") != j.end() && !j.at("metadata").is_null())
+    if(j.find("metadata") != j.end())
     {
         j.at("metadata").get_to(o.m_Metadata);
         o.m_MetadataIsSet = true;
     } 
-    if(j.find("first_name") != j.end() && !j.at("first_name").is_null())
+    if(j.find("first_name") != j.end())
     {
         j.at("first_name").get_to(o.m_First_name);
         o.m_First_nameIsSet = true;
     } 
-    if(j.find("last_name") != j.end() && !j.at("last_name").is_null())
+    if(j.find("last_name") != j.end())
     {
         j.at("last_name").get_to(o.m_Last_name);
         o.m_Last_nameIsSet = true;
     } 
     j.at("display_name").get_to(o.m_Display_name);
-    if(j.find("contact") != j.end() && !j.at("contact").is_null())
+    if(j.find("contact") != j.end())
     {
         j.at("contact").get_to(o.m_Contact);
         o.m_ContactIsSet = true;
     } 
-    if(j.find("addresses") != j.end() && !j.at("addresses").is_null())
+    if(j.find("addresses") != j.end())
     {
         j.at("addresses").get_to(o.m_Addresses);
         o.m_AddressesIsSet = true;
     } 
-    if(j.find("tags") != j.end() && !j.at("tags").is_null())
+    if(j.find("tags") != j.end())
     {
         j.at("tags").get_to(o.m_Tags);
         o.m_TagsIsSet = true;

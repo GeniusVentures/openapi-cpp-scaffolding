@@ -128,27 +128,27 @@ void from_json(const nlohmann::json& j, PaymentUpdate& o)
         j.at("invoice_id").get_to(o.m_Invoice_id);
         o.m_Invoice_idIsSet = true;
     } 
-    if(j.find("provider") != j.end() && !j.at("provider").is_null())
+    if(j.find("provider") != j.end())
     {
         j.at("provider").get_to(o.m_Provider);
         o.m_ProviderIsSet = true;
     } 
-    if(j.find("method") != j.end() && !j.at("method").is_null())
+    if(j.find("method") != j.end())
     {
         j.at("method").get_to(o.m_Method);
         o.m_MethodIsSet = true;
     } 
-    if(j.find("status") != j.end() && !j.at("status").is_null())
+    if(j.find("status") != j.end())
     {
         j.at("status").get_to(o.m_Status);
         o.m_StatusIsSet = true;
     } 
-    if(j.find("amount") != j.end() && !j.at("amount").is_null())
+    if(j.find("amount") != j.end())
     {
         j.at("amount").get_to(o.m_Amount);
         o.m_AmountIsSet = true;
     } 
-    if(j.find("provider_reference") != j.end() && !j.at("provider_reference").is_null())
+    if(j.find("provider_reference") != j.end())
     {
         j.at("provider_reference").get_to(o.m_Provider_reference);
         o.m_Provider_referenceIsSet = true;
