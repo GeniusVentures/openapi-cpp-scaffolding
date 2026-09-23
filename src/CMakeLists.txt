@@ -5,11 +5,12 @@ if(NOT OPENAPI_GENERATOR_CLI)
                         "Install with: pnpm install -g @openapitools/openapi-generator-cli")
 endif()
 
-find_program(PYTHON3_EXECUTABLE python3)
-
-if(NOT PYTHON3_EXECUTABLE)
-    message(FATAL_ERROR "python3 not found. Required for plugin wrapper generation.")
-endif()
+# find_package, not find_program(python3): native Windows exposes the
+# interpreter as python.exe / py.exe, and the program-name lookup fails
+# there even when Python is installed. Kept as PYTHON3_EXECUTABLE so the
+# ExternalProject step definitions below stay unchanged.
+find_package(Python3 COMPONENTS Interpreter REQUIRED)
+set(PYTHON3_EXECUTABLE "${Python3_EXECUTABLE}")
 
 include(ExternalProject)
 

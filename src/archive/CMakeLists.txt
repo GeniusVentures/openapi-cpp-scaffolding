@@ -35,7 +35,8 @@ set_target_properties(archive_api PROPERTIES
 foreach(_CONFIG ${CMAKE_CONFIGURATION_TYPES})
     string(TOUPPER "${_CONFIG}" _CONFIG_UPPER)
     set_target_properties(archive_api PROPERTIES
-        RUNTIME_OUTPUT_DIRECTORY_${_CONFIG_UPPER} "${CMAKE_BINARY_DIR}/plugins")
+        RUNTIME_OUTPUT_DIRECTORY_${_CONFIG_UPPER} "${CMAKE_BINARY_DIR}/plugins"
+        LIBRARY_OUTPUT_DIRECTORY_${_CONFIG_UPPER} "${CMAKE_BINARY_DIR}/plugins")
 endforeach()
 
 install(TARGETS archive_api
