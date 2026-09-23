@@ -58,6 +58,16 @@ foreach(SPEC_FILE ${SPEC_FILES})
         set(_SCHEMA_MAPPING_ARGS --schema-mappings ${API_SCHEMA_MAPPINGS})
     endif()
 
+    # ExternalProject steps must chdir into a directory that exists at build
+    # time. In-tree domains run from their source dir (picking up the
+    # per-domain openapitools.json generator pin). A redirected domain whose
+    # prefix has no scaffold src/ entry falls back to the generation dir —
+    # the cmake-time plugin-placeholder write guarantees it exists.
+    set(_EP_WORK_DIR "${SRC_DIR}")
+    if(NOT EXISTS "${_EP_WORK_DIR}")
+        set(_EP_WORK_DIR "${GEN_DIR}")
+    endif()
+
     set(PLUGIN_CPP "${GEN_DIR}/${PREFIX}_plugin.cpp")
 
     # Create cmake-time placeholder — overwritten by generate_plugin.py during build
@@ -89,7 +99,7 @@ foreach(SPEC_FILE ${SPEC_FILES})
             ${_SCHEMA_MAPPING_ARGS}
         DEPENDS ${SPEC_FILE}
         DEPENDEES configure
-        WORKING_DIRECTORY "${SRC_DIR}"
+        WORKING_DIRECTORY "${_EP_WORK_DIR}"
         COMMENT "Generating C++ API code for ${PREFIX} from ${SPEC_BASENAME}"
         ALWAYS OFF
         LOG ON
@@ -100,7 +110,7 @@ foreach(SPEC_FILE ${SPEC_FILES})
         ExternalProject_Add_Step(${PREFIX}_api_ep fix_generated
             COMMAND sh -c "${PYTHON3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/../scripts/fix_generated_destructors.py ${GEN_DIR}/model/*.cpp"
             DEPENDEES generate_code
-            WORKING_DIRECTORY "${SRC_DIR}"
+            WORKING_DIRECTORY "${_EP_WORK_DIR}"
             COMMENT "Fixing generated code for ${PREFIX}"
             ALWAYS OFF
             LOG ON
@@ -114,7 +124,7 @@ foreach(SPEC_FILE ${SPEC_FILES})
                 ${PLUGIN_CPP}
             DEPENDS ${SPEC_FILE}
             DEPENDEES fix_generated
-            WORKING_DIRECTORY "${SRC_DIR}"
+            WORKING_DIRECTORY "${_EP_WORK_DIR}"
             COMMENT "Generating plugin wrapper for ${PREFIX}"
             ALWAYS OFF
             LOG ON
