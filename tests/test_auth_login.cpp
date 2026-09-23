@@ -105,7 +105,8 @@ protected:
 
     void SeedUser(const std::string& email,
                   const std::string& password,
-                  const std::string& userId)
+                  const std::string& userId,
+                  const json&        roles = json::array())
     {
         auto hashResult = HashPassword(password);
         ASSERT_FALSE(hashResult.salt.empty());
@@ -130,6 +131,10 @@ protected:
         userJson["tenant_id"] = "default";
         userJson["organization_id"] = "default";
         userJson["status"] = "active";
+        if (!roles.empty())
+        {
+            userJson["roles"] = roles;
+        }
         userJson["created_at"] = "2026-01-01T00:00:00Z";
         userJson["updated_at"] = "2026-01-01T00:00:00Z";
         userJson["password_hash"] = hexEncode(hashResult.hash);
@@ -501,4 +506,144 @@ TEST_F(AuthLoginTest, UsersCreate_Override_MissingEmail_ReturnsInvalidRequest)
 
     EXPECT_TRUE(data.contains("error"));
     EXPECT_EQ("INVALID_REQUEST", data["error"]["code"].get<std::string>());
+}
+
+TEST_F(AuthLoginTest, UsersCreate_Override_NonStringEmail_ReturnsInvalidRequest)
+{
+    m_pm.RegisterHandler("POST", "/api/v1/users", "stub_users_create",
+                         stub_users_create, "Identity", 0);
+    init_identity_overrides(&m_pm, m_locator);
+
+    // PR #4 Codex P2: a non-string email used to throw json::type_error
+    // through PluginManager::Route and terminate the request; the handler
+    // must answer INVALID_REQUEST instead.
+    json body;
+    body["email"] = 7;
+    body["display_name"] = "Numeric Email";
+
+    std::string response = m_pm.Route(m_ctx, "POST", "/api/v1/users", body.dump());
+    auto data = json::parse(response);
+
+    EXPECT_TRUE(data.contains("error"));
+    EXPECT_EQ("INVALID_REQUEST", data["error"]["code"].get<std::string>());
+}
+
+// ============================================================================
+// ACL-CONTRACT-01 (PR #4 Codex P1): login/refresh responses must satisfy the
+// TokenResponse schema — required permissions flattened from the user's
+// roles — and tokens must carry the documented sub/tenant/org/perms claims.
+// ============================================================================
+
+TEST_F(AuthLoginTest, RealHandler_Login_IncludesPermissionsFlattenedFromRoles)
+{
+    init_identity_overrides(&m_pm, m_locator);
+    SeedUser("roles@test.com", kTestPassword, "user-roles-001",
+             json::array({
+                 json{{"name", "pos"},
+                      {"permissions", json::array({"orders:read", "orders:write"})}},
+                 json{{"name", "inventory"},
+                      {"permissions", json::array({"orders:read", "inventory:read"})}},
+             }));
+
+    json body;
+    body["email"] = "roles@test.com";
+    body["password"] = kTestPassword;
+
+    std::string response = m_pm.Route(m_ctx, "POST", "/api/v1/auth/login", body.dump());
+    auto data = json::parse(response);
+    ASSERT_FALSE(data.contains("error")) << response;
+
+    // Flattened in first-seen order with duplicates removed across roles.
+    EXPECT_EQ(json::array({"orders:read", "orders:write", "inventory:read"}),
+              data.at("permissions"))
+        << response;
+
+    // The access token carries the same list under the perms claim.
+    RequestContext tokenCtx;
+    ASSERT_TRUE(ValidateJwtToken(data.at("access_token").get<std::string>(),
+                                 kTestSecret, tokenCtx));
+    const std::vector<std::string> kExpected{"orders:read", "orders:write", "inventory:read"};
+    EXPECT_EQ(kExpected, tokenCtx.permissions);
+}
+
+TEST_F(AuthLoginTest, RealHandler_Login_WithoutRoles_EmptyPermissionsArray)
+{
+    init_identity_overrides(&m_pm, m_locator);
+
+    // kTestEmail was seeded in SetUp without roles.
+    json body;
+    body["email"] = kTestEmail;
+    body["password"] = kTestPassword;
+
+    std::string response = m_pm.Route(m_ctx, "POST", "/api/v1/auth/login", body.dump());
+    auto data = json::parse(response);
+    ASSERT_FALSE(data.contains("error")) << response;
+
+    ASSERT_TRUE(data.contains("permissions")) << response;
+    EXPECT_TRUE(data.at("permissions").is_array());
+    EXPECT_TRUE(data.at("permissions").empty());
+}
+
+TEST_F(AuthLoginTest, RealHandler_Login_NullEmail_ReturnsInvalidRequest)
+{
+    init_identity_overrides(&m_pm, m_locator);
+
+    // PR #4 Codex P2: json null in a required field used to throw
+    // json::type_error past the parse_error-only catch; must answer
+    // INVALID_REQUEST without escaping the handler.
+    json body;
+    body["email"] = nullptr;
+    body["password"] = kTestPassword;
+
+    std::string response = m_pm.Route(m_ctx, "POST", "/api/v1/auth/login", body.dump());
+    auto data = json::parse(response);
+
+    EXPECT_EQ("INVALID_REQUEST", data.at("error").at("code").get<std::string>());
+}
+
+TEST_F(AuthLoginTest, RealHandler_Login_NumberEmail_ReturnsInvalidRequest)
+{
+    init_identity_overrides(&m_pm, m_locator);
+
+    json body;
+    body["email"] = 7;
+    body["password"] = kTestPassword;
+
+    std::string response = m_pm.Route(m_ctx, "POST", "/api/v1/auth/login", body.dump());
+    auto data = json::parse(response);
+
+    EXPECT_EQ("INVALID_REQUEST", data.at("error").at("code").get<std::string>());
+}
+
+TEST_F(AuthLoginTest, RealHandler_Refresh_IncludesPermissionsAndNewToken)
+{
+    init_identity_overrides(&m_pm, m_locator);
+    SeedUser("refresh@test.com", kTestPassword, "user-refresh-001",
+             json::array({
+                 json{{"name", "pos"},
+                      {"permissions", json::array({"orders:read"})}},
+             }));
+
+    json loginBody;
+    loginBody["email"] = "refresh@test.com";
+    loginBody["password"] = kTestPassword;
+    auto login = json::parse(
+        m_pm.Route(m_ctx, "POST", "/api/v1/auth/login", loginBody.dump()));
+    ASSERT_FALSE(login.contains("error"));
+
+    json refreshBody;
+    refreshBody["token"] = login.at("access_token").get<std::string>();
+
+    std::string response = m_pm.Route(m_ctx, "POST", "/api/v1/auth/refresh", refreshBody.dump());
+    auto data = json::parse(response);
+    ASSERT_FALSE(data.contains("error")) << response;
+
+    EXPECT_FALSE(data.at("access_token").get<std::string>().empty());
+    EXPECT_EQ(json::array({"orders:read"}), data.at("permissions")) << response;
+
+    RequestContext tokenCtx;
+    ASSERT_TRUE(ValidateJwtToken(data.at("access_token").get<std::string>(),
+                                 kTestSecret, tokenCtx));
+    const std::vector<std::string> kExpected{"orders:read"};
+    EXPECT_EQ(kExpected, tokenCtx.permissions);
 }

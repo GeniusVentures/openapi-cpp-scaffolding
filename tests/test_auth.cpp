@@ -9,8 +9,12 @@
 
 #include <algorithm>
 #include <string>
+#include <vector>
 
 #include "identity/auth_utils.hpp"
+#include "nlohmann/json.hpp"
+
+using json = nlohmann::json;
 
 // ============================================================================
 // Constants
@@ -20,6 +24,54 @@ static constexpr const char* kTestSecret  = "test-secret-key-for-jwt-signing-32b
 static constexpr const char* kTestUserId  = "user-123";
 static constexpr const char* kTestTenant  = "tenant-456";
 static constexpr const char* kTestOrg     = "org-789";
+
+/// Decode a base64url string (no padding) into bytes; returns empty on bad input.
+static std::string Base64UrlDecode(const std::string& input)
+{
+    static constexpr const char kPad = '=';
+    auto valueOf = [](char c) -> int
+    {
+        if (c >= 'A' && c <= 'Z') return c - 'A';
+        if (c >= 'a' && c <= 'z') return c - 'a' + 26;
+        if (c >= '0' && c <= '9') return c - '0' + 52;
+        if (c == '-') return 62;
+        if (c == '+') return 62;
+        if (c == '_') return 63;
+        if (c == '/') return 63;
+        return -1;
+    };
+
+    std::string out;
+    out.reserve(input.size() * 3 / 4);
+    int buffer = 0;
+    unsigned int bits = 0;
+    for (char c : input)
+    {
+        if (c == kPad) { break; }
+        const int v = valueOf(c);
+        if (v < 0) { return {}; }
+        buffer = (buffer << 6) | v;
+        bits += 6;
+        if (bits >= 8)
+        {
+            bits -= 8;
+            out += static_cast<char>((buffer >> bits) & 0xFF);
+        }
+    }
+    return out;
+}
+
+/// Decode the payload segment of a compact JWT into JSON; {} on failure.
+static json JwtPayload(const std::string& token)
+{
+    const auto firstDot = token.find('.');
+    const auto secondDot = token.find('.', firstDot + 1);
+    if (firstDot == std::string::npos || secondDot == std::string::npos)
+    {
+        return {};
+    }
+    return json::parse(Base64UrlDecode(token.substr(firstDot + 1, secondDot - firstDot - 1)));
+}
 
 // ============================================================================
 // JWT Token Tests
@@ -242,4 +294,79 @@ TEST(AuthJwtTest, CreateJwtToken_EmptySecret_ProducesNonEmptyToken)
     const auto token = CreateJwtToken("", kTestUserId, kTestTenant, kTestOrg);
 
     EXPECT_FALSE(token.empty());
+}
+
+// ============================================================================
+// ACL-CONTRACT-01: JWT claim names + permissions (PR #4 Codex P1 findings)
+// The login contract documents claims sub/tenant/org/perms; creation,
+// validation, and refresh must all speak those names, with perms the
+// flattened {domain}:{action} permission list.
+// ============================================================================
+
+TEST(AuthJwtTest, CreateJwtToken_EmitsContractClaimNames)
+{
+    const std::vector<std::string> kPerms = {"identity:read", "hrm:write"};
+    const auto token = CreateJwtToken(kTestSecret, kTestUserId, kTestTenant, kTestOrg, 3600, kPerms);
+
+    const json payload = JwtPayload(token);
+    ASSERT_FALSE(payload.is_null()) << "JWT payload did not decode";
+
+    EXPECT_EQ(kTestUserId, payload.at("sub").get<std::string>());
+    EXPECT_EQ(kTestTenant, payload.at("tenant").get<std::string>());
+    EXPECT_EQ(kTestOrg, payload.at("org").get<std::string>());
+    EXPECT_EQ(json(kPerms), payload.at("perms"));
+
+    // Legacy claim names must not be emitted alongside the contract names.
+    EXPECT_FALSE(payload.contains("user_id"));
+    EXPECT_FALSE(payload.contains("tenant_id"));
+    EXPECT_FALSE(payload.contains("org_id"));
+}
+
+TEST(AuthJwtTest, CreateJwtToken_WithoutPermissions_EmitsEmptyPermsClaim)
+{
+    const auto token = CreateJwtToken(kTestSecret, kTestUserId, kTestTenant, kTestOrg);
+
+    const json payload = JwtPayload(token);
+    ASSERT_FALSE(payload.is_null());
+    EXPECT_TRUE(payload.at("perms").is_array());
+    EXPECT_TRUE(payload.at("perms").empty());
+}
+
+TEST(AuthJwtTest, ValidateJwtToken_RoundTripsPermissions)
+{
+    const std::vector<std::string> kPerms = {"orders:read", "orders:write"};
+    const auto token = CreateJwtToken(kTestSecret, kTestUserId, kTestTenant, kTestOrg, 3600, kPerms);
+
+    RequestContext ctx;
+    ASSERT_TRUE(ValidateJwtToken(token, kTestSecret, ctx));
+    EXPECT_EQ(kPerms, ctx.permissions);
+    EXPECT_TRUE(ctx.authenticated);
+}
+
+TEST(AuthJwtTest, ValidateJwtToken_EmptyPermsClaim_LeavesPermissionsEmpty)
+{
+    // A roleless user's token carries an empty perms claim; validation must
+    // succeed and leave the context's permission list empty.
+    const auto token = CreateJwtToken(kTestSecret, kTestUserId, kTestTenant, kTestOrg, 3600, {});
+
+    RequestContext ctx;
+    ASSERT_TRUE(ValidateJwtToken(token, kTestSecret, ctx));
+    EXPECT_TRUE(ctx.permissions.empty());
+}
+
+TEST(AuthJwtTest, RefreshJwtToken_PreservesPermissionsAndOutputsThem)
+{
+    const std::vector<std::string> kPerms = {"pos:operate", "inventory:read"};
+    const auto token = CreateJwtToken(kTestSecret, kTestUserId, kTestTenant, kTestOrg, 3600, kPerms);
+
+    std::string refreshed;
+    std::vector<std::string> permsOut;
+    ASSERT_TRUE(RefreshJwtToken(token, kTestSecret, 86400, refreshed, 3600, &permsOut))
+        << "refresh must accept the token it just created";
+
+    EXPECT_EQ(kPerms, permsOut);
+
+    RequestContext ctx;
+    ASSERT_TRUE(ValidateJwtToken(refreshed, kTestSecret, ctx));
+    EXPECT_EQ(kPerms, ctx.permissions) << "refresh must re-issue perms in the new token";
 }

@@ -37,7 +37,8 @@ std::string CreateJwtToken(
     const std::string& userId,
     const std::string& tenantId,
     const std::string& orgId,
-    int                expirySeconds) noexcept
+    int                expirySeconds,
+    const std::vector<std::string>& permissions) noexcept
 {
     try
     {
@@ -48,9 +49,10 @@ std::string CreateJwtToken(
                          .set_type("JWS")
                          .set_issued_at(now)
                          .set_expires_at(exp)
-                         .set_payload_claim("user_id", jwt::claim(userId))
-                         .set_payload_claim("tenant_id", jwt::claim(tenantId))
-                         .set_payload_claim("org_id", jwt::claim(orgId))
+                         .set_payload_claim("sub", jwt::claim(userId))
+                         .set_payload_claim("tenant", jwt::claim(tenantId))
+                         .set_payload_claim("org", jwt::claim(orgId))
+                         .set_payload_claim("perms", jwt::claim(permissions.begin(), permissions.end()))
                          .sign(jwt::algorithm::hs256{secret});
 
         return token;
@@ -74,9 +76,20 @@ bool ValidateJwtToken(
             .allow_algorithm(jwt::algorithm::hs256{secret})
             .verify(decoded);
 
-        ctx_out.userId         = decoded.get_payload_claim("user_id").as_string();
-        ctx_out.tenantId       = decoded.get_payload_claim("tenant_id").as_string();
-        ctx_out.organizationId = decoded.get_payload_claim("org_id").as_string();
+        ctx_out.userId         = decoded.get_payload_claim("sub").as_string();
+        ctx_out.tenantId       = decoded.get_payload_claim("tenant").as_string();
+        ctx_out.organizationId = decoded.get_payload_claim("org").as_string();
+        ctx_out.permissions.clear();
+        if (decoded.has_payload_claim("perms"))
+        {
+            for (const auto& entry : decoded.get_payload_claim("perms").as_array())
+            {
+                if (entry.is<std::string>())
+                {
+                    ctx_out.permissions.push_back(entry.get<std::string>());
+                }
+            }
+        }
         ctx_out.authenticated  = true;
 
         return true;
@@ -155,7 +168,8 @@ bool RefreshJwtToken(
     const std::string& secret,
     int                leewaySeconds,
     std::string&       newToken_out,
-    int                expirySeconds) noexcept
+    int                expirySeconds,
+    std::vector<std::string>* permissions_out) noexcept
 {
     try
     {
@@ -166,11 +180,27 @@ bool RefreshJwtToken(
             .leeway(static_cast<size_t>(leewaySeconds))
             .verify(decoded);
 
-        std::string userId   = decoded.get_payload_claim("user_id").as_string();
-        std::string tenantId = decoded.get_payload_claim("tenant_id").as_string();
-        std::string orgId    = decoded.get_payload_claim("org_id").as_string();
+        std::string userId   = decoded.get_payload_claim("sub").as_string();
+        std::string tenantId = decoded.get_payload_claim("tenant").as_string();
+        std::string orgId    = decoded.get_payload_claim("org").as_string();
 
-        newToken_out = CreateJwtToken(secret, userId, tenantId, orgId, expirySeconds);
+        std::vector<std::string> permissions;
+        if (decoded.has_payload_claim("perms"))
+        {
+            for (const auto& entry : decoded.get_payload_claim("perms").as_array())
+            {
+                if (entry.is<std::string>())
+                {
+                    permissions.push_back(entry.get<std::string>());
+                }
+            }
+        }
+
+        newToken_out = CreateJwtToken(secret, userId, tenantId, orgId, expirySeconds, permissions);
+        if (permissions_out != nullptr)
+        {
+            *permissions_out = std::move(permissions);
+        }
         return !newToken_out.empty();
     }
     catch (...)
