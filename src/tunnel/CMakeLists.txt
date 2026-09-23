@@ -31,8 +31,14 @@ target_link_libraries(tunnel_api PRIVATE
 
 set_target_properties(tunnel_api PROPERTIES
     LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/plugins"
+    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/plugins"
     PREFIX ""
 )
+foreach(_CONFIG ${CMAKE_CONFIGURATION_TYPES})
+    string(TOUPPER "${_CONFIG}" _CONFIG_UPPER)
+    set_target_properties(tunnel_api PROPERTIES
+        RUNTIME_OUTPUT_DIRECTORY_${_CONFIG_UPPER} "${CMAKE_BINARY_DIR}/plugins")
+endforeach()
 
 install(TARGETS tunnel_api
     LIBRARY DESTINATION plugins

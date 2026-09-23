@@ -29,8 +29,14 @@ target_link_libraries(archive_api PRIVATE
 
 set_target_properties(archive_api PROPERTIES
     LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/plugins"
+    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/plugins"
     PREFIX ""
 )
+foreach(_CONFIG ${CMAKE_CONFIGURATION_TYPES})
+    string(TOUPPER "${_CONFIG}" _CONFIG_UPPER)
+    set_target_properties(archive_api PROPERTIES
+        RUNTIME_OUTPUT_DIRECTORY_${_CONFIG_UPPER} "${CMAKE_BINARY_DIR}/plugins")
+endforeach()
 
 install(TARGETS archive_api
     LIBRARY DESTINATION plugins

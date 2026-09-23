@@ -52,11 +52,20 @@ macro(build_domain_plugin PREFIX PLUGIN_SUBDIR)
         add_dependencies(${PREFIX}_api ${PREFIX}_api_ep)
     endif()
 
-    # Output to plugins/ directory for easy server loading
+    # Output to plugins/ directory for easy server loading. RUNTIME too: on
+    # Windows the plugin DLL is the runtime artifact — LIBRARY_OUTPUT_DIRECTORY
+    # only steers the import library. Multi-config generators append $<CONFIG>
+    # to the plain directories; the per-config entries pin the DLL into plugins/.
     set_target_properties(${PREFIX}_api PROPERTIES
         LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/plugins"
+        RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/plugins"
         PREFIX ""
     )
+    foreach(_CONFIG ${CMAKE_CONFIGURATION_TYPES})
+        string(TOUPPER "${_CONFIG}" _CONFIG_UPPER)
+        set_target_properties(${PREFIX}_api PROPERTIES
+            RUNTIME_OUTPUT_DIRECTORY_${_CONFIG_UPPER} "${CMAKE_BINARY_DIR}/plugins")
+    endforeach()
 
     # Install plugin .dylib/.so/.dll to <prefix>/plugins/
     install(TARGETS ${PREFIX}_api
