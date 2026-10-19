@@ -234,7 +234,8 @@ private:
         m_response.set(http::field::access_control_allow_headers,
                        "Content-Type, Authorization, "
                        "X-Tenant-Id, X-Organization-Id, X-Location-Id, "
-                       "Idempotency-Key, Accept");
+                       "Idempotency-Key, Accept, "
+                       "CF-Access-Client-Id, CF-Access-Client-Secret");
         m_response.set(http::field::access_control_max_age, "86400");
     }
 
