@@ -63,6 +63,54 @@ std::string CreateJwtToken(
     }
 }
 
+std::string CreateRefreshToken(
+    const std::string& secret,
+    const std::string& userId,
+    const std::string& tenantId,
+    const std::string& orgId,
+    int                expirySeconds) noexcept
+{
+    try
+    {
+        // Random 16-byte jti (hex-encoded) — guarantees uniqueness across
+        // same-second mints; see the header contract.
+        unsigned char jtiBytes[16];
+        if (RAND_bytes(jtiBytes, static_cast<int>(sizeof(jtiBytes))) != 1)
+        {
+            return {};
+        }
+        static constexpr char kHex[] = "0123456789abcdef";
+        std::string jti;
+        jti.reserve(sizeof(jtiBytes) * 2);
+        for (unsigned char b : jtiBytes)
+        {
+            jti += kHex[(b >> 4) & 0xF];
+            jti += kHex[b & 0xF];
+        }
+
+        const auto now = std::chrono::system_clock::now();
+        const auto exp = now + std::chrono::seconds{expirySeconds};
+
+        auto token = jwt::create()
+                         .set_type("JWS")
+                         .set_issued_at(now)
+                         .set_expires_at(exp)
+                         .set_payload_claim("jti", jwt::claim(jti))
+                         .set_payload_claim("sub", jwt::claim(userId))
+                         .set_payload_claim("tenant", jwt::claim(tenantId))
+                         .set_payload_claim("org", jwt::claim(orgId))
+                         .set_payload_claim("perms", jwt::claim(std::vector<std::string>{}.begin(),
+                                                                std::vector<std::string>{}.end()))
+                         .sign(jwt::algorithm::hs256{secret});
+
+        return token;
+    }
+    catch (...)
+    {
+        return {};
+    }
+}
+
 bool ValidateJwtToken(
     const std::string& token,
     const std::string& secret,

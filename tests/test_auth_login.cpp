@@ -631,8 +631,12 @@ TEST_F(AuthLoginTest, RealHandler_Refresh_IncludesPermissionsAndNewToken)
         m_pm.Route(m_ctx, "POST", "/api/v1/auth/login", loginBody.dump()));
     ASSERT_FALSE(login.contains("error"));
 
+    // D-03: the wire field is refresh_token; login must have issued one.
+    ASSERT_FALSE(login.at("refresh_token").get<std::string>().empty())
+        << "login must issue a refresh token alongside the access token";
+
     json refreshBody;
-    refreshBody["token"] = login.at("access_token").get<std::string>();
+    refreshBody["refresh_token"] = login.at("refresh_token").get<std::string>();
 
     std::string response = m_pm.Route(m_ctx, "POST", "/api/v1/auth/refresh", refreshBody.dump());
     auto data = json::parse(response);
@@ -640,6 +644,13 @@ TEST_F(AuthLoginTest, RealHandler_Refresh_IncludesPermissionsAndNewToken)
 
     EXPECT_FALSE(data.at("access_token").get<std::string>().empty());
     EXPECT_EQ(json::array({"orders:read"}), data.at("permissions")) << response;
+
+    // Full TokenResponse (D-04): the spec-required user object is present and
+    // the response carries a NEW refresh credential — rotation.
+    ASSERT_TRUE(data.contains("user")) << response;
+    EXPECT_NE(login.at("refresh_token").get<std::string>(),
+              data.at("refresh_token").get<std::string>())
+        << "each refresh must return a NEW refresh token";
 
     RequestContext tokenCtx;
     ASSERT_TRUE(ValidateJwtToken(data.at("access_token").get<std::string>(),
@@ -680,7 +691,7 @@ TEST_F(AuthLoginTest, RealHandler_Refresh_AfterRoleRevocation_DropsPermissions)
     ASSERT_TRUE(m_engine->Put(userKey.value(), user.dump()));
 
     json refreshBody;
-    refreshBody["token"] = login.at("access_token").get<std::string>();
+    refreshBody["refresh_token"] = login.at("refresh_token").get<std::string>();
     std::string response = m_pm.Route(m_ctx, "POST", "/api/v1/auth/refresh", refreshBody.dump());
     auto data = json::parse(response);
     ASSERT_FALSE(data.contains("error")) << response;
@@ -712,7 +723,7 @@ TEST_F(AuthLoginTest, RealHandler_Refresh_DeletedUser_ReturnsInvalidToken)
     ASSERT_TRUE(m_engine->Delete(userKey.value()));
 
     json refreshBody;
-    refreshBody["token"] = login.at("access_token").get<std::string>();
+    refreshBody["refresh_token"] = login.at("refresh_token").get<std::string>();
     std::string response = m_pm.Route(m_ctx, "POST", "/api/v1/auth/refresh", refreshBody.dump());
     auto data = json::parse(response);
 
