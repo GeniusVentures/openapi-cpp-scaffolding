@@ -954,7 +954,8 @@
         "type": "object",
         "properties": {
           "refresh_token": {
-            "type": "string"
+            "type": "string",
+            "description": "The rotating refresh token issued by login or a previous refresh. Only the most recently issued refresh token for the user is valid."
           }
         },
         "required": [
@@ -1092,7 +1093,8 @@
             "type": "string"
           },
           "refresh_token": {
-            "type": "string"
+            "type": "string",
+            "description": "Rotating refresh token (latest-wins per user, 7-day lifetime). Each login or refresh mints a new refresh token and invalidates the previously issued one — only the most recently issued refresh token for the user is valid at any time."
           },
           "token_type": {
             "type": "string",
