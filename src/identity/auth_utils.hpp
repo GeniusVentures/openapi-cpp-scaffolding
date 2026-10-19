@@ -43,6 +43,28 @@ std::string CreateJwtToken(
     const std::vector<std::string>& permissions = {}) noexcept;
 
 ///
+/// Create an HS256-signed JWT refresh credential with identity claims and a
+/// random jti claim. Identical to CreateJwtToken except that the credential
+/// carries no permissions (it is a refresh credential, never an authorization
+/// token) and always embeds a unique jti: two credentials minted for the same
+/// user within the same second must still differ byte-for-byte, which the
+/// latest-wins refresh-record comparison (D-04) depends on — CreateJwtToken's
+/// second-resolution iat/exp claims alone cannot guarantee that.
+/// @param secret          Signing secret (minimum 32 bytes recommended)
+/// @param userId          User identifier claim (sub)
+/// @param tenantId        Tenant identifier claim (tenant)
+/// @param orgId           Organization identifier claim (org)
+/// @param expirySeconds   Credential lifetime in seconds
+/// @return Compact JWT string in header.payload.signature format, empty on failure
+///
+std::string CreateRefreshToken(
+    const std::string& secret,
+    const std::string& userId,
+    const std::string& tenantId,
+    const std::string& orgId,
+    int                expirySeconds) noexcept;
+
+///
 /// Validate an HS256-signed JWT token and extract claims into a RequestContext.
 /// Populates ctx_out.userId/tenantId/organizationId from the sub/tenant/org
 /// claims and ctx_out.permissions from the perms claim when present.

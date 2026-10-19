@@ -18,9 +18,11 @@
 #include "storage/KeyBuilder.hpp"
 #include "nlohmann/json.hpp"
 #include <spdlog/spdlog.h>
+#include <openssl/crypto.h>
 #include <chrono>
 #include <ctime>
 #include <iomanip>
+#include <optional>
 #include <random>
 #include <sstream>
 
@@ -34,8 +36,8 @@ static std::string s_jwtSecret;
 // Auth Constants
 // ============================================================================
 
-static constexpr int kTokenExpirySeconds   = 3600;   ///< Access-token lifetime
-static constexpr int kRefreshLeewaySeconds = 86400;  ///< Refresh accepts tokens expired ≤24h
+static constexpr int kTokenExpirySeconds       = 3600;   ///< Access-token lifetime (D-05)
+static constexpr int kRefreshTokenExpirySeconds = 604800; ///< Refresh-credential lifetime — 7d (D-05)
 
 // ============================================================================
 // Hex Helpers
@@ -71,6 +73,59 @@ static PasswordHash BuildStoredHash(const json& u) noexcept
 }
 
 static void StripPasswordFields(json& u) noexcept { u.erase("password_hash"); u.erase("password_salt"); u.erase("password_iterations"); }
+
+/// Get current UTC timestamp in ISO 8601 format
+static std::string GetCurrentTimestamp() noexcept
+{
+    auto now = std::chrono::system_clock::now();
+    auto time = std::chrono::system_clock::to_time_t(now);
+    std::ostringstream oss;
+    oss << std::put_time(std::gmtime(&time), "%Y-%m-%dT%H:%M:%SZ");
+    return oss.str();
+}
+
+/**
+ * @brief      Mint a rotating refresh credential and persist the latest-wins record (D-04)
+ *
+ * One refresh token per user: the record at identity/refresh_tokens/<userId>
+ * is overwritten on every login/refresh, so issuing a new credential
+ * invalidates the previously issued one atomically in a single key. The
+ * credential carries a random jti claim so two mints for the same user in the
+ * same second still differ byte-for-byte.
+ *
+ * @param      userId    User the credential belongs to (record key + sub claim)
+ * @param      tenantId  Tenant claim (from the current user document)
+ * @param      orgId     Organization claim (from the current user document)
+ * @param      tokenOut  Output — the minted refresh credential (empty on failure)
+ *
+ * @return     nullopt on success; the error-envelope JSON string on failure
+ */
+static std::optional<std::string> IssueRefreshToken(const std::string& userId,
+                                                    const std::string& tenantId,
+                                                    const std::string& orgId,
+                                                    std::string&       tokenOut)
+{
+    tokenOut = CreateRefreshToken(s_jwtSecret, userId, tenantId, orgId, kRefreshTokenExpirySeconds);
+    if (tokenOut.empty())
+    {
+        return std::optional<std::string>(R"({"error":{"code":"TOKEN_ERROR","message":"Failed to create token"}})");
+    }
+
+    auto keyResult = KeyBuilder::Build("identity", "refresh_tokens", userId);
+    if (!keyResult.has_value())
+    {
+        return std::optional<std::string>(R"({"error":{"code":"INVALID_KEY","message":"Failed to build storage key"}})");
+    }
+
+    json record;
+    record["token"]      = tokenOut;
+    record["updated_at"] = GetCurrentTimestamp();
+    if (!s_storage->Put(keyResult.value(), record.dump()))
+    {
+        return std::optional<std::string>(R"({"error":{"code":"STORAGE_ERROR","message":"Failed to store entity"}})");
+    }
+    return std::nullopt;
+}
 
 // ============================================================================
 // Auth Handlers
@@ -163,8 +218,15 @@ static std::string auth_login(const RequestContext& /*ctx*/, const std::string& 
         std::string tok = CreateJwtToken(s_jwtSecret, userId, u.value("tenant_id",""), u.value("organization_id",""), kTokenExpirySeconds, permissions);
         if (tok.empty()) return R"({"error":{"code":"TOKEN_ERROR","message":"Failed to create token"}})";
 
+        // D-04: login issues the access + rotating refresh pair; the mint
+        // overwrites the latest-wins record, invalidating any previous login's
+        // refresh credential.
+        std::string refreshTok;
+        if (auto err = IssueRefreshToken(userId, u.value("tenant_id",""), u.value("organization_id",""), refreshTok))
+            return *err;
+
         StripPasswordFields(u);
-        json r; r["access_token"]=tok; r["token_type"]="Bearer"; r["expires_in"]=kTokenExpirySeconds; r["user"]=u; r["permissions"]=permissions;
+        json r; r["access_token"]=tok; r["refresh_token"]=refreshTok; r["token_type"]="Bearer"; r["expires_in"]=kTokenExpirySeconds; r["user"]=u; r["permissions"]=permissions;
         return r.dump();
     } catch (const json::parse_error&) { return R"({"error":{"code":"PARSE_ERROR","message":"Invalid JSON body"}})"; }
       catch (const json::exception&)   { return R"({"error":{"code":"INVALID_REQUEST","message":"Request body fields have invalid types"}})"; }
@@ -187,16 +249,34 @@ static std::string auth_refreshToken(const RequestContext&, const std::string&, 
 {
     try {
         json req = json::parse(body);
-        if (!req.contains("token")) return R"({"error":{"code":"INVALID_REQUEST","message":"Token is required"}})";
-        std::string old = req["token"].get<std::string>();
+        // D-03: the wire field is refresh_token; the legacy token field no
+        // longer exists on this handler.
+        if (!req.contains("refresh_token") || !req["refresh_token"].is_string() || req["refresh_token"].get<std::string>().empty())
+            return R"({"error":{"code":"INVALID_REQUEST","message":"Refresh token is required"}})";
+        std::string presented = req["refresh_token"].get<std::string>();
 
-        // Validate with refresh leeway, then re-resolve the user's CURRENT
-        // roles from storage — never carry the old token's perms claim, so a
-        // revoked role dies at the next refresh even while the old token is
-        // still within its refresh window.
+        // D-04: STRICT validation — zero leeway; the stored latest-wins record
+        // is the single validity notion. Then re-resolve the user's CURRENT
+        // roles from storage — never carry the old credential's perms claim,
+        // so a revoked role dies at the next refresh.
         RequestContext ctx;
-        if (!ValidateJwtToken(old, s_jwtSecret, ctx, kRefreshLeewaySeconds))
-            return R"({"error":{"code":"INVALID_TOKEN","message":"Token is invalid or expired beyond refresh window"}})";
+        if (!ValidateJwtToken(presented, s_jwtSecret, ctx, 0))
+            return R"({"error":{"code":"INVALID_TOKEN","message":"Token is invalid or expired"}})";
+
+        auto rrKey = KeyBuilder::Build("identity", "refresh_tokens", ctx.userId);
+        if (!rrKey.has_value())
+            return R"({"error":{"code":"INVALID_TOKEN","message":"No active session — sign in again"}})";
+        std::string recordStr;
+        if (!s_storage->Get(rrKey.value(), recordStr))
+            return R"({"error":{"code":"INVALID_TOKEN","message":"No active session — sign in again"}})";
+        json record = json::parse(recordStr);
+        std::string stored = record.value("token", std::string());
+        // Constant-time compare: equal sizes first, then CRYPTO_memcmp. A
+        // mismatch means the presented credential was superseded (rotated or
+        // a newer login) — there is no window where both are valid.
+        if (stored.size() != presented.size() ||
+            CRYPTO_memcmp(stored.data(), presented.data(), presented.size()) != 0)
+            return R"({"error":{"code":"INVALID_TOKEN","message":"Refresh token is no longer valid"}})";
 
         auto ukr = KeyBuilder::Build("identity", "users", ctx.userId);
         if (!ukr.has_value()) return R"({"error":{"code":"INVALID_TOKEN","message":"Account no longer exists"}})";
@@ -209,7 +289,14 @@ static std::string auth_refreshToken(const RequestContext&, const std::string&, 
         std::string nw = CreateJwtToken(s_jwtSecret, ctx.userId, u.value("tenant_id", ctx.tenantId), u.value("organization_id", ctx.organizationId), kTokenExpirySeconds, permissions);
         if (nw.empty()) return R"({"error":{"code":"TOKEN_ERROR","message":"Failed to create token"}})";
 
-        json r; r["access_token"]=nw; r["token_type"]="Bearer"; r["expires_in"]=kTokenExpirySeconds; r["permissions"]=permissions;
+        // Rotation: mint the NEW refresh credential and overwrite the record —
+        // the previous credential dies with the same Put.
+        std::string newRefresh;
+        if (auto err = IssueRefreshToken(ctx.userId, u.value("tenant_id", ctx.tenantId), u.value("organization_id", ctx.organizationId), newRefresh))
+            return *err;
+
+        StripPasswordFields(u);
+        json r; r["access_token"]=nw; r["refresh_token"]=newRefresh; r["token_type"]="Bearer"; r["expires_in"]=kTokenExpirySeconds; r["user"]=u; r["permissions"]=permissions;
         return r.dump();
     } catch (const json::parse_error&) { return R"({"error":{"code":"PARSE_ERROR","message":"Invalid JSON body"}})"; }
       catch (const json::exception&)   { return R"({"error":{"code":"INVALID_REQUEST","message":"Request body fields have invalid types"}})"; }
@@ -241,16 +328,6 @@ static std::string GenerateUserUuid() noexcept
         result += kHexChars[dist(rng)];
     }
     return result;
-}
-
-/// Get current UTC timestamp in ISO 8601 format
-static std::string GetCurrentTimestamp() noexcept
-{
-    auto now = std::chrono::system_clock::now();
-    auto time = std::chrono::system_clock::to_time_t(now);
-    std::ostringstream oss;
-    oss << std::put_time(std::gmtime(&time), "%Y-%m-%dT%H:%M:%SZ");
-    return oss.str();
 }
 
 /**
