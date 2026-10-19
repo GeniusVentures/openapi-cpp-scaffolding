@@ -783,6 +783,13 @@ TEST_F(AuthLoginTest, RealHandler_Login_IssuesRefreshToken)
     const std::string issued = login.at("refresh_token").get<std::string>();
     EXPECT_FALSE(issued.empty()) << "login must issue a refresh token (D-04)";
 
+    // Prohibition P2: the embedded user carries no password material.
+    ASSERT_TRUE(login.contains("user")) << login.dump();
+    EXPECT_FALSE(login.at("user").contains("password_hash"));
+    EXPECT_FALSE(login.at("user").contains("password_salt"));
+    EXPECT_FALSE(login.at("user").contains("password_iterations"))
+        << "login response user must carry no password fields (P2)";
+
     // The engine holds the latest-wins record and it carries exactly the
     // credential that was returned.
     auto recordKey = KeyBuilder::Build("identity", "refresh_tokens", "user-rotate-001");
@@ -821,6 +828,12 @@ TEST_F(AuthLoginTest, RealHandler_Refresh_RotatesLatestWins)
     EXPECT_NE(firstRefresh, secondRefresh)
         << "each refresh must return a NEW refresh token (D-04 rotation)";
     ASSERT_TRUE(data.contains("user")) << data.dump();
+    // Prohibition P2: StripPasswordFields applies to the refresh path exactly
+    // as it does to login — no password material in the embedded user.
+    EXPECT_FALSE(data.at("user").contains("password_hash"));
+    EXPECT_FALSE(data.at("user").contains("password_salt"));
+    EXPECT_FALSE(data.at("user").contains("password_iterations"))
+        << "refresh response user must carry no password fields (P2)";
     EXPECT_EQ(json::array({"orders:read"}), data.at("permissions"))
         << data.dump();
 
