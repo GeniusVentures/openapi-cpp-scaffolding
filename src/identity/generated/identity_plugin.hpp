@@ -3,7 +3,7 @@
  * @brief      Auto-generated OOP plugin wrapper for AI-Native Business OS API - Identity
  * @date       auto-generated
  *
- * DO NOT EDIT â€” regenerated from identity_openapi.json
+ * DO NOT EDIT — regenerated from identity_openapi.json
  *
  * Handler stubs are protected virtual instance methods. Storage is
  * a protected instance member (m_storage). Initialize() delegates
@@ -75,7 +75,7 @@ protected:
     }
 
 ///
-/// CRUD handler for login â€” create a new login entity
+/// CRUD handler for login — create a new login entity
 ///
     virtual std::string login(
         const RequestContext& ctx,
@@ -113,7 +113,7 @@ protected:
     }
 
 ///
-/// CRUD handler for logout â€” create a new logout entity
+/// CRUD handler for logout — create a new logout entity
 ///
     virtual std::string logout(
         const RequestContext& ctx,
@@ -151,7 +151,7 @@ protected:
     }
 
 ///
-/// CRUD handler for getCurrentUser â€” list me entities
+/// CRUD handler for getCurrentUser — list me entities
 ///
     virtual std::string getCurrentUser(
         const RequestContext& /*ctx*/,
@@ -188,7 +188,7 @@ protected:
     }
 
 ///
-/// CRUD handler for refreshToken â€” create a new refresh entity
+/// CRUD handler for refreshToken — create a new refresh entity
 ///
     virtual std::string refreshToken(
         const RequestContext& ctx,
@@ -226,7 +226,7 @@ protected:
     }
 
 ///
-/// CRUD handler for listRoles â€” list roles entities
+/// CRUD handler for listRoles — list roles entities
 ///
     virtual std::string listRoles(
         const RequestContext& /*ctx*/,
@@ -263,7 +263,7 @@ protected:
     }
 
 ///
-/// CRUD handler for createRole â€” create a new roles entity
+/// CRUD handler for createRole — create a new roles entity
 ///
     virtual std::string createRole(
         const RequestContext& ctx,
@@ -301,7 +301,7 @@ protected:
     }
 
 ///
-/// CRUD handler for getRole â€” get a single roles entity
+/// CRUD handler for getRole — get a single roles entity
 ///
     virtual std::string getRole(
         const RequestContext& /*ctx*/,
@@ -330,7 +330,7 @@ protected:
     }
 
 ///
-/// CRUD handler for updateRole â€” update an existing roles entity
+/// CRUD handler for updateRole — update an existing roles entity
 ///
     virtual std::string updateRole(
         const RequestContext& /*ctx*/,
@@ -372,7 +372,7 @@ protected:
     }
 
 ///
-/// CRUD handler for deleteRole â€” delete a roles entity
+/// CRUD handler for deleteRole — delete a roles entity
 ///
     virtual std::string deleteRole(
         const RequestContext& /*ctx*/,
@@ -397,7 +397,7 @@ protected:
     }
 
 ///
-/// CRUD handler for listUsers â€” list users entities
+/// CRUD handler for listUsers — list users entities
 ///
     virtual std::string listUsers(
         const RequestContext& /*ctx*/,
@@ -434,7 +434,7 @@ protected:
     }
 
 ///
-/// CRUD handler for createUser â€” create a new users entity
+/// CRUD handler for createUser — create a new users entity
 ///
     virtual std::string createUser(
         const RequestContext& ctx,
@@ -472,7 +472,7 @@ protected:
     }
 
 ///
-/// CRUD handler for getUser â€” get a single users entity
+/// CRUD handler for getUser — get a single users entity
 ///
     virtual std::string getUser(
         const RequestContext& /*ctx*/,
@@ -501,7 +501,7 @@ protected:
     }
 
 ///
-/// CRUD handler for updateUser â€” update an existing users entity
+/// CRUD handler for updateUser — update an existing users entity
 ///
     virtual std::string updateUser(
         const RequestContext& /*ctx*/,
@@ -543,7 +543,7 @@ protected:
     }
 
 ///
-/// CRUD handler for deleteUser â€” delete a users entity
+/// CRUD handler for deleteUser — delete a users entity
 ///
     virtual std::string deleteUser(
         const RequestContext& /*ctx*/,
