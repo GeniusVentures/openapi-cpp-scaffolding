@@ -34,7 +34,7 @@ public:
     /// @param  hash    FNV-1a hash of the service name
     /// @param  service Pointer to the service instance
     ///
-    void RegisterService(uint64_t hash, void* service) noexcept
+    void RegisterService(uint64_t hash, void* service) noexcept override
     {
         m_services[hash] = service;
     }
