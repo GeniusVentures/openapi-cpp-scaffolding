@@ -647,3 +647,328 @@ TEST_F(AuthLoginTest, RealHandler_Refresh_IncludesPermissionsAndNewToken)
     const std::vector<std::string> kExpected{"orders:read"};
     EXPECT_EQ(kExpected, tokenCtx.permissions);
 }
+
+// ============================================================================
+// Refresh re-resolves roles from storage (PR #4 round-3 P1): a revocation
+// made after the token was minted must kill the privileges at the next
+// refresh; a deleted account must not be able to refresh at all.
+// ============================================================================
+
+TEST_F(AuthLoginTest, RealHandler_Refresh_AfterRoleRevocation_DropsPermissions)
+{
+    init_identity_overrides(&m_pm, m_locator);
+    SeedUser("revoke@test.com", kTestPassword, "user-revoke-001",
+             json::array({
+                 json{{"name", "pos"},
+                      {"permissions", json::array({"orders:read", "orders:write"})}},
+             }));
+
+    json loginBody;
+    loginBody["email"] = "revoke@test.com";
+    loginBody["password"] = kTestPassword;
+    std::string loginResponse = m_pm.Route(m_ctx, "POST", "/api/v1/auth/login", loginBody.dump());
+    auto login = json::parse(loginResponse);
+    ASSERT_FALSE(login.contains("error")) << loginResponse;
+
+    // Revoke every role in storage AFTER the token was minted.
+    auto userKey = KeyBuilder::Build("identity", "users", "user-revoke-001");
+    ASSERT_TRUE(userKey.has_value());
+    std::string stored;
+    ASSERT_TRUE(m_engine->Get(userKey.value(), stored));
+    json user = json::parse(stored);
+    user["roles"] = json::array();
+    ASSERT_TRUE(m_engine->Put(userKey.value(), user.dump()));
+
+    json refreshBody;
+    refreshBody["refresh_token"] = login.at("refresh_token").get<std::string>();
+    std::string response = m_pm.Route(m_ctx, "POST", "/api/v1/auth/refresh", refreshBody.dump());
+    auto data = json::parse(response);
+    ASSERT_FALSE(data.contains("error")) << response;
+
+    EXPECT_TRUE(data.at("permissions").empty())
+        << "revoked roles must not survive the refresh";
+
+    RequestContext tokenCtx;
+    ASSERT_TRUE(ValidateJwtToken(data.at("access_token").get<std::string>(),
+                                 kTestSecret, tokenCtx));
+    EXPECT_TRUE(tokenCtx.permissions.empty())
+        << "replacement token must not carry the revoked perms claim";
+}
+
+TEST_F(AuthLoginTest, RealHandler_Refresh_DeletedUser_ReturnsInvalidToken)
+{
+    init_identity_overrides(&m_pm, m_locator);
+    SeedUser("deleted@test.com", kTestPassword, "user-deleted-001");
+
+    json loginBody;
+    loginBody["email"] = "deleted@test.com";
+    loginBody["password"] = kTestPassword;
+    std::string loginResponse = m_pm.Route(m_ctx, "POST", "/api/v1/auth/login", loginBody.dump());
+    auto login = json::parse(loginResponse);
+    ASSERT_FALSE(login.contains("error")) << loginResponse;
+
+    auto userKey = KeyBuilder::Build("identity", "users", "user-deleted-001");
+    ASSERT_TRUE(userKey.has_value());
+    ASSERT_TRUE(m_engine->Delete(userKey.value()));
+
+    json refreshBody;
+    refreshBody["refresh_token"] = login.at("refresh_token").get<std::string>();
+    std::string response = m_pm.Route(m_ctx, "POST", "/api/v1/auth/refresh", refreshBody.dump());
+    auto data = json::parse(response);
+
+    EXPECT_EQ("INVALID_TOKEN", data.at("error").at("code").get<std::string>())
+        << "a deleted account must not refresh into a live token";
+}
+
+// ============================================================================
+// Seeded dev accounts carry explicit admin roles (PR #4 round-3 P2): the
+// legacy "role":"admin" marker flattens to zero permissions, so the seeds
+// now include roles [{name: "admin", permissions: ["*:*"]}]. The PIN user
+// seeds independently of the empty-DB check, making it the reachable seed
+// from this fixture (SetUp already seeded kTestEmail).
+// ============================================================================
+
+TEST_F(AuthLoginTest, RealHandler_Login_SeededPinUser_CarriesWildcardPermissions)
+{
+    init_identity_overrides(&m_pm, m_locator);
+
+    json body;
+    body["email"] = "pin_user_0000@touchpos.local";
+    body["password"] = "pin_0000";
+    std::string response = m_pm.Route(m_ctx, "POST", "/api/v1/auth/login", body.dump());
+    auto data = json::parse(response);
+    ASSERT_FALSE(data.contains("error")) << response;
+
+    EXPECT_EQ(json::array({"*:*"}), data.at("permissions"))
+        << "seeded dev accounts must authorize via the seeded admin role";
+}
+
+// ============================================================================
+// Rotating refresh-token contract (04.3-01, D-03/D-04/D-05): login issues the
+// access + refresh pair, the latest-wins record at
+// identity/refresh_tokens/<userId> is the single source of validity, and
+// there is no window in which a rotated-out credential still authorizes a
+// refresh. Timed waits are forbidden in this suite — every expiry case mints
+// its credential directly, never ages one.
+// ============================================================================
+
+TEST_F(AuthLoginTest, RealHandler_Login_IssuesRefreshToken)
+{
+    init_identity_overrides(&m_pm, m_locator);
+    SeedUser("rotate@test.com", kTestPassword, "user-rotate-001",
+             json::array({
+                 json{{"name", "pos"},
+                      {"permissions", json::array({"orders:read"})}},
+             }));
+
+    json loginBody;
+    loginBody["email"] = "rotate@test.com";
+    loginBody["password"] = kTestPassword;
+    auto login = json::parse(
+        m_pm.Route(m_ctx, "POST", "/api/v1/auth/login", loginBody.dump()));
+    ASSERT_FALSE(login.contains("error")) << login.dump();
+
+    ASSERT_TRUE(login.contains("refresh_token")) << login.dump();
+    const std::string issued = login.at("refresh_token").get<std::string>();
+    EXPECT_FALSE(issued.empty()) << "login must issue a refresh token (D-04)";
+
+    // Prohibition P2: the embedded user carries no password material.
+    ASSERT_TRUE(login.contains("user")) << login.dump();
+    EXPECT_FALSE(login.at("user").contains("password_hash"));
+    EXPECT_FALSE(login.at("user").contains("password_salt"));
+    EXPECT_FALSE(login.at("user").contains("password_iterations"))
+        << "login response user must carry no password fields (P2)";
+
+    // The engine holds the latest-wins record and it carries exactly the
+    // credential that was returned.
+    auto recordKey = KeyBuilder::Build("identity", "refresh_tokens", "user-rotate-001");
+    ASSERT_TRUE(recordKey.has_value());
+    std::string recordStr;
+    ASSERT_TRUE(m_engine->Get(recordKey.value(), recordStr));
+    json record = json::parse(recordStr);
+    EXPECT_EQ(issued, record.at("token").get<std::string>())
+        << "the stored latest-wins record must equal the issued credential";
+}
+
+TEST_F(AuthLoginTest, RealHandler_Refresh_RotatesLatestWins)
+{
+    init_identity_overrides(&m_pm, m_locator);
+    SeedUser("rot2@test.com", kTestPassword, "user-rot2-001",
+             json::array({
+                 json{{"name", "pos"},
+                      {"permissions", json::array({"orders:read"})}},
+             }));
+
+    json loginBody;
+    loginBody["email"] = "rot2@test.com";
+    loginBody["password"] = kTestPassword;
+    auto login = json::parse(
+        m_pm.Route(m_ctx, "POST", "/api/v1/auth/login", loginBody.dump()));
+    ASSERT_FALSE(login.contains("error")) << login.dump();
+    const std::string firstRefresh = login.at("refresh_token").get<std::string>();
+
+    json refreshBody;
+    refreshBody["refresh_token"] = firstRefresh;
+    auto data = json::parse(
+        m_pm.Route(m_ctx, "POST", "/api/v1/auth/refresh", refreshBody.dump()));
+    ASSERT_FALSE(data.contains("error")) << data.dump();
+
+    const std::string secondRefresh = data.at("refresh_token").get<std::string>();
+    EXPECT_NE(firstRefresh, secondRefresh)
+        << "each refresh must return a NEW refresh token (D-04 rotation)";
+    ASSERT_TRUE(data.contains("user")) << data.dump();
+    // Prohibition P2: StripPasswordFields applies to the refresh path exactly
+    // as it does to login — no password material in the embedded user.
+    EXPECT_FALSE(data.at("user").contains("password_hash"));
+    EXPECT_FALSE(data.at("user").contains("password_salt"));
+    EXPECT_FALSE(data.at("user").contains("password_iterations"))
+        << "refresh response user must carry no password fields (P2)";
+    EXPECT_EQ(json::array({"orders:read"}), data.at("permissions"))
+        << data.dump();
+
+    // No window where both are valid: the OLD credential is dead on its next
+    // presentation — the record now holds only the new one.
+    auto replay = json::parse(
+        m_pm.Route(m_ctx, "POST", "/api/v1/auth/refresh", refreshBody.dump()));
+    EXPECT_EQ("INVALID_TOKEN", replay.at("error").at("code").get<std::string>())
+        << "the rotated-out refresh token must be rejected on replay (D-04)";
+}
+
+TEST_F(AuthLoginTest, RealHandler_Refresh_SecondLoginInvalidatesFirst)
+{
+    init_identity_overrides(&m_pm, m_locator);
+    SeedUser("latest@test.com", kTestPassword, "user-latest-001");
+
+    json loginBody;
+    loginBody["email"] = "latest@test.com";
+    loginBody["password"] = kTestPassword;
+
+    auto first = json::parse(
+        m_pm.Route(m_ctx, "POST", "/api/v1/auth/login", loginBody.dump()));
+    ASSERT_FALSE(first.contains("error")) << first.dump();
+    auto second = json::parse(
+        m_pm.Route(m_ctx, "POST", "/api/v1/auth/login", loginBody.dump()));
+    ASSERT_FALSE(second.contains("error")) << second.dump();
+
+    // Latest-wins per user (Pitfall 8 shape): the second login's Put
+    // superseded the first's record.
+    json staleBody;
+    staleBody["refresh_token"] = first.at("refresh_token").get<std::string>();
+    auto stale = json::parse(
+        m_pm.Route(m_ctx, "POST", "/api/v1/auth/refresh", staleBody.dump()));
+    EXPECT_EQ("INVALID_TOKEN", stale.at("error").at("code").get<std::string>())
+        << "a second login must invalidate the first login's refresh token";
+
+    json liveBody;
+    liveBody["refresh_token"] = second.at("refresh_token").get<std::string>();
+    auto live = json::parse(
+        m_pm.Route(m_ctx, "POST", "/api/v1/auth/refresh", liveBody.dump()));
+    ASSERT_FALSE(live.contains("error")) << live.dump()
+        << "the newest login's refresh token must keep working";
+}
+
+TEST_F(AuthLoginTest, RealHandler_Refresh_RejectsAccessTokenAsRefreshToken)
+{
+    init_identity_overrides(&m_pm, m_locator);
+    SeedUser("asatk@test.com", kTestPassword, "user-asatk-001");
+
+    json loginBody;
+    loginBody["email"] = "asatk@test.com";
+    loginBody["password"] = kTestPassword;
+    auto login = json::parse(
+        m_pm.Route(m_ctx, "POST", "/api/v1/auth/login", loginBody.dump()));
+    ASSERT_FALSE(login.contains("error")) << login.dump();
+
+    // The access token parses as a valid JWT but never matches the stored
+    // refresh record — the constant-time compare must reject it.
+    json refreshBody;
+    refreshBody["refresh_token"] = login.at("access_token").get<std::string>();
+    auto data = json::parse(
+        m_pm.Route(m_ctx, "POST", "/api/v1/auth/refresh", refreshBody.dump()));
+    EXPECT_EQ("INVALID_TOKEN", data.at("error").at("code").get<std::string>())
+        << "an access token must never double as a refresh credential";
+}
+
+TEST_F(AuthLoginTest, RealHandler_Refresh_MissingFieldReturnsInvalidRequest)
+{
+    init_identity_overrides(&m_pm, m_locator);
+
+    // D-03 wire-change proof: a body carrying ONLY the legacy single-word
+    // token field never reaches validation — the handler requires the
+    // refresh_token field and answers INVALID_REQUEST.
+    std::string response = m_pm.Route(
+        m_ctx, "POST", "/api/v1/auth/refresh", R"({"token":"legacy-field-only"})");
+    auto data = json::parse(response);
+    EXPECT_EQ("INVALID_REQUEST", data.at("error").at("code").get<std::string>())
+        << "the legacy token field must not satisfy the refresh contract (D-03)";
+}
+
+TEST_F(AuthLoginTest, RealHandler_Refresh_ExpiredTokenRejected)
+{
+    init_identity_overrides(&m_pm, m_locator);
+    SeedUser("expired@test.com", kTestPassword, "user-expired-001");
+
+    // The expired credential is MINTED directly (negative lifetime), never
+    // aged with a wait. Strict zero-leeway validation must reject it.
+    const std::string expired =
+        CreateJwtToken(kTestSecret, "user-expired-001", "", "", -60, {});
+    ASSERT_FALSE(expired.empty());
+
+    json refreshBody;
+    refreshBody["refresh_token"] = expired;
+    auto data = json::parse(
+        m_pm.Route(m_ctx, "POST", "/api/v1/auth/refresh", refreshBody.dump()));
+    EXPECT_EQ("INVALID_TOKEN", data.at("error").at("code").get<std::string>())
+        << "expired refresh credentials must be rejected — no leeway path";
+}
+
+TEST_F(AuthLoginTest, RealHandler_UsersCreate_RoundtripAuthenticates)
+{
+    init_identity_overrides(&m_pm, m_locator);
+    m_ctx.tenantId       = "default";
+    m_ctx.organizationId = "default";
+    m_ctx.userId         = "user-test-001";
+
+    json createBody;
+    createBody["email"]        = "fresh.user@test.com";
+    createBody["password"]     = "Sup3rSecret!";
+    createBody["display_name"] = "Fresh User";
+    createBody["role"]         = "viewer";
+
+    const std::string created =
+        m_pm.Route(m_ctx, "POST", "/api/v1/users", createBody.dump());
+    const json createdDoc = json::parse(created);
+
+    // The plaintext and the hash material must never echo (F7).
+    EXPECT_FALSE(createdDoc.contains("password"))
+        << "plaintext password must not echo: " << created;
+    EXPECT_FALSE(createdDoc.contains("password_hash")) << created;
+    EXPECT_FALSE(createdDoc.contains("password_salt")) << created;
+    EXPECT_EQ(createdDoc.value("email", ""), "fresh.user@test.com");
+    EXPECT_EQ(createdDoc.value("status", ""), "active");
+
+    // The created user must authenticate through the real login (N1 —
+    // API-created users were locked out: no hash, no email-index row).
+    json loginBody;
+    loginBody["email"]    = "fresh.user@test.com";
+    loginBody["password"] = "Sup3rSecret!";
+    const json login = json::parse(
+        m_pm.Route(m_ctx, "POST", "/api/v1/auth/login", loginBody.dump()));
+    EXPECT_FALSE(login.contains("error"))
+        << "created user must be able to log in: " << login.dump();
+    EXPECT_FALSE(login.value("access_token", "").empty());
+
+    // A wrong password still rejects.
+    loginBody["password"] = "wrong";
+    const std::string rejected = m_pm.Route(
+        m_ctx, "POST", "/api/v1/auth/login", loginBody.dump());
+    EXPECT_NE(rejected.find("INVALID_CREDENTIALS"), std::string::npos)
+        << rejected;
+
+    // A duplicate email rejects rather than re-pointing the login index.
+    createBody["password"] = "OtherPass123!";
+    const std::string duplicate =
+        m_pm.Route(m_ctx, "POST", "/api/v1/users", createBody.dump());
+    EXPECT_NE(duplicate.find("Email already registered"), std::string::npos)
+        << duplicate;
+}
