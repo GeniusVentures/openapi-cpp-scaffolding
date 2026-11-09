@@ -11,12 +11,29 @@
 
 #include "singleton/fnv1a.hpp"
 
+enum class OrderReferenceState
+{
+    Found,
+    InvalidKey,
+    UnknownReference,
+    CorruptRow
+};
+
+struct OrderReference
+{
+    OrderReferenceState state = OrderReferenceState::UnknownReference;
+    std::string errorCode;
+    std::string errorMessage;
+};
+
 ///
-/// Answers whether an order exists for a tenant without exposing Commerce
-/// storage keys or generated models. This narrow locator capability crosses
-/// a dlopen boundary; provider absence is meaningful and plugins have no
-/// post-construction wiring point. See .planning/research/CROSS-PROJECT.md
-/// section A1.
+/// Validates that an order id references a stored order owned by the
+/// caller's tenant, without exposing Commerce storage keys or generated
+/// models (D-09: the status-rich result preserves the distinct invalid-key,
+/// missing/cross-tenant, and corrupt-row outcomes consumers froze). This
+/// narrow locator capability crosses a dlopen boundary; provider absence is
+/// meaningful and plugins have no post-construction wiring point. See
+/// .planning/research/CROSS-PROJECT.md section A1.
 ///
 class IOrderReferenceLookup
 {
@@ -25,7 +42,7 @@ public:
 
     virtual ~IOrderReferenceLookup() = default;
 
-    virtual bool Exists(
+    virtual OrderReference Lookup(
         const std::string& orderId,
         const std::string& tenantId) noexcept = 0;
 };
