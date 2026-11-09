@@ -932,3 +932,54 @@ TEST_F(AuthLoginTest, RealHandler_Refresh_ExpiredTokenRejected)
     EXPECT_EQ("INVALID_TOKEN", data.at("error").at("code").get<std::string>())
         << "expired refresh credentials must be rejected — no leeway path";
 }
+
+TEST_F(AuthLoginTest, RealHandler_UsersCreate_RoundtripAuthenticates)
+{
+    init_identity_overrides(&m_pm, m_locator);
+    m_ctx.tenantId       = "default";
+    m_ctx.organizationId = "default";
+    m_ctx.userId         = "user-test-001";
+
+    json createBody;
+    createBody["email"]        = "fresh.user@test.com";
+    createBody["password"]     = "Sup3rSecret!";
+    createBody["display_name"] = "Fresh User";
+    createBody["role"]         = "viewer";
+
+    const std::string created =
+        m_pm.Route(m_ctx, "POST", "/api/v1/users", createBody.dump());
+    const json createdDoc = json::parse(created);
+
+    // The plaintext and the hash material must never echo (F7).
+    EXPECT_FALSE(createdDoc.contains("password"))
+        << "plaintext password must not echo: " << created;
+    EXPECT_FALSE(createdDoc.contains("password_hash")) << created;
+    EXPECT_FALSE(createdDoc.contains("password_salt")) << created;
+    EXPECT_EQ(createdDoc.value("email", ""), "fresh.user@test.com");
+    EXPECT_EQ(createdDoc.value("status", ""), "active");
+
+    // The created user must authenticate through the real login (N1 —
+    // API-created users were locked out: no hash, no email-index row).
+    json loginBody;
+    loginBody["email"]    = "fresh.user@test.com";
+    loginBody["password"] = "Sup3rSecret!";
+    const json login = json::parse(
+        m_pm.Route(m_ctx, "POST", "/api/v1/auth/login", loginBody.dump()));
+    EXPECT_FALSE(login.contains("error"))
+        << "created user must be able to log in: " << login.dump();
+    EXPECT_FALSE(login.value("access_token", "").empty());
+
+    // A wrong password still rejects.
+    loginBody["password"] = "wrong";
+    const std::string rejected = m_pm.Route(
+        m_ctx, "POST", "/api/v1/auth/login", loginBody.dump());
+    EXPECT_NE(rejected.find("INVALID_CREDENTIALS"), std::string::npos)
+        << rejected;
+
+    // A duplicate email rejects rather than re-pointing the login index.
+    createBody["password"] = "OtherPass123!";
+    const std::string duplicate =
+        m_pm.Route(m_ctx, "POST", "/api/v1/users", createBody.dump());
+    EXPECT_NE(duplicate.find("Email already registered"), std::string::npos)
+        << duplicate;
+}
