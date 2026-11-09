@@ -213,10 +213,19 @@ static std::string GetCurrentTimestamp() noexcept
  * active (required by the User response schema), display_name falls back
  * to email. Tenant/organization come from the request context.
  *
+ * The password never persists or echoes: it is hashed on the way in
+ * (password_hash/salt/iterations — the same triple the seeded admin gets)
+ * and stripped from the response. Login resolves users through the
+ * users_by_email index, so that index row is written atomically with the
+ * user document — without it, and without the hash triple, a created user
+ * could never authenticate. Duplicate emails are rejected for the same
+ * reason: a second create would silently re-point the index and orphan the
+ * first account.
+ *
  * @param      ctx    Request context (tenant/organization stamping)
  * @param      body   JSON body — UserCreate (email required)
  *
- * @return     JSON user record, or error JSON
+ * @return     JSON user record (no password material), or error JSON
  */
 static std::string users_create(const RequestContext& ctx, const std::string& /*method*/, const std::string& /*urlPath*/, const std::string& body)
 {
@@ -228,6 +237,36 @@ static std::string users_create(const RequestContext& ctx, const std::string& /*
             return R"({"error":{"code":"INVALID_REQUEST","message":"Email is required"}})";
         }
         std::string email = requestData["email"].get<std::string>();
+
+        auto emailKeyResult = KeyBuilder::Build("identity", "users_by_email", email);
+        if (!emailKeyResult.has_value())
+        {
+            return R"({"error":{"code":"INVALID_KEY","message":"Failed to build email index key"}})";
+        }
+        std::string existingId;
+        if (s_storage->Get(emailKeyResult.value(), existingId))
+        {
+            return R"({"error":{"code":"INVALID_REQUEST","message":"Email already registered"}})";
+        }
+
+        if (requestData.contains("password"))
+        {
+            if (!requestData["password"].is_string() ||
+                requestData["password"].get<std::string>().empty())
+            {
+                return R"({"error":{"code":"INVALID_REQUEST","message":"Password must be a non-empty string"}})";
+            }
+            auto hr = HashPassword(requestData["password"].get<std::string>());
+            if (hr.salt.empty())
+            {
+                return R"({"error":{"code":"STORAGE_ERROR","message":"Failed to hash password"}})";
+            }
+            requestData["password_hash"]      = HexEncode(std::string(hr.hash.begin(), hr.hash.end()));
+            requestData["password_salt"]      = HexEncode(std::string(hr.salt.begin(), hr.salt.end()));
+            requestData["password_iterations"] = hr.iterations;
+            requestData.erase("password");
+        }
+
         std::string id = GenerateUserUuid();
         requestData["id"] = id;
         requestData["display_name"] = requestData.value("display_name", email);
@@ -242,10 +281,12 @@ static std::string users_create(const RequestContext& ctx, const std::string& /*
         {
             return R"({"error":{"code":"INVALID_KEY","message":"Failed to build storage key"}})";
         }
-        if (!s_storage->Put(keyResult.value(), requestData.dump()))
+        if (!s_storage->WriteBatch({{keyResult.value(), requestData.dump()},
+                                    {emailKeyResult.value(), id}}, {}))
         {
             return R"({"error":{"code":"STORAGE_ERROR","message":"Failed to store entity"}})";
         }
+        StripPasswordFields(requestData);
         return requestData.dump();
     }
     catch (const json::parse_error&)
