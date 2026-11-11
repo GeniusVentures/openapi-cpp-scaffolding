@@ -324,8 +324,9 @@ private:
             RequestContext ctx;
             ctx.queryString = queryString;
             // Idempotency-Key rides to handlers so payment creates can dedupe
-            // client retries (beast's field enum is case-insensitive on read)
-            ctx.idempotencyKey = std::string(m_request[http::field::idempotency_key]);
+            // client retries (string lookup — beast's field enum has no entry
+            // for this header; name matching is case-insensitive)
+            ctx.idempotencyKey = std::string(m_request["Idempotency-Key"]);
 
             // Paths that do not require JWT authentication
             const bool isUnauthenticatedPath =
