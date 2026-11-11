@@ -27,6 +27,7 @@ struct RequestContext
     std::string locationId;
     bool        authenticated = false;
     std::string queryString;   ///< Raw query string after '?', empty when absent
+    std::string idempotencyKey;  ///< Idempotency-Key header value, empty when absent
     std::vector<std::string> permissions;  ///< Flattened role permissions ({domain}:{action}) from the token's perms claim
 };
 
