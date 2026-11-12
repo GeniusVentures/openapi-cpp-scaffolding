@@ -20,6 +20,13 @@ public:
     virtual ~IServiceLocator() = default;
 
     ///
+    /// Register a service by its hash key.
+    /// @param hash    FNV-1a hash of the service name
+    /// @param service Borrowed pointer to the service instance
+    ///
+    virtual void RegisterService(uint64_t hash, void* service) noexcept = 0;
+
+    ///
     /// Retrieve a service by its hash key, cast to the requested type.
     /// @tparam T       The expected service type
     /// @param  hash    FNV-1a hash of the service name (e.g. Fnv1a("PluginManager"))
