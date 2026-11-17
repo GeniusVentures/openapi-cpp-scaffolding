@@ -229,6 +229,42 @@ protected:
             "POST", "/api/v1/auth/login", "real_login",
             HandlerFn(real_login), "IdentityAuth", kOverridePriority);
     }
+
+    /// Registers a stub users-list at priority 0 that mimics the generated
+    /// listUsers stub: raw prefix scan with tenant backfill, NO password
+    /// stripping, NO role-contract normalization — the observed live defect
+    /// shape of GET /api/v1/users.
+    void RegisterStubUsersList()
+    {
+        auto stub_list = [this](
+            const RequestContext& /*ctx*/,
+            const std::string& /*method*/,
+            const std::string& /*urlPath*/,
+            const std::string& /*body*/) -> std::string
+        {
+            auto scanResult = m_engine->Scan(
+                KeyBuilder::MakePrefix("identity", "users"));
+            json result = json::array();
+            for (const auto& [k, v] : scanResult)
+            {
+                json item = json::parse(v);
+                if (!item.contains("tenant_id")) { item["tenant_id"] = "default"; }
+                if (!item.contains("organization_id")) { item["organization_id"] = "default"; }
+                result.push_back(item);
+            }
+            json response;
+            response["data"] = result;
+            json pagination;
+            pagination["limit"] = 50;
+            pagination["has_more"] = false;
+            response["pagination"] = pagination;
+            return response.dump();
+        };
+
+        m_pm.RegisterHandler(
+            "GET", "/api/v1/users", "stub_users_list",
+            HandlerFn(stub_list), "Identity", 0);
+    }
 };
 
 // ============================================================================
@@ -529,6 +565,116 @@ TEST_F(AuthLoginTest, UsersCreate_Override_NonStringEmail_ReturnsInvalidRequest)
 }
 
 // ============================================================================
+// Users List Override + roles seed (quick 261117-o39): GET /api/v1/users must
+// satisfy the regenerated Dart client's checked contracts — every embedded
+// roles entry carries ALL of id/tenant_id/organization_id/created_at/
+// updated_at/name/scope (Role.fromJson $checkKeys) and no password material
+// survives serialization — and the identity/roles prefix gets a canonical
+// admin role so the admin Role List screen is not empty.
+// ============================================================================
+
+TEST_F(AuthLoginTest, UsersList_Override_NormalizesRolesAndStripsPasswords)
+{
+    RegisterStubUsersList();
+    init_identity_overrides(&m_pm, m_locator);
+    SeedUser("legacy-roles@test.com", kTestPassword, "user-legacy-001",
+             json::array({
+                 json{{"name", "admin"},
+                      {"permissions", json::array({"*:*"})}},
+             }));
+
+    std::string response = m_pm.Route(m_ctx, "GET", "/api/v1/users", "");
+    auto data = json::parse(response);
+    ASSERT_FALSE(data.contains("error")) << response;
+
+    ASSERT_TRUE(data.contains("data")) << response;
+    ASSERT_TRUE(data.at("data").is_array()) << response;
+    const json* listed = nullptr;
+    for (const auto& item : data.at("data"))
+    {
+        if (item.value("id", "") == "user-legacy-001") { listed = &item; }
+    }
+    ASSERT_NE(nullptr, listed)
+        << "seeded legacy-shape user must appear in the list: " << response;
+
+    // T-o39-01: no password material on the wire.
+    EXPECT_FALSE(listed->contains("password_hash"));
+    EXPECT_FALSE(listed->contains("password_salt"));
+    EXPECT_FALSE(listed->contains("password_iterations"));
+
+    // Role.fromJson $checkKeys required list, in full.
+    ASSERT_TRUE(listed->contains("roles")) << response;
+    ASSERT_TRUE(listed->at("roles").is_array()) << response;
+    ASSERT_GE(listed->at("roles").size(), 1u) << response;
+    const json& role = listed->at("roles").at(0);
+    for (const char* key : {"id", "tenant_id", "organization_id",
+                            "created_at", "updated_at", "name", "scope"})
+    {
+        EXPECT_TRUE(role.contains(key))
+            << "Role.fromJson requires '" << key << "': " << role.dump();
+    }
+    // Authorization data passes through verbatim (ACL-CONTRACT-01 unchanged).
+    EXPECT_EQ("admin", role.value("name", ""));
+    EXPECT_EQ(json::array({"*:*"}), role.at("permissions"));
+
+    ASSERT_TRUE(data.contains("pagination")) << response;
+    EXPECT_TRUE(data.at("pagination").contains("limit")) << response;
+    EXPECT_TRUE(data.at("pagination").contains("has_more")) << response;
+}
+
+TEST_F(AuthLoginTest, UsersList_Override_ToleratesMissingRoles)
+{
+    RegisterStubUsersList();
+    init_identity_overrides(&m_pm, m_locator);
+    // user-test-001 (SetUp) was stored with NO roles key at all — the list
+    // must surface it, never fail to parse.
+
+    std::string response = m_pm.Route(m_ctx, "GET", "/api/v1/users", "");
+    auto data = json::parse(response);
+    ASSERT_FALSE(data.contains("error")) << response;
+    ASSERT_TRUE(data.at("data").is_array()) << response;
+
+    bool found = false;
+    for (const auto& item : data.at("data"))
+    {
+        if (item.value("id", "") == "user-test-001")
+        {
+            found = true;
+            EXPECT_FALSE(item.contains("password_hash"));
+            if (item.contains("roles"))
+            {
+                EXPECT_TRUE(item.at("roles").is_array())
+                    << "roles must be an array when present: " << item.dump();
+            }
+        }
+    }
+    EXPECT_TRUE(found)
+        << "stored user without a roles key must still be listed: " << response;
+}
+
+TEST_F(AuthLoginTest, RolesSeed_Idempotent_FirstRunThenExisting)
+{
+    // DB has users (SetUp seeded one) but an empty identity/roles prefix —
+    // the exact state of existing dev databases, where nothing ever seeded
+    // identity/roles and GET /api/v1/roles returned {"data":[]}.
+    init_identity_overrides(&m_pm, m_locator);
+
+    auto scanned = m_engine->Scan(KeyBuilder::MakePrefix("identity", "roles"));
+    ASSERT_EQ(1u, scanned.size())
+        << "exactly one canonical admin role must be seeded";
+    json role = json::parse(scanned.begin()->second);
+    EXPECT_TRUE(role.contains("id")) << role.dump();
+    EXPECT_EQ("admin", role.value("name", ""));
+    EXPECT_TRUE(role.contains("scope")) << role.dump();
+    EXPECT_TRUE(role.contains("permissions")) << role.dump();
+
+    // Idempotency: a second init (server restart) must add nothing.
+    init_identity_overrides(&m_pm, m_locator);
+    EXPECT_EQ(1u, m_engine->Scan(KeyBuilder::MakePrefix("identity", "roles")).size())
+        << "repeated starts must not duplicate the seeded role";
+}
+
+// ============================================================================
 // ACL-CONTRACT-01 (PR #4 Codex P1): login/refresh responses must satisfy the
 // TokenResponse schema — required permissions flattened from the user's
 // roles — and tokens must carry the documented sub/tenant/org/perms claims.
@@ -789,6 +935,16 @@ TEST_F(AuthLoginTest, RealHandler_Login_IssuesRefreshToken)
     EXPECT_FALSE(login.at("user").contains("password_salt"));
     EXPECT_FALSE(login.at("user").contains("password_iterations"))
         << "login response user must carry no password fields (P2)";
+
+    // Generated Dart User.fromJson parses roles as a checked List<Role>: the
+    // embedded user's roles must satisfy the full Role contract too, not just
+    // the legacy {name, permissions} shape (quick 261117-o39).
+    ASSERT_TRUE(login.at("user").contains("roles")) << login.dump();
+    ASSERT_TRUE(login.at("user").at("roles").is_array()) << login.dump();
+    ASSERT_GE(login.at("user").at("roles").size(), 1u) << login.dump();
+    const json& loginRole = login.at("user").at("roles").at(0);
+    EXPECT_TRUE(loginRole.contains("id")) << loginRole.dump();
+    EXPECT_TRUE(loginRole.contains("scope")) << loginRole.dump();
 
     // The engine holds the latest-wins record and it carries exactly the
     // credential that was returned.
