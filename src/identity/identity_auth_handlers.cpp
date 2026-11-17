@@ -74,6 +74,73 @@ static PasswordHash BuildStoredHash(const json& u) noexcept
 
 static void StripPasswordFields(json& u) noexcept { u.erase("password_hash"); u.erase("password_salt"); u.erase("password_iterations"); }
 
+// ============================================================================
+// Role contract (regenerated Dart client — checked deserialization)
+// ============================================================================
+//
+// The regenerated api_client (engine 7.23.0) parses User.roles with
+// checked: true: Role.fromJson's $checkKeys REQUIRES id, tenant_id,
+// organization_id, created_at, updated_at, name and scope on every entry.
+// Stored users embed the ACL-CONTRACT-01 shape ({name, permissions} only),
+// so user-emitting paths backfill the display-only keys at read time while
+// preserving name/permissions verbatim — authorization decisions stay
+// server-side over the stored permission data (T-o39-02 accepted).
+
+static constexpr const char* kAdminRoleName              = "admin";
+static constexpr const char* kAdminWildcardPermission    = "*:*";
+/// Deterministic id for the seeded/normalized admin role — stable across
+/// restarts so normalized output and the identity/roles seed agree.
+static constexpr const char* kAdminRoleId                = "adminrole00000000000000000000001";
+/// RoleScopeEnum values are tenant | organization | location; the seeded
+/// admin path only ever uses tenant.
+static constexpr const char* kRoleDefaultScope           = "tenant";
+static constexpr const char* kRoleDefaultTenantId        = "default";
+static constexpr const char* kRoleDefaultOrganizationId  = "default";
+static constexpr const char* kRoleDefaultTimestamp       = "2026-01-01T00:00:00Z";
+
+static std::string GenerateUserUuid() noexcept; // defined below (Users Create Override)
+
+/**
+ * @brief      Backfill the Role contract's required keys on user["roles"] in place
+ *
+ * For each element of user["roles"] (when it is an array), missing keys are
+ * backfilled with deterministic values: id reuses the shared admin-role id
+ * constant when name=="admin" (else a generated 32-hex uuid), tenant_id and
+ * organization_id default to "default", created_at/updated_at to the epoch
+ * constant, scope to "tenant". Existing name/permissions pass through
+ * untouched so FlattenRolePermissions (ACL-CONTRACT-01) behavior is
+ * unchanged. Users without a roles array (or with non-object entries) are
+ * left as-is.
+ *
+ * @param      user   Stored user document (mutated in place)
+ */
+static void NormalizeEmbeddedRoles(json& user) noexcept
+{
+    if (!user.contains("roles") || !user.at("roles").is_array())
+    {
+        return;
+    }
+    for (auto& role : user.at("roles"))
+    {
+        if (!role.is_object())
+        {
+            continue;
+        }
+        if (!role.contains("id") || !role.at("id").is_string() ||
+            role.at("id").get<std::string>().empty())
+        {
+            const bool isAdminRole = role.contains("name") && role.at("name").is_string() &&
+                                     role.at("name").get<std::string>() == kAdminRoleName;
+            role["id"] = isAdminRole ? std::string(kAdminRoleId) : GenerateUserUuid();
+        }
+        if (!role.contains("tenant_id"))       { role["tenant_id"]       = kRoleDefaultTenantId; }
+        if (!role.contains("organization_id")) { role["organization_id"] = kRoleDefaultOrganizationId; }
+        if (!role.contains("created_at"))      { role["created_at"]      = kRoleDefaultTimestamp; }
+        if (!role.contains("updated_at"))      { role["updated_at"]      = kRoleDefaultTimestamp; }
+        if (!role.contains("scope"))           { role["scope"]           = kRoleDefaultScope; }
+    }
+}
+
 /// Get current UTC timestamp in ISO 8601 format
 static std::string GetCurrentTimestamp() noexcept
 {
@@ -172,9 +239,6 @@ static std::vector<std::string> FlattenRolePermissions(const json& user)
 // Seeded-account roles
 // ============================================================================
 
-static constexpr const char* kAdminRoleName           = "admin";
-static constexpr const char* kAdminWildcardPermission = "*:*";
-
 /**
  * @brief      Default roles document for seeded dev accounts
  *
@@ -183,12 +247,25 @@ static constexpr const char* kAdminWildcardPermission = "*:*";
  * flattens to an EMPTY permission list. Seed an explicit admin role with the
  * wildcard permission so seeded logins actually authorize.
  *
- * @return     roles array [{name: "admin", permissions: ["*:*"]}]
+ * The role is contract-complete for the regenerated Dart client (every
+ * Role.fromJson $checkKeys required key present: id, tenant_id,
+ * organization_id, created_at, updated_at, name, scope) so seeded accounts
+ * parse under checked deserialization exactly like listed users.
+ *
+ * @return     roles array [{id: kAdminRoleId, name: "admin",
+ *             permissions: ["*:*"], tenant_id/organization_id: "default",
+ *             created_at/updated_at: epoch, scope: "tenant"}]
  */
 static json DefaultAdminRoles()
 {
-    return json::array({json{{"name", kAdminRoleName},
-                             {"permissions", json::array({kAdminWildcardPermission})}}});
+    return json::array({json{{"id",               kAdminRoleId},
+                             {"name",             kAdminRoleName},
+                             {"permissions",      json::array({kAdminWildcardPermission})},
+                             {"tenant_id",        kRoleDefaultTenantId},
+                             {"organization_id",  kRoleDefaultOrganizationId},
+                             {"created_at",       kRoleDefaultTimestamp},
+                             {"updated_at",       kRoleDefaultTimestamp},
+                             {"scope",            kRoleDefaultScope}}});
 }
 
 static std::string auth_login(const RequestContext& /*ctx*/, const std::string& /*m*/, const std::string& /*p*/, const std::string& body)
@@ -226,6 +303,7 @@ static std::string auth_login(const RequestContext& /*ctx*/, const std::string& 
             return *err;
 
         StripPasswordFields(u);
+        NormalizeEmbeddedRoles(u);
         json r; r["access_token"]=tok; r["refresh_token"]=refreshTok; r["token_type"]="Bearer"; r["expires_in"]=kTokenExpirySeconds; r["user"]=u; r["permissions"]=permissions;
         return r.dump();
     } catch (const json::parse_error&) { return R"({"error":{"code":"PARSE_ERROR","message":"Invalid JSON body"}})"; }
@@ -242,7 +320,7 @@ static std::string auth_getCurrentUser(const RequestContext& ctx, const std::str
     if (!ukr.has_value()) return R"({"error":{"code":"NOT_FOUND","message":"Invalid user ID"}})";
     std::string userStr;
     if (!s_storage->Get(ukr.value(), userStr)) return R"({"error":{"code":"NOT_FOUND","message":"User not found"}})";
-    json u = json::parse(userStr); StripPasswordFields(u); return u.dump();
+    json u = json::parse(userStr); StripPasswordFields(u); NormalizeEmbeddedRoles(u); return u.dump();
 }
 
 static std::string auth_refreshToken(const RequestContext&, const std::string&, const std::string&, const std::string& body)
@@ -296,6 +374,7 @@ static std::string auth_refreshToken(const RequestContext&, const std::string&, 
             return *err;
 
         StripPasswordFields(u);
+        NormalizeEmbeddedRoles(u);
         json r; r["access_token"]=nw; r["refresh_token"]=newRefresh; r["token_type"]="Bearer"; r["expires_in"]=kTokenExpirySeconds; r["user"]=u; r["permissions"]=permissions;
         return r.dump();
     } catch (const json::parse_error&) { return R"({"error":{"code":"PARSE_ERROR","message":"Invalid JSON body"}})"; }
@@ -383,6 +462,98 @@ static std::string users_create(const RequestContext& ctx, const std::string& /*
 }
 
 // ============================================================================
+// Users List Override
+//
+// GET /api/v1/users was never overridden after the 7da1328 generated-CRUD
+// relocation (only POST was — see the Users Create Override above), so the
+// generic listUsers stub serialized raw storage records: password_hash/
+// salt/iterations leaked on the wire (T-o39-01) and the legacy embedded
+// roles shape ({name, permissions}) broke the regenerated Dart client's
+// checked Role.fromJson contract, which is what failed the admin User List
+// screen. This override mirrors the stub's scan shape and adds the contract
+// fixes per record.
+// ============================================================================
+
+static constexpr unsigned int kUsersListDefaultLimit = 50;
+static constexpr unsigned int kUsersListMaxLimit     = 100;
+
+/**
+ * @brief      List users with password stripping and role normalization
+ *
+ * Scans the identity/users prefix, backfills tenant_id/organization_id for
+ * pre-stamping records (same as the generated stub), strips password
+ * material and normalizes embedded roles to the Role contract, then wraps
+ * in the wire envelope {"data": [...], "pagination": {limit, has_more}}.
+ * limit comes from ?limit=N (default 50, capped at 100). Empty storage is
+ * valid and yields an empty data array — never an error envelope.
+ *
+ * @param      ctx    Request context (raw queryString carries ?limit=N)
+ *
+ * @return     JSON list response
+ */
+static std::string users_list(const RequestContext& ctx, const std::string& /*method*/, const std::string& /*urlPath*/, const std::string& /*body*/)
+{
+    unsigned int limit = kUsersListDefaultLimit;
+    const size_t limitPos = ctx.queryString.find("limit=");
+    if (limitPos != std::string::npos)
+    {
+        const size_t valuePos = limitPos + 6; // strlen("limit=")
+        const size_t endPos   = ctx.queryString.find('&', valuePos);
+        const std::string value = ctx.queryString.substr(
+            valuePos, endPos == std::string::npos ? std::string::npos : endPos - valuePos);
+        try
+        {
+            const long parsed = std::stol(value);
+            if (parsed > 0)
+            {
+                limit = static_cast<unsigned int>(std::min<long>(parsed, kUsersListMaxLimit));
+            }
+        }
+        catch (const std::exception&)
+        {
+            // Non-numeric limit — keep the default.
+        }
+    }
+
+    auto scanResult = s_storage->Scan(KeyBuilder::MakePrefix("identity", "users"));
+
+    json result = json::array();
+    for (const auto& [k, v] : scanResult)
+    {
+        json item;
+        try
+        {
+            item = json::parse(v);
+        }
+        catch (const json::exception&)
+        {
+            continue; // skip malformed records rather than fail the whole list
+        }
+        // Backfill multi-tenant fields for records created before tenant
+        // stamping was added to create handlers (same as the generated stub).
+        if (!item.contains("tenant_id"))       { item["tenant_id"] = "default"; }
+        if (!item.contains("organization_id")) { item["organization_id"] = "default"; }
+        StripPasswordFields(item);
+        NormalizeEmbeddedRoles(item);
+        result.push_back(item);
+    }
+
+    const bool hasMore = result.size() > static_cast<size_t>(limit);
+    if (hasMore)
+    {
+        result.erase(result.begin() + static_cast<long>(limit), result.end());
+    }
+
+    json response;
+    response["data"] = result;
+    json pagination;
+    pagination["limit"] = limit;
+    pagination["has_more"] = hasMore;
+    response["pagination"] = pagination;
+    return response.dump();
+}
+
+// ============================================================================
 // init_identity_overrides — called from generated Initialize()
 // ============================================================================
 
@@ -442,9 +613,35 @@ void init_identity_overrides(PluginManager* pm, IServiceLocator& locator)
         }
     }
 
+    // Seed the canonical admin role for the admin Role List screen. Nothing
+    // else populates the identity/roles prefix (dev.json seeds restaurant
+    // fixtures only), so GET /api/v1/roles returned {"data":[]} and the
+    // screen rendered empty. Seeded independently of the empty-users check
+    // (PIN-user precedent above) so existing dev databases get the role on
+    // the next server start; guarded by a prefix-empty check plus a Get
+    // probe so repeated starts add nothing.
+    {
+        auto rk = KeyBuilder::Build("identity", "roles", kAdminRoleId);
+        std::string existingRole;
+        if (rk.has_value() && !s_storage->Get(rk.value(), existingRole) &&
+            s_storage->Scan(KeyBuilder::MakePrefix("identity", "roles")).empty())
+        {
+            json r; r["id"]=kAdminRoleId; r["name"]=kAdminRoleName;
+            r["permissions"]=json::array({kAdminWildcardPermission});
+            r["tenant_id"]="default"; r["organization_id"]="default";
+            r["created_at"]="2026-01-01T00:00:00Z"; r["updated_at"]="2026-01-01T00:00:00Z";
+            r["scope"]="tenant";
+            if (s_storage->Put(rk.value(), r.dump()))
+            {
+                SPDLOG_INFO("Seeded admin role (id: {}, scope: tenant, permission: *:*)", kAdminRoleId);
+            }
+        }
+    }
+
     pm->RegisterHandler("POST", "/api/v1/auth/login",    "auth_login",         auth_login,         "Identity", kOverrideHandlerPriority);
     pm->RegisterHandler("POST", "/api/v1/auth/logout",   "auth_logout",        auth_logout,        "Identity", kOverrideHandlerPriority);
     pm->RegisterHandler("GET",  "/api/v1/auth/me",       "auth_getCurrentUser",auth_getCurrentUser,"Identity", kOverrideHandlerPriority);
     pm->RegisterHandler("POST", "/api/v1/auth/refresh",  "auth_refreshToken",  auth_refreshToken,  "Identity", kOverrideHandlerPriority);
     pm->RegisterHandler("POST", "/api/v1/users",         "users_create",       users_create,       "Identity", kOverrideHandlerPriority);
+    pm->RegisterHandler("GET",  "/api/v1/users",         "users_list",         users_list,         "Identity", kOverrideHandlerPriority);
 }
