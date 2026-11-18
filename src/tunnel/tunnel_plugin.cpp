@@ -586,7 +586,11 @@ static std::string setupTunnel(
         if (!tempClient.VerifyToken(accountIdFromToken))
         {
             SPDLOG_ERROR("setupTunnel — token verification failed");
-            return R"({"error":{"code":"INVALID_TOKEN","message":"Cloudflare API token is invalid or expired"}})";
+            // Not INVALID_TOKEN: that code is the caller-session failure
+            // channel (HTTP 401 -> the client refreshes and drops its
+            // session). The Cloudflare credential failing says nothing
+            // about the caller's session.
+            return R"({"error":{"code":"CF_TOKEN_INVALID","message":"Cloudflare API token is invalid or expired"}})";
         }
 
         SPDLOG_DEBUG("setupTunnel — token verified, account: {}", accountIdFromToken);
