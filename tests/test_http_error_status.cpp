@@ -1,7 +1,7 @@
 /**
  * @file       test_http_error_status.cpp
  * @brief      HttpStatusForBody tests — handler error envelopes must map to
- *             HTTP statuses (auth failures were answered 200, walk B1)
+ *             the HTTP statuses the client acts on
  * @date       2026-11-18
  */
 
@@ -57,6 +57,38 @@ TEST(HttpStatusForBody, OtherErrorChannelsStayOk)
                   R"({"error":{"code":"INVALID_REQUEST","message":"Email is required"}})"),
               boost::beast::http::status::ok);
     EXPECT_EQ(HttpStatusForBody("not json at all"),
+              boost::beast::http::status::ok);
+}
+
+TEST(HttpStatusForBody, PermissionDeniedMapsToForbidden)
+{
+    EXPECT_EQ(HttpStatusForBody(
+                  R"({"error":{"code":"FORBIDDEN","message":"Changing user roles requires a users-write permission"}})"),
+              boost::beast::http::status::forbidden);
+}
+
+TEST(HttpStatusForBody, OtherCredentialFailureStaysOk)
+{
+    // A failed Cloudflare API token says nothing about the caller's
+    // session — it must NOT take the 401 channel (that makes the client
+    // refresh and drop its session), so its code stays off the mapping.
+    EXPECT_EQ(HttpStatusForBody(
+                  R"({"error":{"code":"CF_TOKEN_INVALID","message":"Cloudflare API token is invalid or expired"}})"),
+              boost::beast::http::status::ok);
+    EXPECT_EQ(HttpStatusForBody(
+                  R"({"error":{"code":"TOKEN_MINT_FAILED","message":"Failed to create token"}})"),
+              boost::beast::http::status::ok);
+}
+
+TEST(HttpStatusForBody, NonObjectBodiesSkipParsing)
+{
+    // Bodies that cannot carry an envelope (not starting with '{' after
+    // leading whitespace) take the legacy 200 path without a parse.
+    EXPECT_EQ(HttpStatusForBody("  \r\n\t plain text body"),
+              boost::beast::http::status::ok);
+    EXPECT_EQ(HttpStatusForBody("[1,2,3]"),
+              boost::beast::http::status::ok);
+    EXPECT_EQ(HttpStatusForBody("   "),
               boost::beast::http::status::ok);
 }
 
