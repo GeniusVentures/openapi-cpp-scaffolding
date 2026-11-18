@@ -1,5 +1,6 @@
 add_executable(genius_ai_server
     main.cpp
+    http_error_status.cpp
 )
 
 target_include_directories(genius_ai_server PRIVATE

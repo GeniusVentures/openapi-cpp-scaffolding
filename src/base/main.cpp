@@ -24,6 +24,7 @@
 #include "singleton/fnv1a.hpp"
 #include "storage/RocksDBEngine.hpp"
 #include "storage/KeyBuilder.hpp"
+#include "base/http_error_status.hpp"
 #include "nlohmann/json.hpp"
 #include "identity/auth_utils.hpp"
 #include "logging.hpp"
@@ -382,7 +383,11 @@ private:
             }
             else
             {
-                m_response.result(http::status::ok);
+                // Handlers return only a body — an error envelope is their
+                // only failure channel. Auth failures went out as 200 and
+                // the admin login rendered nothing (walk 2026-11-17 B1);
+                // the mapping re-statuses that channel.
+                m_response.result(genius::os::HttpStatusForBody(result));
                 m_response.body() = result;
             }
         }

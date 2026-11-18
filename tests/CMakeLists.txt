@@ -27,6 +27,23 @@ add_unittest(test_mock_plugin test_mock_plugin.cpp)
 add_unittest(test_storage_engine test_storage_engine.cpp)
 add_unittest(test_change_callback test_change_callback.cpp)
 
+# HTTP error-envelope status mapping (auth failures answered 200 — walk B1)
+add_executable(test_http_error_status
+    test_http_error_status.cpp
+    "${CMAKE_CURRENT_SOURCE_DIR}/../src/base/http_error_status.cpp"
+)
+target_link_libraries(test_http_error_status PRIVATE
+    component_factory
+    storage
+    GTest::gtest_main
+    Boost::headers
+    nlohmann_json::nlohmann_json
+)
+target_include_directories(test_http_error_status PRIVATE
+    "${CMAKE_CURRENT_SOURCE_DIR}/../src"
+)
+add_test(NAME test_http_error_status COMMAND test_http_error_status)
+
 # Auth utilities tests (JWT + PBKDF2)
 add_executable(test_auth
     test_auth.cpp
