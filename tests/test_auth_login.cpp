@@ -550,7 +550,7 @@ TEST_F(AuthLoginTest, UsersCreate_Override_NonStringEmail_ReturnsInvalidRequest)
                          stub_users_create, "Identity", 0);
     init_identity_overrides(&m_pm, m_locator);
 
-    // PR #4 Codex P2: a non-string email used to throw json::type_error
+    // A non-string email used to throw json::type_error
     // through PluginManager::Route and terminate the request; the handler
     // must answer INVALID_REQUEST instead.
     json body;
@@ -565,7 +565,7 @@ TEST_F(AuthLoginTest, UsersCreate_Override_NonStringEmail_ReturnsInvalidRequest)
 }
 
 // ============================================================================
-// Users List Override + roles seed (quick 261117-o39): GET /api/v1/users must
+// Users List Override + roles seed: GET /api/v1/users must
 // satisfy the regenerated Dart client's checked contracts — every embedded
 // roles entry carries ALL of id/tenant_id/organization_id/created_at/
 // updated_at/name/scope (Role.fromJson $checkKeys) and no password material
@@ -597,7 +597,7 @@ TEST_F(AuthLoginTest, UsersList_Override_NormalizesRolesAndStripsPasswords)
     ASSERT_NE(nullptr, listed)
         << "seeded legacy-shape user must appear in the list: " << response;
 
-    // T-o39-01: no password material on the wire.
+    // No password material on the wire.
     EXPECT_FALSE(listed->contains("password_hash"));
     EXPECT_FALSE(listed->contains("password_salt"));
     EXPECT_FALSE(listed->contains("password_iterations"));
@@ -675,7 +675,7 @@ TEST_F(AuthLoginTest, RolesSeed_Idempotent_FirstRunThenExisting)
 }
 
 // ============================================================================
-// role_ids → embedded roles agreement (walk 2026-11-17 N1): the admin UI
+// role_ids → embedded roles agreement: the admin UI
 // sends role_ids (the UserCreate/UserUpdate contract's only role field);
 // storing it verbatim meant the role normalizer never saw it and created
 // users showed role: null. Create and update must both resolve role_ids to
@@ -690,6 +690,7 @@ TEST_F(AuthLoginTest, UsersCreate_RoleIdsResolveToEmbeddedRoles)
     m_pm.RegisterHandler("POST", "/api/v1/users", "stub_users_create",
                          stub_users_create, "Identity", 0);
     init_identity_overrides(&m_pm, m_locator); // seeds the canonical admin role
+    m_ctx.permissions = {"identity:write"};    // role assignment needs the grant
 
     json body;
     body["email"] = "roled@test.com";
@@ -737,6 +738,7 @@ TEST_F(AuthLoginTest, UsersUpdate_RoleIdsReplaceEmbeddedRoles)
     m_pm.RegisterHandler("PATCH", "/api/v1/users/{userId}", "stub_users_update",
                          stub_users_create, "Identity", 0); // verbatim stub baseline
     init_identity_overrides(&m_pm, m_locator);
+    m_ctx.permissions = {"identity:write"}; // role assignment needs the grant
     // SetUp seeded user-test-001 with NO roles key — the pre-fix stored shape.
 
     json body;
@@ -766,8 +768,162 @@ TEST_F(AuthLoginTest, UsersUpdate_RoleIdsReplaceEmbeddedRoles)
     ASSERT_EQ(1u, storedJson.at("roles").size()) << stored;
 }
 
+TEST_F(AuthLoginTest, UsersUpdate_RoleIdsWithoutUsersWrite_Forbidden)
+{
+    // role assignment is privilege assignment: without a users-write grant
+    // (or a wildcard) a PATCH naming role_ids must be refused before any
+    // storage read, and the stored record must keep its roles.
+    m_pm.RegisterHandler("PATCH", "/api/v1/users/{userId}", "stub_users_update",
+                         stub_users_create, "Identity", 0);
+    init_identity_overrides(&m_pm, m_locator);
+    // m_ctx carries NO permissions — the plain signed-in caller.
+
+    json body;
+    body["role_ids"] = json::array({"adminrole00000000000000000000001"});
+    std::string response = m_pm.Route(
+        m_ctx, "PATCH", "/api/v1/users/user-test-001", body.dump());
+    auto data = json::parse(response);
+    ASSERT_TRUE(data.contains("error")) << response;
+    EXPECT_EQ("FORBIDDEN", data["error"]["code"].get<std::string>()) << response;
+
+    auto userKey = KeyBuilder::Build("identity", "users", "user-test-001");
+    ASSERT_TRUE(userKey.has_value());
+    std::string stored;
+    ASSERT_TRUE(m_engine->Get(userKey.value(), stored));
+    json storedJson = json::parse(stored);
+    EXPECT_FALSE(storedJson.contains("roles")) << stored;
+}
+
+TEST_F(AuthLoginTest, UsersUpdate_UnknownFieldsRejected_RecordUntouched)
+{
+    // The generated stub merged the raw body, so a PATCH could overwrite
+    // id and password_hash on the stored record. Only UserUpdate fields
+    // merge; anything else is rejected before the record is read.
+    m_pm.RegisterHandler("PATCH", "/api/v1/users/{userId}", "stub_users_update",
+                         stub_users_create, "Identity", 0);
+    init_identity_overrides(&m_pm, m_locator);
+    m_ctx.permissions = {"*:*"}; // even the wildcard admin cannot leave the schema
+
+    auto userKey = KeyBuilder::Build("identity", "users", "user-test-001");
+    ASSERT_TRUE(userKey.has_value());
+    std::string before;
+    ASSERT_TRUE(m_engine->Get(userKey.value(), before));
+
+    json body;
+    body["password_hash"] = "attacker-hash";
+    body["id"] = "admin-00000000000000000000000000000001";
+    std::string response = m_pm.Route(
+        m_ctx, "PATCH", "/api/v1/users/user-test-001", body.dump());
+    auto data = json::parse(response);
+    ASSERT_TRUE(data.contains("error")) << response;
+    EXPECT_EQ("INVALID_REQUEST", data["error"]["code"].get<std::string>()) << response;
+
+    std::string after;
+    ASSERT_TRUE(m_engine->Get(userKey.value(), after));
+    EXPECT_EQ(before, after) << "a rejected patch must not touch the record";
+}
+
+TEST_F(AuthLoginTest, UsersUpdate_EmailChange_RepointsEmailIndex)
+{
+    // Login resolves users through users_by_email, so an email change must
+    // re-point that index atomically with the document — an index-only
+    // rename orphans the account, a document-only rename hides it.
+    m_pm.RegisterHandler("PATCH", "/api/v1/users/{userId}", "stub_users_update",
+                         stub_users_create, "Identity", 0);
+    init_identity_overrides(&m_pm, m_locator);
+
+    json body;
+    body["email"] = "renamed@test.com";
+    std::string response = m_pm.Route(
+        m_ctx, "PATCH", "/api/v1/users/user-test-001", body.dump());
+    auto data = json::parse(response);
+    ASSERT_FALSE(data.contains("error")) << response;
+
+    std::string ownerId;
+    EXPECT_TRUE(m_engine->Get("identity/users_by_email/renamed@test.com", ownerId));
+    EXPECT_EQ("user-test-001", ownerId);
+    std::string stale;
+    EXPECT_FALSE(m_engine->Get("identity/users_by_email/admin@test.com", stale))
+        << "the old index row must be gone";
+    // No role grant is needed for a plain field edit.
+    EXPECT_EQ("renamed@test.com", data.value("email", "")) << response;
+}
+
+TEST_F(AuthLoginTest, UsersCreate_RoleIdsWithoutUsersWrite_Forbidden)
+{
+    // Same gate as update, on the create side: a caller without a
+    // users-write grant cannot mint a user that already holds the admin
+    // role.
+    m_pm.RegisterHandler("POST", "/api/v1/users", "stub_users_create",
+                         stub_users_create, "Identity", 0);
+    init_identity_overrides(&m_pm, m_locator);
+
+    json body;
+    body["email"] = "escalated@test.com";
+    body["password"] = kTestPassword;
+    body["role_ids"] = json::array({"adminrole00000000000000000000001"});
+    std::string response = m_pm.Route(m_ctx, "POST", "/api/v1/users", body.dump());
+    auto data = json::parse(response);
+    ASSERT_TRUE(data.contains("error")) << response;
+    EXPECT_EQ("FORBIDDEN", data["error"]["code"].get<std::string>()) << response;
+
+    std::string notStored;
+    EXPECT_FALSE(m_engine->Get("identity/users_by_email/escalated@test.com", notStored))
+        << "a refused create must not leave the email index row behind";
+}
+
+TEST_F(AuthLoginTest, UsersList_LegacyRoleName_StableIdAcrossReads)
+{
+    // A legacy role NAME with no matching identity/roles row used to mint
+    // a fresh random id on every read, so two lists of the same records
+    // disagreed. The id must derive from the name.
+    m_pm.RegisterHandler("GET", "/api/v1/users", "stub_users_list",
+                         stub_users_create, "Identity", 0);
+    init_identity_overrides(&m_pm, m_locator);
+    SeedUser("legacy@test.com", kTestPassword, "user-legacy-001");
+    // Stamp the legacy role NAME the SeedUser helper cannot carry; no role
+    // row named "chef" exists — the roles prefix holds only admin.
+    {
+        auto legacyKey = KeyBuilder::Build("identity", "users", "user-legacy-001");
+        ASSERT_TRUE(legacyKey.has_value());
+        std::string raw;
+        ASSERT_TRUE(m_engine->Get(legacyKey.value(), raw));
+        json legacyUser = json::parse(raw);
+        legacyUser["role"] = "chef";
+        ASSERT_TRUE(m_engine->Put(legacyKey.value(), legacyUser.dump()));
+    }
+
+    auto roleAt = [](const std::string& response) -> std::string
+    {
+        auto listed = json::parse(response);
+        EXPECT_FALSE(listed.contains("error")) << response;
+        for (const auto& item : listed.at("data"))
+        {
+            if (item.value("id", "") == "user-legacy-001")
+            {
+                if (!item.contains("roles") || !item.at("roles").is_array() ||
+                    item.at("roles").empty())
+                {
+                    ADD_FAILURE() << "legacy role did not resolve: " << item.dump();
+                    return "";
+                }
+                return item.at("roles").at(0).value("id", "");
+            }
+        }
+        ADD_FAILURE() << "seeded legacy user missing from the list: " << response;
+        return "";
+    };
+
+    const std::string first = roleAt(m_pm.Route(m_ctx, "GET", "/api/v1/users", ""));
+    const std::string second = roleAt(m_pm.Route(m_ctx, "GET", "/api/v1/users", ""));
+
+    EXPECT_EQ(first, second) << "the same record must list the same role id";
+    EXPECT_EQ(std::string("legacyrole") , first.substr(0, 10))
+        << "the id must be name-derived, not random: " << first;
+}
+
 // ============================================================================
-// ACL-CONTRACT-01 (PR #4 Codex P1): login/refresh responses must satisfy the
+// ACL-CONTRACT-01: login/refresh responses must satisfy the
 // TokenResponse schema — required permissions flattened from the user's
 // roles — and tokens must carry the documented sub/tenant/org/perms claims.
 // ============================================================================
@@ -826,7 +982,7 @@ TEST_F(AuthLoginTest, RealHandler_Login_NullEmail_ReturnsInvalidRequest)
 {
     init_identity_overrides(&m_pm, m_locator);
 
-    // PR #4 Codex P2: json null in a required field used to throw
+    // json null in a required field used to throw
     // json::type_error past the parse_error-only catch; must answer
     // INVALID_REQUEST without escaping the handler.
     json body;
@@ -898,7 +1054,7 @@ TEST_F(AuthLoginTest, RealHandler_Refresh_IncludesPermissionsAndNewToken)
 }
 
 // ============================================================================
-// Refresh re-resolves roles from storage (PR #4 round-3 P1): a revocation
+// Refresh re-resolves roles from storage: a revocation
 // made after the token was minted must kill the privileges at the next
 // refresh; a deleted account must not be able to refresh at all.
 // ============================================================================
@@ -970,7 +1126,7 @@ TEST_F(AuthLoginTest, RealHandler_Refresh_DeletedUser_ReturnsInvalidToken)
 }
 
 // ============================================================================
-// Seeded dev accounts carry explicit admin roles (PR #4 round-3 P2): the
+// Seeded dev accounts carry explicit admin roles: the
 // legacy "role":"admin" marker flattens to zero permissions, so the seeds
 // now include roles [{name: "admin", permissions: ["*:*"]}]. The PIN user
 // seeds independently of the empty-DB check, making it the reachable seed
@@ -1030,7 +1186,7 @@ TEST_F(AuthLoginTest, RealHandler_Login_IssuesRefreshToken)
 
     // Generated Dart User.fromJson parses roles as a checked List<Role>: the
     // embedded user's roles must satisfy the full Role contract too, not just
-    // the legacy {name, permissions} shape (quick 261117-o39).
+    // the legacy {name, permissions} shape.
     ASSERT_TRUE(login.at("user").contains("roles")) << login.dump();
     ASSERT_TRUE(login.at("user").at("roles").is_array()) << login.dump();
     ASSERT_GE(login.at("user").at("roles").size(), 1u) << login.dump();
@@ -1192,7 +1348,6 @@ TEST_F(AuthLoginTest, RealHandler_UsersCreate_RoundtripAuthenticates)
     createBody["email"]        = "fresh.user@test.com";
     createBody["password"]     = "Sup3rSecret!";
     createBody["display_name"] = "Fresh User";
-    createBody["role"]         = "viewer";
 
     const std::string created =
         m_pm.Route(m_ctx, "POST", "/api/v1/users", createBody.dump());

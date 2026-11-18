@@ -22,6 +22,7 @@
 #include <chrono>
 #include <ctime>
 #include <iomanip>
+#include <map>
 #include <optional>
 #include <random>
 #include <sstream>
@@ -84,7 +85,7 @@ static void StripPasswordFields(json& u) noexcept { u.erase("password_hash"); u.
 // Stored users embed the ACL-CONTRACT-01 shape ({name, permissions} only),
 // so user-emitting paths backfill the display-only keys at read time while
 // preserving name/permissions verbatim — authorization decisions stay
-// server-side over the stored permission data (T-o39-02 accepted).
+// server-side over the stored permission data.
 
 static constexpr const char* kAdminRoleName              = "admin";
 static constexpr const char* kAdminWildcardPermission    = "*:*";
@@ -142,26 +143,79 @@ static void NormalizeEmbeddedRoles(json& user) noexcept
 }
 
 /**
+ * @brief      Deterministic embedded-role id for an unmatched legacy role name
+ *
+ * "legacyrole" + the FNV-1a 64 of the name as 16 lowercase hex digits. The
+ * random-uuid mint it replaces gave the same stored record a NEW id on
+ * every read, so repeated users_list responses never agreed with each
+ * other; a name-derived id is stable across reads and restarts.
+ */
+static std::string LegacyRoleId(const std::string& name)
+{
+    std::ostringstream oss;
+    oss << std::hex << std::setfill('0') << std::setw(16) << Fnv1a(name);
+    return "legacyrole" + oss.str();
+}
+
+/// Name → parsed identity/roles record (first row with that name wins).
+/// Multi-row callers build it once per request and pass a pointer in;
+/// single-row callers pass null and the lookup scans instead.
+using RoleNameIndex = std::map<std::string, json>;
+
+/**
+ * @brief      Scan identity/roles once into a name→record index
+ *
+ * Malformed rows are skipped. Only callers that resolve many users build
+ * this; a single-record caller resolves through the direct scan instead.
+ */
+static RoleNameIndex LoadRoleNameIndex()
+{
+    RoleNameIndex index;
+    const auto rows = s_storage->Scan(KeyBuilder::MakePrefix("identity", "roles"));
+    for (const auto& [k, v] : rows)
+    {
+        try
+        {
+            json record = json::parse(v);
+            if (!record.is_object() || !record.contains("name") ||
+                !record.at("name").is_string())
+            {
+                continue;
+            }
+            index.emplace(record.at("name").get<std::string>(), std::move(record));
+        }
+        catch (const json::exception&)
+        {
+            continue;
+        }
+    }
+    return index;
+}
+
+/**
  * @brief      Resolve a user document's role_ids/legacy role into embedded roles
  *
  * The admin UI creates and edits users through the UserCreate/UserUpdate
  * contract, whose only role field is role_ids[] — the create/update paths
  * then stored that key verbatim, and users_list (which normalizes only
- * "roles") showed role: null for every created user (walk 2026-11-17 N1).
+ * "roles") showed role: null for every created user.
  * This helper is the one write-side agreement point: a non-empty role_ids
  * array REPLACES the embedded roles with the identity/roles records it
  * names (contract-complete copies — NormalizeEmbeddedRoles backfills any
  * missing key); a record no role row matches keeps its id as a minimal
  * embedded role so a picked role never silently vanishes. A legacy
  * "role": "<name>" string fills in only when no roles exist (the seeded
- * accounts already carry both).
+ * accounts already carry both), resolves through [roleNames] when given so
+ * listing many users costs one roles scan instead of one per user, and
+ * mints a name-derived id (LegacyRoleId) when no row matches.
  *
  * Storage is read through s_storage (identity/roles prefix); callers are
  * the users_create/users_update/users_list handlers, all post-init.
  *
- * @param      user  User document, mutated in place (role_ids removed)
+ * @param      user       User document, mutated in place (role_ids removed)
+ * @param      roleNames  Optional name→role index (users_list); null scans
  */
-static void ResolveRolesFromRoleIds(json& user)
+static void ResolveRolesFromRoleIds(json& user, const RoleNameIndex* roleNames = nullptr)
 {
     // Authoritative input: a non-empty role_ids array replaces the roles.
     if (user.contains("role_ids") && user.at("role_ids").is_array() &&
@@ -214,28 +268,47 @@ static void ResolveRolesFromRoleIds(json& user)
         const std::string name = user.at("role").get<std::string>();
         if (!name.empty())
         {
-            auto scanResult = s_storage->Scan(KeyBuilder::MakePrefix("identity", "roles"));
-            for (const auto& [k, v] : scanResult)
+            json record;
+            if (roleNames != nullptr)
             {
-                try
+                const auto it = roleNames->find(name);
+                if (it != roleNames->end())
                 {
-                    json record = json::parse(v);
-                    if (record.is_object() && record.contains("name") &&
-                        record.at("name").is_string() &&
-                        record.at("name").get<std::string>() == name)
-                    {
-                        user["roles"] = json::array({record});
-                        NormalizeEmbeddedRoles(user);
-                        return;
-                    }
-                }
-                catch (const json::exception&)
-                {
-                    continue;
+                    record = it->second;
                 }
             }
-            // No role row carries that name — minimal embedded role.
-            json role = json{{"id", GenerateUserUuid()}, {"name", name}};
+            else
+            {
+                auto scanResult = s_storage->Scan(KeyBuilder::MakePrefix("identity", "roles"));
+                for (const auto& [k, v] : scanResult)
+                {
+                    try
+                    {
+                        json parsed = json::parse(v);
+                        if (parsed.is_object() && parsed.contains("name") &&
+                            parsed.at("name").is_string() &&
+                            parsed.at("name").get<std::string>() == name)
+                        {
+                            record = std::move(parsed);
+                            break;
+                        }
+                    }
+                    catch (const json::exception&)
+                    {
+                        continue;
+                    }
+                }
+            }
+            if (record.is_object())
+            {
+                user["roles"] = json::array({record});
+                NormalizeEmbeddedRoles(user);
+                return;
+            }
+            // No role row carries that name — minimal embedded role with
+            // the name-derived id (a fresh random id per read made list
+            // output unstable).
+            json role = json{{"id", LegacyRoleId(name)}, {"name", name}};
             user["roles"] = json::array({role});
             NormalizeEmbeddedRoles(user);
         }
@@ -276,7 +349,7 @@ static std::optional<std::string> IssueRefreshToken(const std::string& userId,
     tokenOut = CreateRefreshToken(s_jwtSecret, userId, tenantId, orgId, kRefreshTokenExpirySeconds);
     if (tokenOut.empty())
     {
-        return std::optional<std::string>(R"({"error":{"code":"TOKEN_ERROR","message":"Failed to create token"}})");
+        return std::optional<std::string>(R"({"error":{"code":"TOKEN_MINT_FAILED","message":"Failed to create token"}})");
     }
 
     auto keyResult = KeyBuilder::Build("identity", "refresh_tokens", userId);
@@ -394,7 +467,7 @@ static std::string auth_login(const RequestContext& /*ctx*/, const std::string& 
 
         std::vector<std::string> permissions = FlattenRolePermissions(u);
         std::string tok = CreateJwtToken(s_jwtSecret, userId, u.value("tenant_id",""), u.value("organization_id",""), kTokenExpirySeconds, permissions);
-        if (tok.empty()) return R"({"error":{"code":"TOKEN_ERROR","message":"Failed to create token"}})";
+        if (tok.empty()) return R"({"error":{"code":"TOKEN_MINT_FAILED","message":"Failed to create token"}})";
 
         // D-04: login issues the access + rotating refresh pair; the mint
         // overwrites the latest-wins record, invalidating any previous login's
@@ -466,7 +539,7 @@ static std::string auth_refreshToken(const RequestContext&, const std::string&, 
         json u = json::parse(userStr);
         std::vector<std::string> permissions = FlattenRolePermissions(u);
         std::string nw = CreateJwtToken(s_jwtSecret, ctx.userId, u.value("tenant_id", ctx.tenantId), u.value("organization_id", ctx.organizationId), kTokenExpirySeconds, permissions);
-        if (nw.empty()) return R"({"error":{"code":"TOKEN_ERROR","message":"Failed to create token"}})";
+        if (nw.empty()) return R"({"error":{"code":"TOKEN_MINT_FAILED","message":"Failed to create token"}})";
 
         // Rotation: mint the NEW refresh credential and overwrite the record —
         // the previous credential dies with the same Put.
@@ -480,6 +553,64 @@ static std::string auth_refreshToken(const RequestContext&, const std::string&, 
         return r.dump();
     } catch (const json::parse_error&) { return R"({"error":{"code":"PARSE_ERROR","message":"Invalid JSON body"}})"; }
       catch (const json::exception&)   { return R"({"error":{"code":"INVALID_REQUEST","message":"Request body fields have invalid types"}})"; }
+}
+
+// ============================================================================
+// Role-change permission gate
+//
+// Role assignment is privilege assignment: role_ids names the identity/roles
+// records whose permissions flatten into the user's token at the next
+// login/refresh, so writing it must require the same standing as writing
+// roles. Without the gate any signed-in caller could PATCH role_ids onto
+// their own record and hold "*:*" after the next refresh.
+// ============================================================================
+
+/**
+ * @brief      Whether [granted] covers [permission]
+ *
+ * Honours the ACL's wildcard shapes: "*:*", "{domain}:*", and the exact
+ * "{domain}:{action}" string.
+ */
+static bool PermissionCovers(const std::string& granted, const std::string& permission)
+{
+    if (granted == permission || granted == "*:*")
+    {
+        return true;
+    }
+    const size_t separator = permission.find(':');
+    return separator != std::string::npos &&
+           granted == permission.substr(0, separator + 1) + "*";
+}
+
+/**
+ * @brief      True when any of [permissions] is covered by the context's grants
+ */
+static bool PermissionCoversAny(const RequestContext& ctx,
+                                std::initializer_list<const char*> permissions)
+{
+    for (const std::string& granted : ctx.permissions)
+    {
+        for (const char* permission : permissions)
+        {
+            if (PermissionCovers(granted, permission))
+            {
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
+/**
+ * @brief      Whether the caller may write role assignments
+ *
+ * True when the token's flattened permission list carries a users-write
+ * grant — "users:write", "identity:write", or a wildcard covering either —
+ * which the seeded admin's "*:*" always does.
+ */
+static bool CallerMayChangeRoles(const RequestContext& ctx)
+{
+    return PermissionCoversAny(ctx, {"users:write", "identity:write"});
 }
 
 // ============================================================================
@@ -526,19 +657,59 @@ static std::string GenerateUserUuid() noexcept
  * reason: a second create would silently re-point the index and orphan the
  * first account.
  *
- * @param      ctx    Request context (tenant/organization stamping)
+ * The body is limited to the UserCreate contract fields (plus password):
+ * a raw merge would let a caller pre-set password_hash/id/roles on the
+ * stored record, and role_ids additionally requires a users-write
+ * permission (same gate as users_update — role assignment is privilege
+ * assignment).
+ *
+ * @param      ctx    Request context (tenant/organization stamping, grants)
  * @param      body   JSON body — UserCreate (email required)
  *
  * @return     JSON user record (no password material), or error JSON
  */
+static constexpr std::initializer_list<const char*> kUserCreateAllowedFields = {
+    "email", "display_name", "person_id", "role_ids", "password"};
+
+static bool IsUserCreateField(const std::string& key)
+{
+    for (const char* allowed : kUserCreateAllowedFields)
+    {
+        if (key == allowed)
+        {
+            return true;
+        }
+    }
+    return false;
+}
+
 static std::string users_create(const RequestContext& ctx, const std::string& /*method*/, const std::string& /*urlPath*/, const std::string& body)
 {
     try
     {
         json requestData = json::parse(body);
+        if (!requestData.is_object())
+        {
+            return R"({"error":{"code":"INVALID_REQUEST","message":"Request body must be a JSON object"}})";
+        }
         if (!requestData.contains("email"))
         {
             return R"({"error":{"code":"INVALID_REQUEST","message":"Email is required"}})";
+        }
+        for (const auto& [key, value] : requestData.items())
+        {
+            if (!IsUserCreateField(key))
+            {
+                return R"({"error":{"code":"INVALID_REQUEST","message":"Unsupported field for user create: )" + key + R"("}})";
+            }
+        }
+        if (requestData.contains("role_ids") && !CallerMayChangeRoles(ctx))
+        {
+            return R"({"error":{"code":"FORBIDDEN","message":"Assigning user roles requires a users-write permission"}})";
+        }
+        if (requestData.contains("role_ids") && !requestData["role_ids"].is_array())
+        {
+            return R"({"error":{"code":"INVALID_REQUEST","message":"role_ids must be an array"}})";
         }
         std::string email = requestData["email"].get<std::string>();
 
@@ -581,8 +752,7 @@ static std::string users_create(const RequestContext& ctx, const std::string& /*
         requestData["updated_at"] = requestData["created_at"];
         // role_ids (the UserCreate contract's role field) resolves to
         // embedded roles here — stored verbatim it was never read back by
-        // the role normalizer, so created users showed role: null
-        // (walk 2026-11-17 N1).
+        // the role normalizer, so created users showed role: null.
         ResolveRolesFromRoleIds(requestData);
         NormalizeEmbeddedRoles(requestData);
 
@@ -615,7 +785,7 @@ static std::string users_create(const RequestContext& ctx, const std::string& /*
 // GET /api/v1/users was never overridden after the 7da1328 generated-CRUD
 // relocation (only POST was — see the Users Create Override above), so the
 // generic listUsers stub serialized raw storage records: password_hash/
-// salt/iterations leaked on the wire (T-o39-01) and the legacy embedded
+// salt/iterations leaked on the wire and the legacy embedded
 // roles shape ({name, permissions}) broke the regenerated Dart client's
 // checked Role.fromJson contract, which is what failed the admin User List
 // screen. This override mirrors the stub's scan shape and adds the contract
@@ -680,6 +850,9 @@ static std::string users_list(const RequestContext& ctx, const std::string& /*me
 
     auto scanResult = s_storage->Scan(KeyBuilder::MakePrefix("identity", "users"));
 
+    // One roles scan per request, not one per legacy-role user row.
+    const RoleNameIndex roleNames = LoadRoleNameIndex();
+
     json result = json::array();
     for (const auto& [k, v] : scanResult)
     {
@@ -705,8 +878,8 @@ static std::string users_list(const RequestContext& ctx, const std::string& /*me
         StripPasswordFields(item);
         // Heal records stored before the role_ids→roles agreement: their
         // role_ids/legacy role strings resolve at read time, so users
-        // created before the fix still show their role (walk 2026-11-17 N1).
-        ResolveRolesFromRoleIds(item);
+        // created before the fix still show their role.
+        ResolveRolesFromRoleIds(item, &roleNames);
         NormalizeEmbeddedRoles(item);
         result.push_back(item);
     }
@@ -741,26 +914,58 @@ static std::string users_list(const RequestContext& ctx, const std::string& /*me
 //
 // PATCH /api/v1/users/{userId} fell through to the generated stub, which
 // merges the raw body into the stored record: role_ids landed verbatim next
-// to the embedded roles and never resolved (walk 2026-11-17 N1), and the
-// stub echoed password material back on the wire. This override keeps the
-// stub's merge semantics and adds the same role_ids→roles agreement as
-// create, plus password stripping on the response.
+// to the embedded roles and never resolved, and the stub echoed password
+// material back on the wire. This override keeps the stub's merge semantics
+// for the UserUpdate fields and adds: a field whitelist (the raw merge let
+// any caller overwrite id/password_hash/email on the stored record), a
+// users-write permission gate on role_ids (role assignment is privilege
+// assignment — any signed-in user could otherwise grant themselves the
+// admin role at the next refresh), users_by_email consistency for email
+// changes, the role_ids→roles agreement as create, and password stripping
+// on the response.
 // ============================================================================
+
+/// The UserUpdate contract fields a PATCH may set — anything else in the
+/// body is rejected rather than merged.
+static constexpr std::initializer_list<const char*> kUserUpdateAllowedFields = {
+    "email", "display_name", "person_id", "role_ids"};
+
+static bool IsUserUpdateField(const std::string& key)
+{
+    for (const char* allowed : kUserUpdateAllowedFields)
+    {
+        if (key == allowed)
+        {
+            return true;
+        }
+    }
+    return false;
+}
 
 /**
  * @brief      Merge-patch a user, resolving role_ids to embedded roles
  *
- * Loads the stored record, applies the body's keys on top (same semantics
- * as the generated stub — absent keys keep their stored values, so
- * password_hash survives an edit), then runs ResolveRolesFromRoleIds so a
- * non-empty role_ids array in the body replaces the embedded roles.
+ * Loads the stored record, applies the body's whitelisted keys on top
+ * (absent keys keep their stored values, so password_hash survives an
+ * edit), then runs ResolveRolesFromRoleIds so a non-empty role_ids array
+ * in the body replaces the embedded roles.
  *
+ * role_ids in the body requires a users-write grant (users:write,
+ * identity:write, or a wildcard) — the gate runs before any storage read
+ * so a rejected caller learns nothing about the record.
+ *
+ * An email change re-points the users_by_email index in the same atomic
+ * batch as the user document, after a duplicate check: login resolves
+ * users through that index, so a document-only rename would orphan the
+ * account, and a rename onto a taken address would hijack it.
+ *
+ * @param      ctx      Request context (the caller's permission grants)
  * @param      urlPath  Request path; the id follows the last '/'
  * @param      body     JSON merge patch (UserUpdate contract)
  *
  * @return     Updated user document, password fields stripped
  */
-static std::string users_update(const RequestContext& /*ctx*/, const std::string& /*method*/, const std::string& urlPath, const std::string& body)
+static std::string users_update(const RequestContext& ctx, const std::string& /*method*/, const std::string& urlPath, const std::string& body)
 {
     try
     {
@@ -768,6 +973,26 @@ static std::string users_update(const RequestContext& /*ctx*/, const std::string
         if (!updates.is_object())
         {
             return R"({"error":{"code":"INVALID_REQUEST","message":"Request body must be a JSON object"}})";
+        }
+        for (const auto& [key, value] : updates.items())
+        {
+            if (!IsUserUpdateField(key))
+            {
+                return R"({"error":{"code":"INVALID_REQUEST","message":"Unsupported field for user update: )" + key + R"("}})";
+            }
+        }
+        if (updates.contains("role_ids") && !CallerMayChangeRoles(ctx))
+        {
+            return R"({"error":{"code":"FORBIDDEN","message":"Changing user roles requires a users-write permission"}})";
+        }
+        if (updates.contains("role_ids") && !updates["role_ids"].is_array())
+        {
+            return R"({"error":{"code":"INVALID_REQUEST","message":"role_ids must be an array"}})";
+        }
+        if (updates.contains("email") &&
+            (!updates["email"].is_string() || updates["email"].get<std::string>().empty()))
+        {
+            return R"({"error":{"code":"INVALID_REQUEST","message":"Email must be a non-empty string"}})";
         }
         const std::string id = urlPath.substr(urlPath.rfind('/') + 1);
         auto keyResult = KeyBuilder::Build("identity", "users", id);
@@ -781,11 +1006,36 @@ static std::string users_update(const RequestContext& /*ctx*/, const std::string
             return R"({"error":{"code":"NOT_FOUND","message":"Entity not found"}})";
         }
         json updated = json::parse(existing);
+        const std::string storedEmail = updated.value("email", std::string());
         updated.update(updates);
         updated["updated_at"] = GetCurrentTimestamp();
         ResolveRolesFromRoleIds(updated);
         NormalizeEmbeddedRoles(updated);
-        if (!s_storage->Put(keyResult.value(), updated.dump()))
+
+        std::vector<std::pair<std::string, std::string>> puts;
+        std::vector<std::string> deletes;
+        puts.emplace_back(keyResult.value(), updated.dump());
+        if (updates.contains("email") && updated.value("email", std::string()) != storedEmail)
+        {
+            const std::string newEmail = updated["email"].get<std::string>();
+            auto newEmailKey = KeyBuilder::Build("identity", "users_by_email", newEmail);
+            if (!newEmailKey.has_value())
+            {
+                return R"({"error":{"code":"INVALID_KEY","message":"Failed to build email index key"}})";
+            }
+            std::string owner;
+            if (s_storage->Get(newEmailKey.value(), owner) && owner != id)
+            {
+                return R"({"error":{"code":"INVALID_REQUEST","message":"Email already registered"}})";
+            }
+            puts.emplace_back(newEmailKey.value(), id);
+            auto oldEmailKey = KeyBuilder::Build("identity", "users_by_email", storedEmail);
+            if (oldEmailKey.has_value() && storedEmail != newEmail)
+            {
+                deletes.push_back(oldEmailKey.value());
+            }
+        }
+        if (!s_storage->WriteBatch(puts, deletes))
         {
             return R"({"error":{"code":"STORAGE_ERROR","message":"Failed to update entity"}})";
         }
