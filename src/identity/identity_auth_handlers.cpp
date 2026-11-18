@@ -483,11 +483,14 @@ static constexpr unsigned int kUsersListMaxLimit     = 100;
  * Scans the identity/users prefix, backfills tenant_id/organization_id for
  * pre-stamping records (same as the generated stub), strips password
  * material and normalizes embedded roles to the Role contract, then wraps
- * in the wire envelope {"data": [...], "pagination": {limit, has_more}}.
- * limit comes from ?limit=N (default 50, capped at 100). Empty storage is
- * valid and yields an empty data array — never an error envelope.
+ * in the wire envelope {"data": [...], "pagination": {limit, has_more,
+ * next_cursor}}. limit comes from ?limit=N (default 50, capped at 100);
+ * cursor comes from ?cursor=ID (the next_cursor of a previous page) and
+ * skips records at or before it, so pages chain. next_cursor carries the
+ * id of the last row on this page whenever has_more is true. Empty storage
+ * is valid and yields an empty data array — never an error envelope.
  *
- * @param      ctx    Request context (raw queryString carries ?limit=N)
+ * @param      ctx    Request context (raw queryString carries ?limit=N&cursor=ID)
  *
  * @return     JSON list response
  */
@@ -515,6 +518,18 @@ static std::string users_list(const RequestContext& ctx, const std::string& /*me
         }
     }
 
+    // Opaque continuation token: the id of the last row served on the
+    // previous page. Records at or before it were already delivered.
+    std::string cursor;
+    const size_t cursorPos = ctx.queryString.find("cursor=");
+    if (cursorPos != std::string::npos)
+    {
+        const size_t valuePos = cursorPos + 7; // strlen("cursor=")
+        const size_t endPos   = ctx.queryString.find('&', valuePos);
+        cursor = ctx.queryString.substr(
+            valuePos, endPos == std::string::npos ? std::string::npos : endPos - valuePos);
+    }
+
     auto scanResult = s_storage->Scan(KeyBuilder::MakePrefix("identity", "users"));
 
     json result = json::array();
@@ -533,6 +548,12 @@ static std::string users_list(const RequestContext& ctx, const std::string& /*me
         // stamping was added to create handlers (same as the generated stub).
         if (!item.contains("tenant_id"))       { item["tenant_id"] = "default"; }
         if (!item.contains("organization_id")) { item["organization_id"] = "default"; }
+        // Cursor pagination (scan order is key order = id order, so the
+        // lexicographic comparison chains pages without gaps or repeats).
+        if (!cursor.empty() && item.value("id", std::string()) <= cursor)
+        {
+            continue;
+        }
         StripPasswordFields(item);
         NormalizeEmbeddedRoles(item);
         result.push_back(item);
@@ -549,6 +570,16 @@ static std::string users_list(const RequestContext& ctx, const std::string& /*me
     json pagination;
     pagination["limit"] = limit;
     pagination["has_more"] = hasMore;
+    if (hasMore && !result.empty())
+    {
+        // Next page starts strictly after the last id on this page. Only
+        // emitted when there is a next page — absent means "end of list".
+        const std::string nextCursor = result.back().value("id", std::string());
+        if (!nextCursor.empty())
+        {
+            pagination["next_cursor"] = nextCursor;
+        }
+    }
     response["pagination"] = pagination;
     return response.dump();
 }
