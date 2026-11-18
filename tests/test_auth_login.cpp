@@ -675,6 +675,98 @@ TEST_F(AuthLoginTest, RolesSeed_Idempotent_FirstRunThenExisting)
 }
 
 // ============================================================================
+// role_ids → embedded roles agreement (walk 2026-11-17 N1): the admin UI
+// sends role_ids (the UserCreate/UserUpdate contract's only role field);
+// storing it verbatim meant the role normalizer never saw it and created
+// users showed role: null. Create and update must both resolve role_ids to
+// the identity/roles records they name, and the list must still surface
+// records stored before the fix.
+// ============================================================================
+
+TEST_F(AuthLoginTest, UsersCreate_RoleIdsResolveToEmbeddedRoles)
+{
+    static constexpr const char* kAdminRoleId =
+        "adminrole00000000000000000000001";
+    m_pm.RegisterHandler("POST", "/api/v1/users", "stub_users_create",
+                         stub_users_create, "Identity", 0);
+    init_identity_overrides(&m_pm, m_locator); // seeds the canonical admin role
+
+    json body;
+    body["email"] = "roled@test.com";
+    body["password"] = kTestPassword;
+    body["role_ids"] = json::array({kAdminRoleId});
+    std::string response = m_pm.Route(m_ctx, "POST", "/api/v1/users", body.dump());
+    auto created = json::parse(response);
+    ASSERT_FALSE(created.contains("error")) << response;
+
+    // The contract key is consumed; the resolved role is embedded.
+    EXPECT_FALSE(created.contains("role_ids")) << response;
+    ASSERT_TRUE(created.contains("roles")) << response;
+    ASSERT_TRUE(created.at("roles").is_array()) << response;
+    ASSERT_EQ(1u, created.at("roles").size()) << response;
+    const json& role = created.at("roles").at(0);
+    EXPECT_EQ(kAdminRoleId, role.value("id", "")) << response;
+    EXPECT_EQ("admin", role.value("name", "")) << response;
+
+    // And the list override serves the same resolved shape.
+    std::string listResponse = m_pm.Route(m_ctx, "GET", "/api/v1/users", "");
+    auto listed = json::parse(listResponse);
+    ASSERT_FALSE(listed.contains("error")) << listResponse;
+    const json* row = nullptr;
+    for (const auto& item : listed.at("data"))
+    {
+        if (item.value("email", "") == "roled@test.com") { row = &item; }
+    }
+    ASSERT_NE(nullptr, row) << listResponse;
+    ASSERT_EQ(1u, row->at("roles").size()) << listResponse;
+    EXPECT_EQ(kAdminRoleId, row->at("roles").at(0).value("id", ""))
+        << listResponse;
+    for (const char* key : {"tenant_id", "organization_id",
+                            "created_at", "updated_at", "scope"})
+    {
+        EXPECT_TRUE(row->at("roles").at(0).contains(key))
+            << "Role.fromJson requires '" << key << "': "
+            << row->at("roles").at(0).dump();
+    }
+}
+
+TEST_F(AuthLoginTest, UsersUpdate_RoleIdsReplaceEmbeddedRoles)
+{
+    static constexpr const char* kAdminRoleId =
+        "adminrole00000000000000000000001";
+    m_pm.RegisterHandler("PATCH", "/api/v1/users/{userId}", "stub_users_update",
+                         stub_users_create, "Identity", 0); // verbatim stub baseline
+    init_identity_overrides(&m_pm, m_locator);
+    // SetUp seeded user-test-001 with NO roles key — the pre-fix stored shape.
+
+    json body;
+    body["role_ids"] = json::array({kAdminRoleId});
+    std::string response = m_pm.Route(
+        m_ctx, "PATCH", "/api/v1/users/user-test-001", body.dump());
+    auto updated = json::parse(response);
+    ASSERT_FALSE(updated.contains("error")) << response;
+
+    EXPECT_FALSE(updated.contains("role_ids")) << response;
+    ASSERT_TRUE(updated.contains("roles")) << response;
+    ASSERT_EQ(1u, updated.at("roles").size()) << response;
+    EXPECT_EQ(kAdminRoleId, updated.at("roles").at(0).value("id", "")) << response;
+    EXPECT_EQ("admin", updated.at("roles").at(0).value("name", "")) << response;
+    // Merge semantics keep the stored identity fields and strip password
+    // material from the response (the stub echoed it back).
+    EXPECT_EQ(kTestEmail, updated.value("email", "")) << response;
+    EXPECT_FALSE(updated.contains("password_hash")) << response;
+
+    // The stored record carries the resolved roles, not the raw key.
+    auto userKey = KeyBuilder::Build("identity", "users", "user-test-001");
+    ASSERT_TRUE(userKey.has_value());
+    std::string stored;
+    ASSERT_TRUE(m_engine->Get(userKey.value(), stored));
+    json storedJson = json::parse(stored);
+    EXPECT_FALSE(storedJson.contains("role_ids")) << stored;
+    ASSERT_EQ(1u, storedJson.at("roles").size()) << stored;
+}
+
+// ============================================================================
 // ACL-CONTRACT-01 (PR #4 Codex P1): login/refresh responses must satisfy the
 // TokenResponse schema — required permissions flattened from the user's
 // roles — and tokens must carry the documented sub/tenant/org/perms claims.

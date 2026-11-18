@@ -141,6 +141,107 @@ static void NormalizeEmbeddedRoles(json& user) noexcept
     }
 }
 
+/**
+ * @brief      Resolve a user document's role_ids/legacy role into embedded roles
+ *
+ * The admin UI creates and edits users through the UserCreate/UserUpdate
+ * contract, whose only role field is role_ids[] — the create/update paths
+ * then stored that key verbatim, and users_list (which normalizes only
+ * "roles") showed role: null for every created user (walk 2026-11-17 N1).
+ * This helper is the one write-side agreement point: a non-empty role_ids
+ * array REPLACES the embedded roles with the identity/roles records it
+ * names (contract-complete copies — NormalizeEmbeddedRoles backfills any
+ * missing key); a record no role row matches keeps its id as a minimal
+ * embedded role so a picked role never silently vanishes. A legacy
+ * "role": "<name>" string fills in only when no roles exist (the seeded
+ * accounts already carry both).
+ *
+ * Storage is read through s_storage (identity/roles prefix); callers are
+ * the users_create/users_update/users_list handlers, all post-init.
+ *
+ * @param      user  User document, mutated in place (role_ids removed)
+ */
+static void ResolveRolesFromRoleIds(json& user)
+{
+    // Authoritative input: a non-empty role_ids array replaces the roles.
+    if (user.contains("role_ids") && user.at("role_ids").is_array() &&
+        !user.at("role_ids").empty())
+    {
+        json roles = json::array();
+        for (const auto& roleId : user.at("role_ids"))
+        {
+            if (!roleId.is_string() || roleId.get<std::string>().empty())
+            {
+                continue;
+            }
+            const std::string id = roleId.get<std::string>();
+            json role;
+            auto keyResult = KeyBuilder::Build("identity", "roles", id);
+            std::string stored;
+            if (keyResult.has_value() && s_storage->Get(keyResult.value(), stored))
+            {
+                try
+                {
+                    role = json::parse(stored);
+                }
+                catch (const json::exception&)
+                {
+                    role = json::object();
+                }
+            }
+            if (!role.is_object())
+            {
+                // Unknown id — keep the pick visible rather than dropping it.
+                role = json{{"id", id}, {"name", id}, {"permissions", json::array()}};
+            }
+            if (!role.contains("id") || !role.at("id").is_string() ||
+                role.at("id").get<std::string>().empty())
+            {
+                role["id"] = id;
+            }
+            roles.push_back(role);
+        }
+        user["roles"] = roles;
+        user.erase("role_ids");
+        return;
+    }
+
+    // Legacy writer: a role NAME with no roles array — resolve by name.
+    if ((!user.contains("roles") || !user.at("roles").is_array() ||
+         user.at("roles").empty()) &&
+        user.contains("role") && user.at("role").is_string())
+    {
+        const std::string name = user.at("role").get<std::string>();
+        if (!name.empty())
+        {
+            auto scanResult = s_storage->Scan(KeyBuilder::MakePrefix("identity", "roles"));
+            for (const auto& [k, v] : scanResult)
+            {
+                try
+                {
+                    json record = json::parse(v);
+                    if (record.is_object() && record.contains("name") &&
+                        record.at("name").is_string() &&
+                        record.at("name").get<std::string>() == name)
+                    {
+                        user["roles"] = json::array({record});
+                        NormalizeEmbeddedRoles(user);
+                        return;
+                    }
+                }
+                catch (const json::exception&)
+                {
+                    continue;
+                }
+            }
+            // No role row carries that name — minimal embedded role.
+            json role = json{{"id", GenerateUserUuid()}, {"name", name}};
+            user["roles"] = json::array({role});
+            NormalizeEmbeddedRoles(user);
+        }
+    }
+}
+
 /// Get current UTC timestamp in ISO 8601 format
 static std::string GetCurrentTimestamp() noexcept
 {
@@ -478,6 +579,12 @@ static std::string users_create(const RequestContext& ctx, const std::string& /*
         requestData["status"] = kUserStatusActive;
         requestData["created_at"] = GetCurrentTimestamp();
         requestData["updated_at"] = requestData["created_at"];
+        // role_ids (the UserCreate contract's role field) resolves to
+        // embedded roles here — stored verbatim it was never read back by
+        // the role normalizer, so created users showed role: null
+        // (walk 2026-11-17 N1).
+        ResolveRolesFromRoleIds(requestData);
+        NormalizeEmbeddedRoles(requestData);
 
         auto keyResult = KeyBuilder::Build("identity", "users", id);
         if (!keyResult.has_value())
@@ -596,6 +703,10 @@ static std::string users_list(const RequestContext& ctx, const std::string& /*me
             continue;
         }
         StripPasswordFields(item);
+        // Heal records stored before the role_ids→roles agreement: their
+        // role_ids/legacy role strings resolve at read time, so users
+        // created before the fix still show their role (walk 2026-11-17 N1).
+        ResolveRolesFromRoleIds(item);
         NormalizeEmbeddedRoles(item);
         result.push_back(item);
     }
@@ -623,6 +734,72 @@ static std::string users_list(const RequestContext& ctx, const std::string& /*me
     }
     response["pagination"] = pagination;
     return response.dump();
+}
+
+// ============================================================================
+// Users Update Override
+//
+// PATCH /api/v1/users/{userId} fell through to the generated stub, which
+// merges the raw body into the stored record: role_ids landed verbatim next
+// to the embedded roles and never resolved (walk 2026-11-17 N1), and the
+// stub echoed password material back on the wire. This override keeps the
+// stub's merge semantics and adds the same role_ids→roles agreement as
+// create, plus password stripping on the response.
+// ============================================================================
+
+/**
+ * @brief      Merge-patch a user, resolving role_ids to embedded roles
+ *
+ * Loads the stored record, applies the body's keys on top (same semantics
+ * as the generated stub — absent keys keep their stored values, so
+ * password_hash survives an edit), then runs ResolveRolesFromRoleIds so a
+ * non-empty role_ids array in the body replaces the embedded roles.
+ *
+ * @param      urlPath  Request path; the id follows the last '/'
+ * @param      body     JSON merge patch (UserUpdate contract)
+ *
+ * @return     Updated user document, password fields stripped
+ */
+static std::string users_update(const RequestContext& /*ctx*/, const std::string& /*method*/, const std::string& urlPath, const std::string& body)
+{
+    try
+    {
+        const json updates = json::parse(body);
+        if (!updates.is_object())
+        {
+            return R"({"error":{"code":"INVALID_REQUEST","message":"Request body must be a JSON object"}})";
+        }
+        const std::string id = urlPath.substr(urlPath.rfind('/') + 1);
+        auto keyResult = KeyBuilder::Build("identity", "users", id);
+        if (!keyResult.has_value())
+        {
+            return R"({"error":{"code":"INVALID_KEY","message":"Invalid entity ID"}})";
+        }
+        std::string existing;
+        if (!s_storage->Get(keyResult.value(), existing))
+        {
+            return R"({"error":{"code":"NOT_FOUND","message":"Entity not found"}})";
+        }
+        json updated = json::parse(existing);
+        updated.update(updates);
+        updated["updated_at"] = GetCurrentTimestamp();
+        ResolveRolesFromRoleIds(updated);
+        NormalizeEmbeddedRoles(updated);
+        if (!s_storage->Put(keyResult.value(), updated.dump()))
+        {
+            return R"({"error":{"code":"STORAGE_ERROR","message":"Failed to update entity"}})";
+        }
+        StripPasswordFields(updated);
+        return updated.dump();
+    }
+    catch (const json::parse_error&)
+    {
+        return R"({"error":{"code":"PARSE_ERROR","message":"Invalid JSON body"}})";
+    }
+    catch (const json::exception&)
+    {
+        return R"({"error":{"code":"INVALID_REQUEST","message":"Request body fields have invalid types"}})";
+    }
 }
 
 // ============================================================================
@@ -716,4 +893,5 @@ void init_identity_overrides(PluginManager* pm, IServiceLocator& locator)
     pm->RegisterHandler("POST", "/api/v1/auth/refresh",  "auth_refreshToken",  auth_refreshToken,  "Identity", kOverrideHandlerPriority);
     pm->RegisterHandler("POST", "/api/v1/users",         "users_create",       users_create,       "Identity", kOverrideHandlerPriority);
     pm->RegisterHandler("GET",  "/api/v1/users",         "users_list",         users_list,         "Identity", kOverrideHandlerPriority);
+    pm->RegisterHandler("PATCH", "/api/v1/users/{userId}", "users_update",    users_update,       "Identity", kOverrideHandlerPriority);
 }
