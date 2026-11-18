@@ -550,7 +550,18 @@ static std::string users_list(const RequestContext& ctx, const std::string& /*me
         if (!item.contains("organization_id")) { item["organization_id"] = "default"; }
         // Cursor pagination (scan order is key order = id order, so the
         // lexicographic comparison chains pages without gaps or repeats).
-        if (!cursor.empty() && item.value("id", std::string()) <= cursor)
+        // Type-safe id gate (WR-01): a record whose id key is missing or
+        // holds a non-string (storable today via the generic update stub's
+        // body merge) is malformed — the Dart User.fromJson checked contract
+        // REQUIRES id, so it is skipped like any other malformed record
+        // rather than listed or allowed to throw type_error.302.
+        const auto idIt = item.find("id");
+        if (idIt == item.end() || !idIt->is_string())
+        {
+            continue;
+        }
+        const std::string recordId = idIt->get<std::string>();
+        if (!cursor.empty() && recordId <= cursor)
         {
             continue;
         }
@@ -582,6 +593,105 @@ static std::string users_list(const RequestContext& ctx, const std::string& /*me
     }
     response["pagination"] = pagination;
     return response.dump();
+}
+
+// ============================================================================
+// Users Get/Update Overrides (item routes)
+//
+// CR-01 (PR #46 review): GET/PATCH /api/v1/users/{userId} were still served
+// by the generated stubs, which return the stored record verbatim — leaking
+// password_hash/salt/iterations on the wire (T-o39-01) and emitting the
+// legacy {name, permissions} embedded-roles shape that breaks the checked
+// Dart Role.fromJson on single-user fetches. These overrides mirror the stub
+// semantics (id from urlPath, KeyBuilder::Build, Get / merge+Put) and apply
+// the same per-record contract fixes as users_list. The update path strips
+// and normalizes a RESPONSE COPY only — the stored record keeps its password
+// material or login breaks — and additionally refuses password_* keys from
+// the request body, so the item routes cannot be used to inject or overwrite
+// credential material either.
+// ============================================================================
+
+/// Path segment separator, matching the generated plugin's kPathSeparator.
+static constexpr char kUsersPathSeparator = '/';
+
+static std::string users_get(const RequestContext& /*ctx*/, const std::string& /*method*/, const std::string& urlPath, const std::string& /*body*/)
+{
+    const std::string id = urlPath.substr(urlPath.rfind(kUsersPathSeparator) + 1);
+
+    auto keyResult = KeyBuilder::Build("identity", "users", id);
+    if (!keyResult.has_value())
+    {
+        return R"({"error":{"code":"INVALID_KEY","message":"Invalid entity ID"}})";
+    }
+    std::string value;
+    if (!s_storage->Get(keyResult.value(), value))
+    {
+        return R"({"error":{"code":"NOT_FOUND","message":"Entity not found"}})";
+    }
+    try
+    {
+        json item = json::parse(value);
+        if (!item.contains("tenant_id"))       { item["tenant_id"] = "default"; }
+        if (!item.contains("organization_id")) { item["organization_id"] = "default"; }
+        StripPasswordFields(item);
+        NormalizeEmbeddedRoles(item);
+        return item.dump();
+    }
+    catch (const json::exception&)
+    {
+        return R"({"error":{"code":"INVALID_REQUEST","message":"Stored record is malformed"}})";
+    }
+}
+
+static std::string users_update(const RequestContext& /*ctx*/, const std::string& /*method*/, const std::string& urlPath, const std::string& body)
+{
+    const std::string id = urlPath.substr(urlPath.rfind(kUsersPathSeparator) + 1);
+
+    auto keyResult = KeyBuilder::Build("identity", "users", id);
+    if (!keyResult.has_value())
+    {
+        return R"({"error":{"code":"INVALID_KEY","message":"Invalid entity ID"}})";
+    }
+    const std::string key = keyResult.value();
+    std::string existing;
+    if (!s_storage->Get(key, existing))
+    {
+        return R"({"error":{"code":"NOT_FOUND","message":"Entity not found"}})";
+    }
+
+    try
+    {
+        json updated = json::parse(existing);
+        json patch   = json::parse(body);
+        // Credential material is server-owned: the item route cannot inject
+        // or overwrite it (mirrors T-o39-01 in the write direction).
+        patch.erase("password_hash");
+        patch.erase("password_salt");
+        patch.erase("password_iterations");
+        updated.update(patch);
+        updated["updated_at"] = GetCurrentTimestamp();
+
+        if (!s_storage->Put(key, updated.dump()))
+        {
+            return R"({"error":{"code":"STORAGE_ERROR","message":"Failed to update entity"}})";
+        }
+
+        // Wire copy only — the stored record keeps its password material.
+        json wire = updated;
+        if (!wire.contains("tenant_id"))       { wire["tenant_id"] = "default"; }
+        if (!wire.contains("organization_id")) { wire["organization_id"] = "default"; }
+        StripPasswordFields(wire);
+        NormalizeEmbeddedRoles(wire);
+        return wire.dump();
+    }
+    catch (const json::parse_error&)
+    {
+        return R"({"error":{"code":"PARSE_ERROR","message":"Invalid JSON body"}})";
+    }
+    catch (const json::exception&)
+    {
+        return R"({"error":{"code":"INVALID_REQUEST","message":"Request body fields have invalid types"}})";
+    }
 }
 
 // ============================================================================
@@ -675,4 +785,6 @@ void init_identity_overrides(PluginManager* pm, IServiceLocator& locator)
     pm->RegisterHandler("POST", "/api/v1/auth/refresh",  "auth_refreshToken",  auth_refreshToken,  "Identity", kOverrideHandlerPriority);
     pm->RegisterHandler("POST", "/api/v1/users",         "users_create",       users_create,       "Identity", kOverrideHandlerPriority);
     pm->RegisterHandler("GET",  "/api/v1/users",         "users_list",         users_list,         "Identity", kOverrideHandlerPriority);
+    pm->RegisterHandler("GET",  "/api/v1/users/{userId}", "users_get",        users_get,          "Identity", kOverrideHandlerPriority);
+    pm->RegisterHandler("PATCH", "/api/v1/users/{userId}", "users_update",    users_update,       "Identity", kOverrideHandlerPriority);
 }
