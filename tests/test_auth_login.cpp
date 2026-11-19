@@ -25,6 +25,7 @@
 #include "singleton/fnv1a.hpp"
 #include "identity/auth_utils.hpp"
 #include "identity/identity_auth_handlers.hpp"
+#include "base/http_error_status.hpp"
 #include "nlohmann/json.hpp"
 
 using json = nlohmann::json;
@@ -1385,4 +1386,68 @@ TEST_F(AuthLoginTest, RealHandler_UsersCreate_RoundtripAuthenticates)
         m_pm.Route(m_ctx, "POST", "/api/v1/users", createBody.dump());
     EXPECT_NE(duplicate.find("Email already registered"), std::string::npos)
         << duplicate;
+}
+
+// ============================================================================
+// IN-02 — a client JSON key cannot inject envelope fields
+// ============================================================================
+
+///
+/// An unknown body key reaches the error envelope only through nlohmann's
+/// escaper (IN-02). A key crafted as x","code":"UNAUTHORIZED used to be
+/// concatenated raw: the envelope carried a second code pair, still parsed
+/// as JSON, and the body mapper re-statused it 401 — a response about a
+/// mistyped field looked like a dead session. Both create and update are
+/// pinned: still-valid JSON, the original code, and a body-mapper status
+/// that never turns 401.
+///
+TEST_F(AuthLoginTest, UsersCreate_MaliciousUnknownKey_KeepsEnvelopeValid)
+{
+    init_identity_overrides(&m_pm, m_locator);
+    m_ctx.tenantId       = "default";
+    m_ctx.organizationId = "default";
+    m_ctx.userId         = "user-test-001";
+
+    static const std::string kInjectedKey = "x\",\"code\":\"UNAUTHORIZED";
+    json createBody;
+    createBody["email"]       = "escape.create@test.com";
+    createBody[kInjectedKey]  = 1;
+
+    const std::string response =
+        m_pm.Route(m_ctx, "POST", "/api/v1/users", createBody.dump());
+
+    const json parsed = json::parse(response);  // throws when malformed
+    ASSERT_TRUE(parsed.contains("error")) << response;
+    EXPECT_EQ(parsed.at("error").value("code", ""), "INVALID_REQUEST") << response;
+    EXPECT_EQ(parsed.at("error").value("message", ""),
+              "Unsupported field for user create: " + kInjectedKey)
+        << response;
+    EXPECT_EQ(genius::os::HttpStatusForBody(response),
+              boost::beast::http::status::ok)
+        << "the injected second code must not re-status the response 401";
+}
+
+TEST_F(AuthLoginTest, UsersUpdate_MaliciousUnknownKey_KeepsEnvelopeValid)
+{
+    init_identity_overrides(&m_pm, m_locator);
+    m_ctx.tenantId       = "default";
+    m_ctx.organizationId = "default";
+    m_ctx.userId         = "user-test-001";
+
+    static const std::string kInjectedKey = "x\",\"code\":\"UNAUTHORIZED";
+    json updateBody;
+    updateBody[kInjectedKey] = 1;
+
+    const std::string response = m_pm.Route(
+        m_ctx, "PATCH", "/api/v1/users/user-test-001", updateBody.dump());
+
+    const json parsed = json::parse(response);
+    ASSERT_TRUE(parsed.contains("error")) << response;
+    EXPECT_EQ(parsed.at("error").value("code", ""), "INVALID_REQUEST") << response;
+    EXPECT_EQ(parsed.at("error").value("message", ""),
+              "Unsupported field for user update: " + kInjectedKey)
+        << response;
+    EXPECT_EQ(genius::os::HttpStatusForBody(response),
+              boost::beast::http::status::ok)
+        << "the injected second code must not re-status the response 401";
 }

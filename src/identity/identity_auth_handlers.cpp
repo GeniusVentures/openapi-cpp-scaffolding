@@ -700,7 +700,14 @@ static std::string users_create(const RequestContext& ctx, const std::string& /*
         {
             if (!IsUserCreateField(key))
             {
-                return R"({"error":{"code":"INVALID_REQUEST","message":"Unsupported field for user create: )" + key + R"("}})";
+                // IN-02: the client key reaches the envelope through nlohmann
+                // so '"' and '\' in it cannot inject a second code pair (a
+                // key like x","code":"UNAUTHORIZED used to re-status the
+                // response 401 through the body mapper)
+                return json{{"error",
+                             {{"code", "INVALID_REQUEST"},
+                              {"message", "Unsupported field for user create: " + key}}}}
+                    .dump();
             }
         }
         if (requestData.contains("role_ids") && !CallerMayChangeRoles(ctx))
@@ -978,7 +985,12 @@ static std::string users_update(const RequestContext& ctx, const std::string& /*
         {
             if (!IsUserUpdateField(key))
             {
-                return R"({"error":{"code":"INVALID_REQUEST","message":"Unsupported field for user update: )" + key + R"("}})";
+                // IN-02: nlohmann-built envelope — the client key cannot
+                // break out of the message string (users_create twin)
+                return json{{"error",
+                             {{"code", "INVALID_REQUEST"},
+                              {"message", "Unsupported field for user update: " + key}}}}
+                    .dump();
             }
         }
         if (updates.contains("role_ids") && !CallerMayChangeRoles(ctx))

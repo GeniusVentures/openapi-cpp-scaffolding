@@ -67,6 +67,7 @@ add_executable(test_auth_login
     test_auth_login.cpp
     "${CMAKE_CURRENT_SOURCE_DIR}/../src/identity/auth_utils.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/../src/identity/identity_auth_handlers.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/../src/base/http_error_status.cpp"
 )
 target_link_libraries(test_auth_login PRIVATE
     component_factory
@@ -74,6 +75,7 @@ target_link_libraries(test_auth_login PRIVATE
     GTest::gtest_main
     OpenSSL::Crypto
     spdlog::spdlog
+    Boost::headers
 )
 target_include_directories(test_auth_login PRIVATE
     "${CMAKE_CURRENT_SOURCE_DIR}/../src"
