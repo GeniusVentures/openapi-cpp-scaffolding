@@ -19,6 +19,7 @@
 #include "nlohmann/json.hpp"
 #include <spdlog/spdlog.h>
 #include <openssl/crypto.h>
+#include <array>
 #include <chrono>
 #include <ctime>
 #include <iomanip>
@@ -97,6 +98,40 @@ static constexpr const char* kRoleDefaultScope           = "tenant";
 static constexpr const char* kRoleDefaultTenantId        = "default";
 static constexpr const char* kRoleDefaultOrganizationId  = "default";
 static constexpr const char* kRoleDefaultTimestamp       = "2026-01-01T00:00:00Z";
+// User-management route permissions (the {domain}:{action} convention of
+// the flattened perms claim; kAdminWildcardPermission grants everything).
+static constexpr const char* kPermUsersRead              = "identity:users:read";
+static constexpr const char* kPermUsersWrite             = "identity:users:write";
+
+/**
+ * @brief      True when the caller's flattened role permissions grant the
+ *             requested {domain}:{action} (ACL-CONTRACT-01 shape)
+ *
+ * The token's perms claim is flattened into RequestContext.permissions by
+ * auth_utils; the admin wildcard grants every action. An empty permission
+ * list grants nothing — the users routes are an admin surface.
+ *
+ * @param      ctx         Request context carrying the caller's permissions
+ * @param      permission  Required {domain}:{action} string
+ */
+static bool CallerCan(const RequestContext& ctx, const char* permission)
+{
+    for (const std::string& granted : ctx.permissions)
+    {
+        if (granted == permission || granted == kAdminWildcardPermission)
+        {
+            return true;
+        }
+    }
+    return false;
+}
+
+/// The tenant a stored user row belongs to; pre-stamping rows count as
+/// the default tenant (same rule as the parent-domain list handlers).
+static std::string RowTenantId(const json& row)
+{
+    return row.value("tenant_id", kRoleDefaultTenantId);
+}
 
 static std::string GenerateUserUuid() noexcept; // defined below (Users Create Override)
 
@@ -423,6 +458,10 @@ static std::string GenerateUserUuid() noexcept
  */
 static std::string users_create(const RequestContext& ctx, const std::string& /*method*/, const std::string& /*urlPath*/, const std::string& body)
 {
+    if (!CallerCan(ctx, kPermUsersWrite))
+    {
+        return R"({"error":{"code":"FORBIDDEN","message":"Missing identity:users:write permission"}})";
+    }
     try
     {
         json requestData = json::parse(body);
@@ -496,6 +535,10 @@ static constexpr unsigned int kUsersListMaxLimit     = 100;
  */
 static std::string users_list(const RequestContext& ctx, const std::string& /*method*/, const std::string& /*urlPath*/, const std::string& /*body*/)
 {
+    if (!CallerCan(ctx, kPermUsersRead))
+    {
+        return R"({"error":{"code":"FORBIDDEN","message":"Missing identity:users:read permission"}})";
+    }
     unsigned int limit = kUsersListDefaultLimit;
     const size_t limitPos = ctx.queryString.find("limit=");
     if (limitPos != std::string::npos)
@@ -548,6 +591,14 @@ static std::string users_list(const RequestContext& ctx, const std::string& /*me
         // stamping was added to create handlers (same as the generated stub).
         if (!item.contains("tenant_id"))       { item["tenant_id"] = "default"; }
         if (!item.contains("organization_id")) { item["organization_id"] = "default"; }
+        // Tenant isolation (WR-03, un-deferred for the identity routes per
+        // review): the list serves ONLY the caller's tenant — the same
+        // missing-tenant-counts-as-default rule as the parent-domain list
+        // handlers (restaurant_pos_handlers.cpp precedent).
+        if (RowTenantId(item) != ctx.tenantId)
+        {
+            continue;
+        }
         // Cursor pagination (scan order is key order = id order, so the
         // lexicographic comparison chains pages without gaps or repeats).
         // Type-safe id gate (WR-01): a record whose id key is missing or
@@ -614,8 +665,12 @@ static std::string users_list(const RequestContext& ctx, const std::string& /*me
 /// Path segment separator, matching the generated plugin's kPathSeparator.
 static constexpr char kUsersPathSeparator = '/';
 
-static std::string users_get(const RequestContext& /*ctx*/, const std::string& /*method*/, const std::string& urlPath, const std::string& /*body*/)
+static std::string users_get(const RequestContext& ctx, const std::string& /*method*/, const std::string& urlPath, const std::string& /*body*/)
 {
+    if (!CallerCan(ctx, kPermUsersRead))
+    {
+        return R"({"error":{"code":"FORBIDDEN","message":"Missing identity:users:read permission"}})";
+    }
     const std::string id = urlPath.substr(urlPath.rfind(kUsersPathSeparator) + 1);
 
     auto keyResult = KeyBuilder::Build("identity", "users", id);
@@ -633,6 +688,12 @@ static std::string users_get(const RequestContext& /*ctx*/, const std::string& /
         json item = json::parse(value);
         if (!item.contains("tenant_id"))       { item["tenant_id"] = "default"; }
         if (!item.contains("organization_id")) { item["organization_id"] = "default"; }
+        // Tenant isolation: another tenant's row is indistinguishable from a
+        // missing one — no cross-tenant oracle.
+        if (RowTenantId(item) != ctx.tenantId)
+        {
+            return R"({"error":{"code":"NOT_FOUND","message":"Entity not found"}})";
+        }
         StripPasswordFields(item);
         NormalizeEmbeddedRoles(item);
         return item.dump();
@@ -643,8 +704,12 @@ static std::string users_get(const RequestContext& /*ctx*/, const std::string& /
     }
 }
 
-static std::string users_update(const RequestContext& /*ctx*/, const std::string& /*method*/, const std::string& urlPath, const std::string& body)
+static std::string users_update(const RequestContext& ctx, const std::string& /*method*/, const std::string& urlPath, const std::string& body)
 {
+    if (!CallerCan(ctx, kPermUsersWrite))
+    {
+        return R"({"error":{"code":"FORBIDDEN","message":"Missing identity:users:write permission"}})";
+    }
     const std::string id = urlPath.substr(urlPath.rfind(kUsersPathSeparator) + 1);
 
     auto keyResult = KeyBuilder::Build("identity", "users", id);
@@ -662,13 +727,31 @@ static std::string users_update(const RequestContext& /*ctx*/, const std::string
     try
     {
         json updated = json::parse(existing);
-        json patch   = json::parse(body);
-        // Credential material is server-owned: the item route cannot inject
-        // or overwrite it (mirrors T-o39-01 in the write direction).
-        patch.erase("password_hash");
-        patch.erase("password_salt");
-        patch.erase("password_iterations");
-        updated.update(patch);
+        if (!updated.contains("tenant_id"))       { updated["tenant_id"] = "default"; }
+        if (!updated.contains("organization_id")) { updated["organization_id"] = "default"; }
+        // Tenant isolation before any mutation — cross-tenant rows are
+        // indistinguishable from missing ones.
+        if (RowTenantId(updated) != ctx.tenantId)
+        {
+            return R"({"error":{"code":"NOT_FOUND","message":"Entity not found"}})";
+        }
+
+        // Allowlist: exactly the UserUpdate contract (email, display_name,
+        // person_id, role_ids). Everything else — id, tenant_id,
+        // organization_id, roles, role, status, credential material,
+        // timestamps — is server-owned and silently unpatchable here.
+        static const std::array<const char*, 4> kUserUpdateFields{
+            "email", "display_name", "person_id", "role_ids"};
+        json patch = json::parse(body);
+        json allowed = json::object();
+        for (const char* field : kUserUpdateFields)
+        {
+            if (patch.contains(field))
+            {
+                allowed[field] = patch.at(field);
+            }
+        }
+        updated.update(allowed);
         updated["updated_at"] = GetCurrentTimestamp();
 
         if (!s_storage->Put(key, updated.dump()))

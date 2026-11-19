@@ -92,6 +92,11 @@ protected:
         m_locator.RegisterService(Fnv1a("StorageEngine"), m_engine.get());
         m_locator.RegisterService(Fnv1a("JwtSecret"), const_cast<std::string*>(&kTestSecret));
 
+        // Default caller: the tenant-default admin (wildcard permission).
+        // Negative security tests override these to model narrower callers.
+        m_ctx.tenantId = "default";
+        m_ctx.permissions = {"*:*"};
+
         SeedUser(kTestEmail, kTestPassword, "user-test-001");
 
         // Register stub at priority 0 (simulates auto-generated baseline)
@@ -944,6 +949,135 @@ TEST_F(AuthLoginTest, UsersUpdate_ItemRoute_StripsPasswordsAndRefusesInjection)
     EXPECT_NE("evil", storedJson.value("password_hash", std::string()));
     EXPECT_NE("evil", storedJson.value("password_salt", std::string()));
     EXPECT_EQ("Renamed", storedJson.value("display_name", std::string()));
+}
+
+// ============================================================================
+// Identity route hardening (PR #49 review): permission gates, tenant
+// isolation, and the UserUpdate allowlist — negative security tests.
+// ============================================================================
+
+TEST_F(AuthLoginTest, UsersList_ForbiddenWithoutPermission)
+{
+    RegisterStubUsersList();
+    init_identity_overrides(&m_pm, m_locator);
+    m_ctx.permissions.clear(); // authenticated caller, no role permissions
+
+    auto resp = json::parse(m_pm.Route(m_ctx, "GET", "/api/v1/users", ""));
+    ASSERT_TRUE(resp.contains("error")) << resp.dump();
+    EXPECT_EQ("FORBIDDEN", resp.at("error").at("code").get<std::string>());
+}
+
+TEST_F(AuthLoginTest, UsersGet_ItemRoute_ForbiddenWithoutPermission)
+{
+    RegisterStubUsersItemRoutes();
+    init_identity_overrides(&m_pm, m_locator);
+    m_ctx.permissions.clear();
+
+    auto resp = json::parse(
+        m_pm.Route(m_ctx, "GET", "/api/v1/users/user-test-001", ""));
+    ASSERT_TRUE(resp.contains("error")) << resp.dump();
+    EXPECT_EQ("FORBIDDEN", resp.at("error").at("code").get<std::string>());
+}
+
+TEST_F(AuthLoginTest, UsersList_TenantIsolation_OtherTenantHidden)
+{
+    RegisterStubUsersList();
+    init_identity_overrides(&m_pm, m_locator);
+    // A row belonging to another tenant — raw write (SeedUser stamps
+    // tenant "default" unconditionally).
+    PutRawUserRecord("user-other-tenant",
+        R"({"id":"user-other-tenant","email":"x@other.test","tenant_id":"other"})");
+
+    auto resp = json::parse(m_pm.Route(m_ctx, "GET", "/api/v1/users", ""));
+    ASSERT_FALSE(resp.contains("error")) << resp.dump();
+    for (const auto& item : resp.at("data"))
+    {
+        EXPECT_NE("user-other-tenant", item.value("id", std::string()))
+            << "another tenant's user must never be listed: " << resp.dump();
+    }
+    // The caller's own tenant rows are still served.
+    bool found = false;
+    for (const auto& item : resp.at("data"))
+    {
+        if (item.value("id", std::string()) == "user-test-001") { found = true; }
+    }
+    EXPECT_TRUE(found) << "same-tenant user must still be listed: " << resp.dump();
+}
+
+TEST_F(AuthLoginTest, UsersGet_ItemRoute_CrossTenantIsNotFound)
+{
+    RegisterStubUsersItemRoutes();
+    init_identity_overrides(&m_pm, m_locator);
+    PutRawUserRecord("user-other-tenant",
+        R"({"id":"user-other-tenant","email":"x@other.test","tenant_id":"other"})");
+
+    auto resp = json::parse(
+        m_pm.Route(m_ctx, "GET", "/api/v1/users/user-other-tenant", ""));
+    ASSERT_TRUE(resp.contains("error")) << resp.dump();
+    // Cross-tenant rows are indistinguishable from missing ones — no oracle.
+    EXPECT_EQ("NOT_FOUND", resp.at("error").at("code").get<std::string>());
+}
+
+TEST_F(AuthLoginTest, UsersUpdate_ItemRoute_CrossTenantIsNotFoundAndUntouched)
+{
+    RegisterStubUsersItemRoutes();
+    init_identity_overrides(&m_pm, m_locator);
+    PutRawUserRecord("user-other-tenant",
+        R"({"id":"user-other-tenant","email":"x@other.test","tenant_id":"other"})");
+
+    auto resp = json::parse(m_pm.Route(
+        m_ctx, "PATCH", "/api/v1/users/user-other-tenant",
+        R"({"email":"stolen@evil.test"})"));
+    ASSERT_TRUE(resp.contains("error")) << resp.dump();
+    EXPECT_EQ("NOT_FOUND", resp.at("error").at("code").get<std::string>());
+
+    // Stored row untouched by the cross-tenant attempt.
+    auto key = KeyBuilder::Build("identity", "users", "user-other-tenant");
+    ASSERT_TRUE(key.has_value());
+    std::string stored;
+    ASSERT_TRUE(m_engine->Get(key.value(), stored));
+    EXPECT_EQ("x@other.test", json::parse(stored).value("email", std::string()));
+}
+
+TEST_F(AuthLoginTest, UsersUpdate_ItemRoute_AllowlistProtectsServerOwnedFields)
+{
+    RegisterStubUsersItemRoutes();
+    init_identity_overrides(&m_pm, m_locator);
+    SeedUser("allowlist@test.com", kTestPassword, "user-allow-001");
+
+    // Attempt to rewrite identity, tenancy, roles, status, and credentials.
+    const std::string body =
+        R"({"display_name":"Legit Rename",)"
+        R"("id":"forged-id","tenant_id":"other","organization_id":"other",)"
+        R"("roles":[{"name":"admin"}],"role":"admin","status":"disabled",)"
+        R"("password_hash":"evil","password_salt":"evil","password_iterations":1,)"
+        R"("created_at":"1999-01-01T00:00:00Z"})";
+    auto resp = json::parse(
+        m_pm.Route(m_ctx, "PATCH", "/api/v1/users/user-allow-001", body));
+    ASSERT_FALSE(resp.contains("error")) << resp.dump();
+
+    // The contract field applies.
+    EXPECT_EQ("Legit Rename", resp.at("display_name").get<std::string>());
+    // Server-owned fields keep their stored values on the wire AND in
+    // storage — only UserUpdate's fields (email, display_name, person_id,
+    // role_ids) are patchable.
+    auto key = KeyBuilder::Build("identity", "users", "user-allow-001");
+    ASSERT_TRUE(key.has_value());
+    std::string stored;
+    ASSERT_TRUE(m_engine->Get(key.value(), stored));
+    json s = json::parse(stored);
+    EXPECT_EQ("user-allow-001", s.value("id", std::string()));
+    EXPECT_EQ("default", s.value("tenant_id", std::string()));
+    EXPECT_EQ("default", s.value("organization_id", std::string()));
+    EXPECT_EQ("active", s.value("status", std::string()));
+    EXPECT_NE("1999-01-01T00:00:00Z", s.value("created_at", std::string()));
+    EXPECT_NE("evil", s.value("password_hash", std::string()));
+    // Stored roles are whatever the seed wrote (absent when the seed
+    // carried none) — never the request's forged inline shape.
+    EXPECT_FALSE(
+        s.contains("roles")
+        && s.at("roles") == json::array({json{{"name", "admin"}}}))
+        << "forged roles must never be stored: " << s.dump();
 }
 
 TEST_F(AuthLoginTest, RolesSeed_Idempotent_FirstRunThenExisting)
