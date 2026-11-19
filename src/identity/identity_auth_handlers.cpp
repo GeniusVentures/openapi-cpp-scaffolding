@@ -19,6 +19,7 @@
 #include "nlohmann/json.hpp"
 #include <spdlog/spdlog.h>
 #include <openssl/crypto.h>
+#include <algorithm>
 #include <array>
 #include <chrono>
 #include <ctime>
@@ -102,6 +103,8 @@ static constexpr const char* kRoleDefaultTimestamp       = "2026-01-01T00:00:00Z
 // the flattened perms claim; kAdminWildcardPermission grants everything).
 static constexpr const char* kPermUsersRead              = "identity:users:read";
 static constexpr const char* kPermUsersWrite             = "identity:users:write";
+static constexpr const char* kPermRolesRead              = "identity:roles:read";
+static constexpr const char* kPermRolesWrite             = "identity:roles:write";
 
 /**
  * @brief      True when the caller's flattened role permissions grant the
@@ -131,6 +134,87 @@ static bool CallerCan(const RequestContext& ctx, const char* permission)
 static std::string RowTenantId(const json& row)
 {
     return row.value("tenant_id", kRoleDefaultTenantId);
+}
+
+/// The login index key for an email (login resolves email -> user id).
+static auto EmailIndexKey(const std::string& email)
+    -> decltype(KeyBuilder::Build("identity", "users_by_email", email))
+{
+    return KeyBuilder::Build("identity", "users_by_email", email);
+}
+
+/**
+ * @brief      Allowlist + type-validate a user create/update body
+ *
+ * Copies ONLY the UserCreate/UserUpdate contract fields (email,
+ * display_name, person_id, role_ids) into allowed_out, rejecting type
+ * violations: the generated Dart User.fromJson checked-converts
+ * email/display_name as required strings, so persisting a non-string
+ * would permanently break the admin list parse (the WR-01 lesson,
+ * re-applied to the allowlist itself).
+ *
+ * @param      patch         Parsed request body
+ * @param      allowed_out   Receives the validated allowlisted subset
+ * @param      error_out     Human-readable reason on failure
+ */
+static bool ValidatedUserPatch(const json& patch, json& allowed_out, std::string& error_out)
+{
+    allowed_out = json::object();
+    for (const char* field : {"email", "display_name", "person_id"})
+    {
+        if (patch.contains(field))
+        {
+            if (!patch.at(field).is_string())
+            {
+                error_out = std::string(field) + " must be a string";
+                return false;
+            }
+            allowed_out[field] = patch.at(field);
+        }
+    }
+    if (patch.contains("role_ids"))
+    {
+        const json& roleIds = patch.at("role_ids");
+        if (!roleIds.is_array()
+            || !std::all_of(roleIds.begin(), roleIds.end(),
+                            [](const json& e) { return e.is_string(); }))
+        {
+            error_out = "role_ids must be an array of strings";
+            return false;
+        }
+        allowed_out["role_ids"] = roleIds;
+    }
+    return true;
+}
+
+/**
+ * @brief      Resolve role_ids into the embedded roles array via storage
+ *
+ * The stored contract embeds resolved roles (name/permissions/...), never
+ * raw ids — the admin role dropdown and login permission flattening both
+ * read the embedded shape. Unknown ids are rejected by name.
+ */
+static bool ResolveRoleIds(const json& roleIds, json& roles_out, std::string& error_out)
+{
+    roles_out = json::array();
+    for (const json& idVal : roleIds)
+    {
+        const std::string roleId = idVal.get<std::string>();
+        auto key = KeyBuilder::Build("identity", "roles", roleId);
+        if (!key.has_value())
+        {
+            error_out = "invalid role id";
+            return false;
+        }
+        std::string stored;
+        if (!s_storage->Get(key.value(), stored))
+        {
+            error_out = "unknown role id: " + roleId;
+            return false;
+        }
+        roles_out.push_back(json::parse(stored));
+    }
+    return true;
 }
 
 static std::string GenerateUserUuid() noexcept; // defined below (Users Create Override)
@@ -469,26 +553,74 @@ static std::string users_create(const RequestContext& ctx, const std::string& /*
         {
             return R"({"error":{"code":"INVALID_REQUEST","message":"Email is required"}})";
         }
-        std::string email = requestData["email"].get<std::string>();
+        // Allowlist + type validation: exactly the UserCreate contract
+        // (email, display_name, person_id, role_ids). Everything else —
+        // roles, credential material, tenancy, lifecycle — is
+        // server-owned and silently dropped.
+        json allowed;
+        std::string validationError;
+        if (!ValidatedUserPatch(requestData, allowed, validationError))
+        {
+            return std::string(R"({"error":{"code":"INVALID_REQUEST","message":")") + validationError + R"("}})";
+        }
+        if (!allowed.contains("email"))
+        {
+            return R"({"error":{"code":"INVALID_REQUEST","message":"Email is required"}})";
+        }
+        const std::string email = allowed.at("email").get<std::string>();
+
+        // role_ids resolve through the roles store into the embedded
+        // roles array (unknown ids rejected) — the contract stores roles,
+        // never raw role ids.
+        json roles = json::array();
+        if (allowed.contains("role_ids"))
+        {
+            if (!ResolveRoleIds(allowed.at("role_ids"), roles, validationError))
+            {
+                return std::string(R"({"error":{"code":"INVALID_REQUEST","message":")") + validationError + R"("}})";
+            }
+        }
+
         std::string id = GenerateUserUuid();
-        requestData["id"] = id;
-        requestData["display_name"] = requestData.value("display_name", email);
-        requestData["tenant_id"] = ctx.tenantId;
-        requestData["organization_id"] = ctx.organizationId;
-        requestData["status"] = kUserStatusActive;
-        requestData["created_at"] = GetCurrentTimestamp();
-        requestData["updated_at"] = requestData["created_at"];
+        json user;
+        user["id"] = id;
+        user["email"] = email;
+        user["display_name"] = allowed.value("display_name", email);
+        if (allowed.contains("person_id")) { user["person_id"] = allowed.at("person_id"); }
+        user["tenant_id"] = ctx.tenantId;
+        user["organization_id"] = ctx.organizationId;
+        user["status"] = kUserStatusActive;
+        user["roles"] = roles;
+        user["created_at"] = GetCurrentTimestamp();
+        user["updated_at"] = user["created_at"];
 
         auto keyResult = KeyBuilder::Build("identity", "users", id);
         if (!keyResult.has_value())
         {
             return R"({"error":{"code":"INVALID_KEY","message":"Failed to build storage key"}})";
         }
-        if (!s_storage->Put(keyResult.value(), requestData.dump()))
+        auto emailKey = EmailIndexKey(email);
+        if (!emailKey.has_value())
+        {
+            return R"({"error":{"code":"INVALID_KEY","message":"Failed to build email index key"}})";
+        }
+        // Uniqueness: the login index IS the email uniqueness constraint.
+        std::string existingId;
+        if (s_storage->Get(emailKey.value(), existingId))
+        {
+            return R"({"error":{"code":"CONFLICT","message":"A user with this email already exists"}})";
+        }
+        if (!s_storage->WriteBatch(
+                {{keyResult.value(), user.dump()}, {emailKey.value(), id}}, {}))
         {
             return R"({"error":{"code":"STORAGE_ERROR","message":"Failed to store entity"}})";
         }
-        return requestData.dump();
+        // Uniform wire contract: no password material (none exists on a
+        // created user — password-set is a separate flow), normalized roles.
+        json wire = user;
+        StripPasswordFields(wire);
+        NormalizeEmbeddedRoles(wire);
+        return wire.dump();
     }
     catch (const json::parse_error&)
     {
@@ -727,8 +859,8 @@ static std::string users_update(const RequestContext& ctx, const std::string& /*
     try
     {
         json updated = json::parse(existing);
-        if (!updated.contains("tenant_id"))       { updated["tenant_id"] = "default"; }
-        if (!updated.contains("organization_id")) { updated["organization_id"] = "default"; }
+        if (!updated.contains("tenant_id"))       { updated["tenant_id"] = kRoleDefaultTenantId; }
+        if (!updated.contains("organization_id")) { updated["organization_id"] = kRoleDefaultOrganizationId; }
         // Tenant isolation before any mutation — cross-tenant rows are
         // indistinguishable from missing ones.
         if (RowTenantId(updated) != ctx.tenantId)
@@ -736,33 +868,82 @@ static std::string users_update(const RequestContext& ctx, const std::string& /*
             return R"({"error":{"code":"NOT_FOUND","message":"Entity not found"}})";
         }
 
-        // Allowlist: exactly the UserUpdate contract (email, display_name,
-        // person_id, role_ids). Everything else — id, tenant_id,
-        // organization_id, roles, role, status, credential material,
-        // timestamps — is server-owned and silently unpatchable here.
-        static const std::array<const char*, 4> kUserUpdateFields{
-            "email", "display_name", "person_id", "role_ids"};
+        // Allowlist + type validation: exactly the UserUpdate contract
+        // (email, display_name, person_id, role_ids). Everything else —
+        // id, tenancy, roles, role, status, credential material,
+        // timestamps — is server-owned and unpatchable here.
         json patch = json::parse(body);
-        json allowed = json::object();
-        for (const char* field : kUserUpdateFields)
+        json allowed;
+        std::string validationError;
+        if (!ValidatedUserPatch(patch, allowed, validationError))
         {
-            if (patch.contains(field))
+            return std::string(R"({"error":{"code":"INVALID_REQUEST","message":")") + validationError + R"("}})";
+        }
+
+        // role_ids resolve through the roles store; the stored contract
+        // embeds resolved roles, never ids.
+        if (allowed.contains("role_ids"))
+        {
+            json roles;
+            if (!ResolveRoleIds(allowed.at("role_ids"), roles, validationError))
             {
-                allowed[field] = patch.at(field);
+                return std::string(R"({"error":{"code":"INVALID_REQUEST","message":")") + validationError + R"("}})";
+            }
+            updated["roles"] = roles;
+            allowed.erase("role_ids");
+        }
+
+        // Email moves the login index atomically with the record; the
+        // index is also the uniqueness constraint (CONFLICT when the
+        // target email already resolves to another user).
+        const std::string oldEmail = updated.value("email", std::string());
+        auto newIndexKey = EmailIndexKey(""); // default-constructed result
+        bool emailMoves = false;
+        std::vector<std::string> indexDeletes;
+        if (allowed.contains("email"))
+        {
+            const std::string newEmail = allowed.at("email").get<std::string>();
+            if (newEmail != oldEmail)
+            {
+                newIndexKey = EmailIndexKey(newEmail);
+                if (!newIndexKey.has_value())
+                {
+                    return R"({"error":{"code":"INVALID_KEY","message":"Failed to build email index key"}})";
+                }
+                emailMoves = true;
+                std::string owner;
+                if (s_storage->Get(newIndexKey.value(), owner) && owner != id)
+                {
+                    return R"({"error":{"code":"CONFLICT","message":"A user with this email already exists"}})";
+                }
+                if (!oldEmail.empty())
+                {
+                    auto oldKey = EmailIndexKey(oldEmail);
+                    if (oldKey.has_value())
+                    {
+                        indexDeletes.push_back(oldKey.value());
+                    }
+                }
             }
         }
+
         updated.update(allowed);
         updated["updated_at"] = GetCurrentTimestamp();
 
-        if (!s_storage->Put(key, updated.dump()))
+        std::vector<std::pair<std::string, std::string>> batchPuts{{key, updated.dump()}};
+        if (emailMoves && newIndexKey.has_value())
+        {
+            batchPuts.emplace_back(newIndexKey.value(), id);
+        }
+        if (!s_storage->WriteBatch(batchPuts, indexDeletes))
         {
             return R"({"error":{"code":"STORAGE_ERROR","message":"Failed to update entity"}})";
         }
 
         // Wire copy only — the stored record keeps its password material.
+        // (Tenancy keys are guaranteed present: backfilled above, before
+        // the tenant check — no re-backfill needed here.)
         json wire = updated;
-        if (!wire.contains("tenant_id"))       { wire["tenant_id"] = "default"; }
-        if (!wire.contains("organization_id")) { wire["organization_id"] = "default"; }
         StripPasswordFields(wire);
         NormalizeEmbeddedRoles(wire);
         return wire.dump();
@@ -775,6 +956,310 @@ static std::string users_update(const RequestContext& ctx, const std::string& /*
     {
         return R"({"error":{"code":"INVALID_REQUEST","message":"Request body fields have invalid types"}})";
     }
+}
+
+// ============================================================================
+// Users Delete Override
+//
+// The generated deleteUser stub had NO permission gate and NO tenant
+// check — any authenticated caller could irreversibly delete any user in
+// any tenant, including the seeded admin (g7m-review CR-01). Mirrors the
+// other item routes: write permission, tenant match (NOT_FOUND on
+// mismatch), and the login index row is deleted atomically with the
+// record.
+// ============================================================================
+
+static std::string users_delete(const RequestContext& ctx, const std::string& /*method*/, const std::string& urlPath, const std::string& /*body*/)
+{
+    if (!CallerCan(ctx, kPermUsersWrite))
+    {
+        return R"({"error":{"code":"FORBIDDEN","message":"Missing identity:users:write permission"}})";
+    }
+    const std::string id = urlPath.substr(urlPath.rfind(kUsersPathSeparator) + 1);
+
+    auto keyResult = KeyBuilder::Build("identity", "users", id);
+    if (!keyResult.has_value())
+    {
+        return R"({"error":{"code":"INVALID_KEY","message":"Invalid entity ID"}})";
+    }
+    std::string existing;
+    if (!s_storage->Get(keyResult.value(), existing))
+    {
+        return R"({"error":{"code":"NOT_FOUND","message":"Entity not found"}})";
+    }
+    try
+    {
+        json stored = json::parse(existing);
+        if (RowTenantId(stored) != ctx.tenantId)
+        {
+            return R"({"error":{"code":"NOT_FOUND","message":"Entity not found"}})";
+        }
+        std::vector<std::string> deletes{keyResult.value()};
+        const std::string email = stored.value("email", std::string());
+        if (!email.empty())
+        {
+            auto emailKey = EmailIndexKey(email);
+            if (emailKey.has_value())
+            {
+                deletes.push_back(emailKey.value());
+            }
+        }
+        if (!s_storage->WriteBatch({}, deletes))
+        {
+            return R"({"error":{"code":"STORAGE_ERROR","message":"Failed to delete entity"}})";
+        }
+        return R"({"status":true})";
+    }
+    catch (const json::exception&)
+    {
+        return R"({"error":{"code":"INVALID_REQUEST","message":"Stored record is malformed"}})";
+    }
+}
+
+// ============================================================================
+// Roles Route Overrides
+//
+// Same hardening class as the users routes (g7m-review WR-06): the
+// generated roles stubs had no permission gates and no tenant scoping,
+// and deleting the canonical admin role would empty the Role screen and
+// the user-form dropdown until restart.
+// ============================================================================
+
+static std::string roles_list(const RequestContext& ctx, const std::string& /*method*/, const std::string& /*urlPath*/, const std::string& /*body*/)
+{
+    if (!CallerCan(ctx, kPermRolesRead))
+    {
+        return R"({"error":{"code":"FORBIDDEN","message":"Missing identity:roles:read permission"}})";
+    }
+    auto scanResult = s_storage->Scan(KeyBuilder::MakePrefix("identity", "roles"));
+    json result = json::array();
+    for (const auto& [k, v] : scanResult)
+    {
+        try
+        {
+            json item = json::parse(v);
+            if (RowTenantId(item) != ctx.tenantId)
+            {
+                continue;
+            }
+            result.push_back(std::move(item));
+        }
+        catch (const json::exception&)
+        {
+            continue; // skip malformed rows rather than fail the whole list
+        }
+    }
+    json response;
+    response["data"] = result;
+    return response.dump();
+}
+
+static std::string roles_get(const RequestContext& ctx, const std::string& /*method*/, const std::string& urlPath, const std::string& /*body*/)
+{
+    if (!CallerCan(ctx, kPermRolesRead))
+    {
+        return R"({"error":{"code":"FORBIDDEN","message":"Missing identity:roles:read permission"}})";
+    }
+    const std::string id = urlPath.substr(urlPath.rfind(kUsersPathSeparator) + 1);
+    auto keyResult = KeyBuilder::Build("identity", "roles", id);
+    if (!keyResult.has_value())
+    {
+        return R"({"error":{"code":"INVALID_KEY","message":"Invalid entity ID"}})";
+    }
+    std::string value;
+    if (!s_storage->Get(keyResult.value(), value))
+    {
+        return R"({"error":{"code":"NOT_FOUND","message":"Entity not found"}})";
+    }
+    try
+    {
+        json item = json::parse(value);
+        if (RowTenantId(item) != ctx.tenantId)
+        {
+            return R"({"error":{"code":"NOT_FOUND","message":"Entity not found"}})";
+        }
+        return item.dump();
+    }
+    catch (const json::exception&)
+    {
+        return R"({"error":{"code":"INVALID_REQUEST","message":"Stored record is malformed"}})";
+    }
+}
+
+/// Validate + allowlist a RoleCreate/RoleUpdate body (name, scope,
+/// permissions — the spec contract); type-violations rejected.
+static bool ValidatedRolePatch(const json& patch, json& allowed_out, std::string& error_out)
+{
+    allowed_out = json::object();
+    if (patch.contains("name"))
+    {
+        if (!patch.at("name").is_string())
+        {
+            error_out = "name must be a string";
+            return false;
+        }
+        allowed_out["name"] = patch.at("name");
+    }
+    if (patch.contains("scope"))
+    {
+        if (!patch.at("scope").is_string())
+        {
+            error_out = "scope must be a string";
+            return false;
+        }
+        allowed_out["scope"] = patch.at("scope");
+    }
+    if (patch.contains("permissions"))
+    {
+        const json& perms = patch.at("permissions");
+        if (!perms.is_array()
+            || !std::all_of(perms.begin(), perms.end(),
+                            [](const json& e) { return e.is_string(); }))
+        {
+            error_out = "permissions must be an array of strings";
+            return false;
+        }
+        allowed_out["permissions"] = perms;
+    }
+    return true;
+}
+
+static std::string roles_create(const RequestContext& ctx, const std::string& /*method*/, const std::string& /*urlPath*/, const std::string& body)
+{
+    if (!CallerCan(ctx, kPermRolesWrite))
+    {
+        return R"({"error":{"code":"FORBIDDEN","message":"Missing identity:roles:write permission"}})";
+    }
+    try
+    {
+        json patch = json::parse(body);
+        json allowed;
+        std::string validationError;
+        if (!ValidatedRolePatch(patch, allowed, validationError) || !allowed.contains("name"))
+        {
+            return std::string(R"({"error":{"code":"INVALID_REQUEST","message":")")
+                + (allowed.contains("name") ? validationError : "name is required")
+                + R"("}})";
+        }
+        const std::string id = GenerateUserUuid();
+        json role = std::move(allowed);
+        role["id"] = id;
+        role["tenant_id"] = ctx.tenantId;
+        role["organization_id"] = ctx.organizationId;
+        role["created_at"] = GetCurrentTimestamp();
+        role["updated_at"] = role["created_at"];
+
+        auto keyResult = KeyBuilder::Build("identity", "roles", id);
+        if (!keyResult.has_value())
+        {
+            return R"({"error":{"code":"INVALID_KEY","message":"Failed to build storage key"}})";
+        }
+        if (!s_storage->Put(keyResult.value(), role.dump()))
+        {
+            return R"({"error":{"code":"STORAGE_ERROR","message":"Failed to store entity"}})";
+        }
+        return role.dump();
+    }
+    catch (const json::parse_error&)
+    {
+        return R"({"error":{"code":"PARSE_ERROR","message":"Invalid JSON body"}})";
+    }
+    catch (const json::exception&)
+    {
+        return R"({"error":{"code":"INVALID_REQUEST","message":"Request body fields have invalid types"}})";
+    }
+}
+
+static std::string roles_update(const RequestContext& ctx, const std::string& /*method*/, const std::string& urlPath, const std::string& body)
+{
+    if (!CallerCan(ctx, kPermRolesWrite))
+    {
+        return R"({"error":{"code":"FORBIDDEN","message":"Missing identity:roles:write permission"}})";
+    }
+    const std::string id = urlPath.substr(urlPath.rfind(kUsersPathSeparator) + 1);
+    auto keyResult = KeyBuilder::Build("identity", "roles", id);
+    if (!keyResult.has_value())
+    {
+        return R"({"error":{"code":"INVALID_KEY","message":"Invalid entity ID"}})";
+    }
+    std::string existing;
+    if (!s_storage->Get(keyResult.value(), existing))
+    {
+        return R"({"error":{"code":"NOT_FOUND","message":"Entity not found"}})";
+    }
+    try
+    {
+        json updated = json::parse(existing);
+        if (RowTenantId(updated) != ctx.tenantId)
+        {
+            return R"({"error":{"code":"NOT_FOUND","message":"Entity not found"}})";
+        }
+        json patch = json::parse(body);
+        json allowed;
+        std::string validationError;
+        if (!ValidatedRolePatch(patch, allowed, validationError))
+        {
+            return std::string(R"({"error":{"code":"INVALID_REQUEST","message":")") + validationError + R"("}})";
+        }
+        updated.update(allowed);
+        updated["updated_at"] = GetCurrentTimestamp();
+        if (!s_storage->Put(keyResult.value(), updated.dump()))
+        {
+            return R"({"error":{"code":"STORAGE_ERROR","message":"Failed to update entity"}})";
+        }
+        return updated.dump();
+    }
+    catch (const json::parse_error&)
+    {
+        return R"({"error":{"code":"PARSE_ERROR","message":"Invalid JSON body"}})";
+    }
+    catch (const json::exception&)
+    {
+        return R"({"error":{"code":"INVALID_REQUEST","message":"Request body fields have invalid types"}})";
+    }
+}
+
+static std::string roles_delete(const RequestContext& ctx, const std::string& /*method*/, const std::string& urlPath, const std::string& /*body*/)
+{
+    if (!CallerCan(ctx, kPermRolesWrite))
+    {
+        return R"({"error":{"code":"FORBIDDEN","message":"Missing identity:roles:write permission"}})";
+    }
+    const std::string id = urlPath.substr(urlPath.rfind(kUsersPathSeparator) + 1);
+    // The canonical admin role is infrastructural — the seeded admin
+    // user embeds it and the seed re-creates it on restart, so deleting
+    // it only breaks the running instance's Role screens.
+    if (id == kAdminRoleId)
+    {
+        return R"({"error":{"code":"CONFLICT","message":"The canonical admin role cannot be deleted"}})";
+    }
+    auto keyResult = KeyBuilder::Build("identity", "roles", id);
+    if (!keyResult.has_value())
+    {
+        return R"({"error":{"code":"INVALID_KEY","message":"Invalid entity ID"}})";
+    }
+    std::string existing;
+    if (!s_storage->Get(keyResult.value(), existing))
+    {
+        return R"({"error":{"code":"NOT_FOUND","message":"Entity not found"}})";
+    }
+    try
+    {
+        json stored = json::parse(existing);
+        if (RowTenantId(stored) != ctx.tenantId)
+        {
+            return R"({"error":{"code":"NOT_FOUND","message":"Entity not found"}})";
+        }
+    }
+    catch (const json::exception&)
+    {
+        return R"({"error":{"code":"INVALID_REQUEST","message":"Stored record is malformed"}})";
+    }
+    if (!s_storage->Delete(keyResult.value()))
+    {
+        return R"({"error":{"code":"STORAGE_ERROR","message":"Failed to delete entity"}})";
+    }
+    return R"({"status":true})";
 }
 
 // ============================================================================
@@ -870,4 +1355,10 @@ void init_identity_overrides(PluginManager* pm, IServiceLocator& locator)
     pm->RegisterHandler("GET",  "/api/v1/users",         "users_list",         users_list,         "Identity", kOverrideHandlerPriority);
     pm->RegisterHandler("GET",  "/api/v1/users/{userId}", "users_get",        users_get,          "Identity", kOverrideHandlerPriority);
     pm->RegisterHandler("PATCH", "/api/v1/users/{userId}", "users_update",    users_update,       "Identity", kOverrideHandlerPriority);
+    pm->RegisterHandler("DELETE", "/api/v1/users/{userId}", "users_delete",   users_delete,       "Identity", kOverrideHandlerPriority);
+    pm->RegisterHandler("GET",  "/api/v1/roles",         "roles_list",         roles_list,         "Identity", kOverrideHandlerPriority);
+    pm->RegisterHandler("POST", "/api/v1/roles",         "roles_create",       roles_create,       "Identity", kOverrideHandlerPriority);
+    pm->RegisterHandler("GET",  "/api/v1/roles/{roleId}", "roles_get",        roles_get,          "Identity", kOverrideHandlerPriority);
+    pm->RegisterHandler("PATCH", "/api/v1/roles/{roleId}", "roles_update",    roles_update,       "Identity", kOverrideHandlerPriority);
+    pm->RegisterHandler("DELETE", "/api/v1/roles/{roleId}", "roles_delete",   roles_delete,       "Identity", kOverrideHandlerPriority);
 }

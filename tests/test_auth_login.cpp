@@ -74,6 +74,9 @@ protected:
     static constexpr const char* kTestEmail = "admin@test.com";
     static constexpr const char* kTestPassword = "admin123";
     static constexpr int kOverridePriority = 200;
+    /// Mirrors the handlers' kAdminRoleId (deterministic seeded id).
+    static constexpr const char* kAdminRoleIdSeed =
+        "adminrole00000000000000000000001";
 
     void SetUp() override
     {
@@ -1515,4 +1518,222 @@ TEST_F(AuthLoginTest, RealHandler_Refresh_ExpiredTokenRejected)
         m_pm.Route(m_ctx, "POST", "/api/v1/auth/refresh", refreshBody.dump()));
     EXPECT_EQ("INVALID_TOKEN", data.at("error").at("code").get<std::string>())
         << "expired refresh credentials must be rejected — no leeway path";
+}
+
+// ============================================================================
+// g7m-review round 2: DELETE route hardening, write-gate negatives, email
+// index maintenance, allowlist type validation, role resolution, roles
+// route guards.
+// ============================================================================
+
+TEST_F(AuthLoginTest, UsersDelete_ItemRoute_RemovesUserAndEmailIndex)
+{
+    init_identity_overrides(&m_pm, m_locator);
+    SeedUser("delete-me@test.com", kTestPassword, "user-del-001");
+
+    auto resp = json::parse(
+        m_pm.Route(m_ctx, "DELETE", "/api/v1/users/user-del-001", ""));
+    ASSERT_FALSE(resp.contains("error")) << resp.dump();
+
+    auto userKey = KeyBuilder::Build("identity", "users", "user-del-001");
+    auto emailKey = KeyBuilder::Build("identity", "users_by_email", "delete-me@test.com");
+    std::string leftover;
+    EXPECT_FALSE(m_engine->Get(userKey.value(), leftover)) << "user row must be gone";
+    EXPECT_FALSE(m_engine->Get(emailKey.value(), leftover)) << "login index row must be gone";
+}
+
+TEST_F(AuthLoginTest, UsersDelete_ItemRoute_CrossTenantIsNotFoundAndUntouched)
+{
+    init_identity_overrides(&m_pm, m_locator);
+    PutRawUserRecord("user-other-tenant",
+        R"({"id":"user-other-tenant","email":"x@other.test","tenant_id":"other"})");
+
+    auto resp = json::parse(
+        m_pm.Route(m_ctx, "DELETE", "/api/v1/users/user-other-tenant", ""));
+    ASSERT_TRUE(resp.contains("error")) << resp.dump();
+    EXPECT_EQ("NOT_FOUND", resp.at("error").at("code").get<std::string>());
+
+    auto key = KeyBuilder::Build("identity", "users", "user-other-tenant");
+    std::string stored;
+    EXPECT_TRUE(m_engine->Get(key.value(), stored)) << "cross-tenant row must survive";
+}
+
+TEST_F(AuthLoginTest, UsersDelete_ItemRoute_ForbiddenWithoutPermission)
+{
+    init_identity_overrides(&m_pm, m_locator);
+    m_ctx.permissions.clear();
+
+    auto resp = json::parse(
+        m_pm.Route(m_ctx, "DELETE", "/api/v1/users/user-test-001", ""));
+    ASSERT_TRUE(resp.contains("error")) << resp.dump();
+    EXPECT_EQ("FORBIDDEN", resp.at("error").at("code").get<std::string>());
+    // The seeded admin survives the unauthorized attempt.
+    auto key = KeyBuilder::Build("identity", "users", "user-test-001");
+    std::string stored;
+    EXPECT_TRUE(m_engine->Get(key.value(), stored));
+}
+
+TEST_F(AuthLoginTest, UsersCreate_And_Update_ForbiddenWithoutPermission)
+{
+    init_identity_overrides(&m_pm, m_locator);
+    m_ctx.permissions.clear();
+
+    auto createResp = json::parse(m_pm.Route(
+        m_ctx, "POST", "/api/v1/users", R"({"email":"nope@test.com"})"));
+    ASSERT_TRUE(createResp.contains("error")) << createResp.dump();
+    EXPECT_EQ("FORBIDDEN", createResp.at("error").at("code").get<std::string>());
+
+    auto updateResp = json::parse(m_pm.Route(
+        m_ctx, "PATCH", "/api/v1/users/user-test-001", R"({"display_name":"X"})"));
+    ASSERT_TRUE(updateResp.contains("error")) << updateResp.dump();
+    EXPECT_EQ("FORBIDDEN", updateResp.at("error").at("code").get<std::string>());
+}
+
+TEST_F(AuthLoginTest, UsersCreate_WritesEmailIndexAndRejectsDuplicates)
+{
+    init_identity_overrides(&m_pm, m_locator);
+
+    auto resp = json::parse(m_pm.Route(
+        m_ctx, "POST", "/api/v1/users",
+        R"({"email":"newuser@test.com","display_name":"New User"})"));
+    ASSERT_FALSE(resp.contains("error")) << resp.dump();
+    const std::string id = resp.at("id").get<std::string>();
+
+    auto emailKey = KeyBuilder::Build("identity", "users_by_email", "newuser@test.com");
+    std::string resolved;
+    ASSERT_TRUE(m_engine->Get(emailKey.value(), resolved))
+        << "created user must be login-resolvable";
+    EXPECT_EQ(id, resolved);
+    // Wire contract: no password material on the create response.
+    EXPECT_FALSE(resp.contains("password_hash"));
+
+    auto dup = json::parse(m_pm.Route(
+        m_ctx, "POST", "/api/v1/users", R"({"email":"newuser@test.com"})"));
+    ASSERT_TRUE(dup.contains("error")) << dup.dump();
+    EXPECT_EQ("CONFLICT", dup.at("error").at("code").get<std::string>());
+}
+
+TEST_F(AuthLoginTest, UsersCreate_DropsServerOwnedFieldsFromBody)
+{
+    init_identity_overrides(&m_pm, m_locator);
+    auto resp = json::parse(m_pm.Route(
+        m_ctx, "POST", "/api/v1/users",
+        R"({"email":"crafted@test.com","roles":[{"name":"admin"}],)"
+        R"("tenant_id":"other","status":"disabled","password_hash":"evil"})"));
+    ASSERT_FALSE(resp.contains("error")) << resp.dump();
+    EXPECT_EQ("default", resp.at("tenant_id").get<std::string>());
+    EXPECT_EQ("active", resp.at("status").get<std::string>());
+    EXPECT_FALSE(resp.contains("password_hash"));
+    // roles arrive only through role_ids resolution — never raw.
+    ASSERT_TRUE(resp.at("roles").is_array());
+    EXPECT_TRUE(resp.at("roles").empty());
+}
+
+TEST_F(AuthLoginTest, UsersUpdate_AllowlistRejectsTypeViolations)
+{
+    init_identity_overrides(&m_pm, m_locator);
+    SeedUser("types@test.com", kTestPassword, "user-types-001");
+
+    auto resp = json::parse(m_pm.Route(
+        m_ctx, "PATCH", "/api/v1/users/user-types-001", R"({"email":123})"));
+    ASSERT_TRUE(resp.contains("error")) << resp.dump();
+    EXPECT_EQ("INVALID_REQUEST", resp.at("error").at("code").get<std::string>());
+
+    // Stored record unchanged — the checked-parse-breaking value never landed.
+    auto key = KeyBuilder::Build("identity", "users", "user-types-001");
+    std::string stored;
+    ASSERT_TRUE(m_engine->Get(key.value(), stored));
+    EXPECT_EQ("types@test.com", json::parse(stored).value("email", std::string()));
+}
+
+TEST_F(AuthLoginTest, UsersUpdate_EmailChangeMovesLoginIndex)
+{
+    init_identity_overrides(&m_pm, m_locator);
+    SeedUser("moves@test.com", kTestPassword, "user-move-001");
+
+    auto resp = json::parse(m_pm.Route(
+        m_ctx, "PATCH", "/api/v1/users/user-move-001",
+        R"({"email":"moved@test.com"})"));
+    ASSERT_FALSE(resp.contains("error")) << resp.dump();
+
+    std::string resolved;
+    EXPECT_FALSE(m_engine->Get(
+        KeyBuilder::Build("identity", "users_by_email", "moves@test.com").value(),
+        resolved)) << "old email must no longer resolve";
+    ASSERT_TRUE(m_engine->Get(
+        KeyBuilder::Build("identity", "users_by_email", "moved@test.com").value(),
+        resolved)) << "new email must resolve";
+    EXPECT_EQ("user-move-001", resolved);
+}
+
+TEST_F(AuthLoginTest, UsersUpdate_EmailConflictWhenTargetTaken)
+{
+    init_identity_overrides(&m_pm, m_locator);
+    SeedUser("owner@test.com", kTestPassword, "user-owner-001");
+    SeedUser("changer@test.com", kTestPassword, "user-changer-001");
+
+    auto resp = json::parse(m_pm.Route(
+        m_ctx, "PATCH", "/api/v1/users/user-changer-001",
+        R"({"email":"owner@test.com"})"));
+    ASSERT_TRUE(resp.contains("error")) << resp.dump();
+    EXPECT_EQ("CONFLICT", resp.at("error").at("code").get<std::string>());
+    // The owner's index still resolves to the owner.
+    std::string resolved;
+    ASSERT_TRUE(m_engine->Get(
+        KeyBuilder::Build("identity", "users_by_email", "owner@test.com").value(),
+        resolved));
+    EXPECT_EQ("user-owner-001", resolved);
+}
+
+TEST_F(AuthLoginTest, UsersUpdate_ResolvesRoleIdsIntoEmbeddedRoles)
+{
+    init_identity_overrides(&m_pm, m_locator); // seeds the canonical admin role
+    SeedUser("roles@test.com", kTestPassword, "user-roles-001");
+
+    const std::string body = std::string(R"({"role_ids":[")") + kAdminRoleIdSeed
+        + R"("]})";
+    auto resp = json::parse(
+        m_pm.Route(m_ctx, "PATCH", "/api/v1/users/user-roles-001", body));
+    ASSERT_FALSE(resp.contains("error")) << resp.dump();
+    ASSERT_TRUE(resp.at("roles").is_array()) << resp.dump();
+    ASSERT_EQ(1u, resp.at("roles").size()) << resp.dump();
+    EXPECT_EQ("admin", resp.at("roles").at(0).at("name").get<std::string>());
+
+    // Unknown ids are rejected, not silently dropped.
+    auto bad = json::parse(m_pm.Route(
+        m_ctx, "PATCH", "/api/v1/users/user-roles-001",
+        R"({"role_ids":["nonexistent-role-id"]})"));
+    ASSERT_TRUE(bad.contains("error")) << bad.dump();
+    EXPECT_EQ("INVALID_REQUEST", bad.at("error").at("code").get<std::string>());
+}
+
+TEST_F(AuthLoginTest, RolesRoutes_GuardedAndTenantScoped)
+{
+    init_identity_overrides(&m_pm, m_locator); // canonical admin role seeded
+
+    m_ctx.permissions.clear();
+    auto forbidden = json::parse(m_pm.Route(m_ctx, "GET", "/api/v1/roles", ""));
+    ASSERT_TRUE(forbidden.contains("error")) << forbidden.dump();
+    EXPECT_EQ("FORBIDDEN", forbidden.at("error").at("code").get<std::string>());
+
+    m_ctx.permissions = {"*:*"};
+    auto ok = json::parse(m_pm.Route(m_ctx, "GET", "/api/v1/roles", ""));
+    ASSERT_FALSE(ok.contains("error")) << ok.dump();
+    ASSERT_TRUE(ok.at("data").is_array());
+    EXPECT_GE(ok.at("data").size(), 1u) << "seeded admin role must be listed";
+}
+
+TEST_F(AuthLoginTest, RolesDelete_RefusesCanonicalAdminRole)
+{
+    init_identity_overrides(&m_pm, m_locator);
+
+    const std::string url = std::string("/api/v1/roles/") + kAdminRoleIdSeed;
+    auto resp = json::parse(m_pm.Route(m_ctx, "DELETE", url, ""));
+    ASSERT_TRUE(resp.contains("error")) << resp.dump();
+    EXPECT_EQ("CONFLICT", resp.at("error").at("code").get<std::string>());
+
+    // The role survives.
+    auto key = KeyBuilder::Build("identity", "roles", kAdminRoleIdSeed);
+    std::string stored;
+    EXPECT_TRUE(m_engine->Get(key.value(), stored));
 }
