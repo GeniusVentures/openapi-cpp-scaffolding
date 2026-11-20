@@ -14,7 +14,9 @@
 #include <gtest/gtest.h>
 
 #include <chrono>
+#include <cstdio>
 #include <filesystem>
+#include <set>
 #include <string>
 
 #include "singleton/PluginManager.hpp"
@@ -73,6 +75,9 @@ protected:
     static constexpr const char* kTestEmail = "admin@test.com";
     static constexpr const char* kTestPassword = "admin123";
     static constexpr int kOverridePriority = 200;
+    /// Mirrors the handlers' kAdminRoleId (deterministic seeded id).
+    static constexpr const char* kAdminRoleIdSeed =
+        "adminrole00000000000000000000001";
 
     void SetUp() override
     {
@@ -90,6 +95,11 @@ protected:
         m_locator.RegisterService(Fnv1a("PluginManager"), &m_pm);
         m_locator.RegisterService(Fnv1a("StorageEngine"), m_engine.get());
         m_locator.RegisterService(Fnv1a("JwtSecret"), const_cast<std::string*>(&kTestSecret));
+
+        // Default caller: the tenant-default admin (wildcard permission).
+        // Negative security tests override these to model narrower callers.
+        m_ctx.tenantId = "default";
+        m_ctx.permissions = {"*:*"};
 
         SeedUser(kTestEmail, kTestPassword, "user-test-001");
 
@@ -148,6 +158,36 @@ protected:
 
         std::string emailKey = "identity/users_by_email/" + email;
         ASSERT_TRUE(m_engine->Put(emailKey, userId));
+    }
+
+    /// Puts a minimal user record WITHOUT hashing — for pagination tests
+    /// that seed dozens of users (HashPassword per seed would dominate the
+    /// runtime). Password fields are opaque strings nobody verifies here.
+    void SeedRawUser(const std::string& userId)
+    {
+        json userJson;
+        userJson["id"] = userId;
+        userJson["email"] = userId + "@raw.test";
+        userJson["display_name"] = userId;
+        userJson["tenant_id"] = "default";
+        userJson["organization_id"] = "default";
+        userJson["status"] = "active";
+        userJson["password_hash"] = "raw";
+        userJson["password_salt"] = "raw";
+        userJson["password_iterations"] = 1;
+
+        auto key = KeyBuilder::Build("identity", "users", userId);
+        ASSERT_TRUE(key.has_value());
+        ASSERT_TRUE(m_engine->Put(key.value(), userJson.dump()));
+    }
+
+    /// Puts an arbitrary raw value under a user key — for malformed-record
+    /// tolerance tests (non-JSON payloads, non-string id keys).
+    void PutRawUserRecord(const std::string& userId, const std::string& rawValue)
+    {
+        auto key = KeyBuilder::Build("identity", "users", userId);
+        ASSERT_TRUE(key.has_value());
+        ASSERT_TRUE(m_engine->Put(key.value(), rawValue));
     }
 
     /// Registers real auth handler at priority 200, overriding stub at 100
@@ -265,6 +305,56 @@ protected:
         m_pm.RegisterHandler(
             "GET", "/api/v1/users", "stub_users_list",
             HandlerFn(stub_list), "Identity", 0);
+    }
+
+    /// Registers leaky item-route stubs at priority 0, mirroring the
+    /// generated getUser/updateUser (raw stored record verbatim, legacy
+    /// roles shape, no stripping) — the observed defect shape of the item
+    /// routes that the users_get/users_update overrides must beat.
+    void RegisterStubUsersItemRoutes()
+    {
+        auto stub_get = [this](
+            const RequestContext& /*ctx*/,
+            const std::string& /*method*/,
+            const std::string& urlPath,
+            const std::string& /*body*/) -> std::string
+        {
+            const std::string id = urlPath.substr(urlPath.rfind('/') + 1);
+            auto key = KeyBuilder::Build("identity", "users", id);
+            if (!key.has_value()) { return R"({"error":{"code":"INVALID_KEY","message":"Invalid entity ID"}})"; }
+            std::string value;
+            if (!m_engine->Get(key.value(), value))
+            {
+                return R"({"error":{"code":"NOT_FOUND","message":"Entity not found"}})";
+            }
+            return value; // raw stored record — password material included
+        };
+        auto stub_update = [this](
+            const RequestContext& /*ctx*/,
+            const std::string& /*method*/,
+            const std::string& urlPath,
+            const std::string& body) -> std::string
+        {
+            const std::string id = urlPath.substr(urlPath.rfind('/') + 1);
+            auto key = KeyBuilder::Build("identity", "users", id);
+            if (!key.has_value()) { return R"({"error":{"code":"INVALID_KEY","message":"Invalid entity ID"}})"; }
+            std::string existing;
+            if (!m_engine->Get(key.value(), existing))
+            {
+                return R"({"error":{"code":"NOT_FOUND","message":"Entity not found"}})";
+            }
+            json updated = json::parse(existing);
+            updated.update(json::parse(body));
+            m_engine->Put(key.value(), updated.dump());
+            return updated.dump(); // raw merged record — no stripping
+        };
+
+        m_pm.RegisterHandler(
+            "GET", "/api/v1/users/{userId}", "stub_users_get",
+            HandlerFn(stub_get), "Identity", 0);
+        m_pm.RegisterHandler(
+            "PATCH", "/api/v1/users/{userId}", "stub_users_update",
+            HandlerFn(stub_update), "Identity", 0);
     }
 };
 
@@ -653,6 +743,347 @@ TEST_F(AuthLoginTest, UsersList_Override_ToleratesMissingRoles)
         << "stored user without a roles key must still be listed: " << response;
 }
 
+// ============================================================================
+// Users List Pagination (WR-02: the pagination logic shipped with zero test
+// coverage) + malformed-record tolerance (WR-01's type-safe id read).
+// ============================================================================
+
+TEST_F(AuthLoginTest, UsersList_Pagination_PagesChainGaplessAndDuplicateFree)
+{
+    RegisterStubUsersList();
+    init_identity_overrides(&m_pm, m_locator);
+    // SetUp's user-test-001 + init's touch-pos PIN user + 58 raw users
+    // = 60 total; ids sort lexicographically
+    // ("pin_user_*" < "user-page-*" < "user-test-001").
+    for (int i = 2; i <= 59; ++i)
+    {
+        char id[32];
+        std::snprintf(id, sizeof(id), "user-page-%03d", i);
+        SeedRawUser(id);
+    }
+
+    m_ctx.queryString = "limit=50";
+    auto page1 = json::parse(m_pm.Route(m_ctx, "GET", "/api/v1/users", ""));
+    ASSERT_FALSE(page1.contains("error")) << page1.dump();
+    ASSERT_EQ(50u, page1.at("data").size()) << page1.dump();
+    EXPECT_TRUE(page1.at("pagination").at("has_more").get<bool>());
+    ASSERT_TRUE(page1.at("pagination").contains("next_cursor")) << page1.dump();
+    const std::string next1 =
+        page1.at("pagination").at("next_cursor").get<std::string>();
+    // next_cursor is the id of the LAST row on this page — the resume point.
+    EXPECT_EQ(page1.at("data").at(49).at("id").get<std::string>(), next1);
+
+    m_ctx.queryString = "limit=50&cursor=" + next1;
+    auto page2 = json::parse(m_pm.Route(m_ctx, "GET", "/api/v1/users", ""));
+    ASSERT_FALSE(page2.contains("error")) << page2.dump();
+    ASSERT_EQ(10u, page2.at("data").size()) << page2.dump();
+    // End of list: has_more false and NO next_cursor key (absent, not null).
+    EXPECT_FALSE(page2.at("pagination").at("has_more").get<bool>());
+    EXPECT_FALSE(page2.at("pagination").contains("next_cursor"));
+
+    // Union across pages is gapless and duplicate-free: 60 distinct ids,
+    // every page-2 id strictly after the cursor, none of page 1's past it.
+    std::set<std::string> ids;
+    for (const auto& item : page1.at("data"))
+    {
+        ids.insert(item.at("id").get<std::string>());
+        EXPECT_LE(item.at("id").get<std::string>(), next1);
+    }
+    for (const auto& item : page2.at("data"))
+    {
+        ids.insert(item.at("id").get<std::string>());
+        EXPECT_GT(item.at("id").get<std::string>(), next1);
+    }
+    EXPECT_EQ(60u, ids.size());
+}
+
+TEST_F(AuthLoginTest, UsersList_Pagination_LimitParsingCapAndFallbacks)
+{
+    RegisterStubUsersList();
+    init_identity_overrides(&m_pm, m_locator);
+    // 110 raw users + SetUp's user-test-001 = 111 — enough to observe the
+    // limit=100 cap, not just the default.
+    for (int i = 0; i < 110; ++i)
+    {
+        char id[32];
+        std::snprintf(id, sizeof(id), "user-cap-%03d", i);
+        SeedRawUser(id);
+    }
+
+    const auto dataSizeFor = [this](const std::string& query) {
+        m_ctx.queryString = query;
+        auto resp = json::parse(m_pm.Route(m_ctx, "GET", "/api/v1/users", ""));
+        EXPECT_FALSE(resp.contains("error")) << query << ": " << resp.dump();
+        return std::make_pair(resp.at("data").size(),
+                              resp.at("pagination").at("limit").get<unsigned int>());
+    };
+
+    // Cap: limit=200 serves at most 100 and reports the effective limit.
+    auto [capped, capLimit] = dataSizeFor("limit=200");
+    EXPECT_EQ(100u, capped);
+    EXPECT_EQ(100u, capLimit);
+
+    // Fallbacks: non-numeric, negative, and zero all serve the default 50.
+    EXPECT_EQ(50u, dataSizeFor("limit=abc").first);
+    EXPECT_EQ(50u, dataSizeFor("limit=-1").first);
+    EXPECT_EQ(50u, dataSizeFor("limit=0").first);
+    // Absent limit: default 50.
+    EXPECT_EQ(50u, dataSizeFor("").first);
+}
+
+TEST_F(AuthLoginTest, UsersList_MalformedRecordsSkippedNotFatal)
+{
+    RegisterStubUsersList();
+    init_identity_overrides(&m_pm, m_locator);
+
+    // Non-JSON payload under a user key — the parse guard skips it.
+    PutRawUserRecord("user-broken-json", "this is not json {{{");
+    // JSON record whose id key holds a number — storable today via the
+    // generic update stub's body merge; WR-01: must not throw type_error.
+    PutRawUserRecord("user-broken-id", R"({"id":123,"email":"x@y.z"})");
+
+    m_ctx.queryString = "";
+    auto resp = json::parse(m_pm.Route(m_ctx, "GET", "/api/v1/users", ""));
+    ASSERT_FALSE(resp.contains("error")) << resp.dump();
+    ASSERT_TRUE(resp.at("data").is_array());
+
+    // SetUp's valid user still listed; neither malformed record is.
+    // Type-safe id read in the verification loop too — the same
+    // value()-on-non-string trap WR-01 fixed in the handler.
+    bool found = false;
+    for (const auto& item : resp.at("data"))
+    {
+        ASSERT_TRUE(item.contains("id")) << resp.dump();
+        ASSERT_TRUE(item.at("id").is_string())
+            << "non-string ids must never reach the wire: " << item.dump();
+        const std::string id = item.at("id").get<std::string>();
+        if (id == "user-test-001") { found = true; }
+        EXPECT_NE("user-broken-json", id);
+        EXPECT_NE("user-broken-id", id);
+    }
+    EXPECT_TRUE(found) << "valid user must survive malformed neighbors: "
+                       << resp.dump();
+}
+
+// ============================================================================
+// Users Item-Route Overrides (CR-01: GET/PATCH /api/v1/users/{userId} must
+// not leak password material and must emit the contract-complete role shape)
+// ============================================================================
+
+TEST_F(AuthLoginTest, UsersGet_ItemRoute_StripsPasswordsAndNormalizesRoles)
+{
+    RegisterStubUsersItemRoutes();
+    init_identity_overrides(&m_pm, m_locator);
+    SeedUser("item-get@test.com", kTestPassword, "user-item-001",
+             json::array({
+                 json{{"name", "admin"},
+                      {"permissions", json::array({"*:*"})}},
+             }));
+
+    auto resp = json::parse(
+        m_pm.Route(m_ctx, "GET", "/api/v1/users/user-item-001", ""));
+    ASSERT_FALSE(resp.contains("error")) << resp.dump();
+    ASSERT_EQ("user-item-001", resp.at("id").get<std::string>());
+
+    // T-o39-01 on the item route: no password material on the wire.
+    EXPECT_FALSE(resp.contains("password_hash")) << resp.dump();
+    EXPECT_FALSE(resp.contains("password_salt")) << resp.dump();
+    EXPECT_FALSE(resp.contains("password_iterations")) << resp.dump();
+
+    // Role.fromJson contract, in full, on the single-user fetch.
+    ASSERT_TRUE(resp.contains("roles")) << resp.dump();
+    const json& role = resp.at("roles").at(0);
+    for (const char* key : {"id", "tenant_id", "organization_id",
+                            "created_at", "updated_at", "name", "scope"})
+    {
+        EXPECT_TRUE(role.contains(key))
+            << "Role.fromJson requires '" << key << "': " << role.dump();
+    }
+}
+
+TEST_F(AuthLoginTest, UsersGet_ItemRoute_UnknownUserNotFound)
+{
+    RegisterStubUsersItemRoutes();
+    init_identity_overrides(&m_pm, m_locator);
+
+    auto resp = json::parse(
+        m_pm.Route(m_ctx, "GET", "/api/v1/users/user-never-seeded", ""));
+    ASSERT_TRUE(resp.contains("error")) << resp.dump();
+    EXPECT_EQ("NOT_FOUND", resp.at("error").at("code").get<std::string>());
+}
+
+TEST_F(AuthLoginTest, UsersUpdate_ItemRoute_StripsPasswordsAndRefusesInjection)
+{
+    RegisterStubUsersItemRoutes();
+    init_identity_overrides(&m_pm, m_locator);
+    SeedUser("item-update@test.com", kTestPassword, "user-item-002",
+             json::array({
+                 json{{"name", "admin"},
+                      {"permissions", json::array({"*:*"})}},
+             }));
+
+    const std::string body =
+        R"({"display_name":"Renamed","password_hash":"evil",)"
+        R"("password_salt":"evil","password_iterations":1})";
+    auto resp = json::parse(
+        m_pm.Route(m_ctx, "PATCH", "/api/v1/users/user-item-002", body));
+    ASSERT_FALSE(resp.contains("error")) << resp.dump();
+    EXPECT_EQ("Renamed", resp.at("display_name").get<std::string>());
+
+    // Response copy: no password material, roles normalized.
+    EXPECT_FALSE(resp.contains("password_hash")) << resp.dump();
+    EXPECT_FALSE(resp.contains("password_salt")) << resp.dump();
+    EXPECT_FALSE(resp.contains("password_iterations")) << resp.dump();
+    const json& role = resp.at("roles").at(0);
+    for (const char* key : {"id", "tenant_id", "organization_id",
+                            "created_at", "updated_at", "name", "scope"})
+    {
+        EXPECT_TRUE(role.contains(key))
+            << "Role.fromJson requires '" << key << "': " << role.dump();
+    }
+
+    // Stored record: STILL carries the ORIGINAL password (login keeps
+    // working) and never took the injected values.
+    auto key = KeyBuilder::Build("identity", "users", "user-item-002");
+    ASSERT_TRUE(key.has_value());
+    std::string stored;
+    ASSERT_TRUE(m_engine->Get(key.value(), stored));
+    json storedJson = json::parse(stored);
+    EXPECT_TRUE(storedJson.contains("password_hash"));
+    EXPECT_NE("evil", storedJson.value("password_hash", std::string()));
+    EXPECT_NE("evil", storedJson.value("password_salt", std::string()));
+    EXPECT_EQ("Renamed", storedJson.value("display_name", std::string()));
+}
+
+// ============================================================================
+// Identity route hardening (PR #49 review): permission gates, tenant
+// isolation, and the UserUpdate allowlist — negative security tests.
+// ============================================================================
+
+TEST_F(AuthLoginTest, UsersList_ForbiddenWithoutPermission)
+{
+    RegisterStubUsersList();
+    init_identity_overrides(&m_pm, m_locator);
+    m_ctx.permissions.clear(); // authenticated caller, no role permissions
+
+    auto resp = json::parse(m_pm.Route(m_ctx, "GET", "/api/v1/users", ""));
+    ASSERT_TRUE(resp.contains("error")) << resp.dump();
+    EXPECT_EQ("FORBIDDEN", resp.at("error").at("code").get<std::string>());
+}
+
+TEST_F(AuthLoginTest, UsersGet_ItemRoute_ForbiddenWithoutPermission)
+{
+    RegisterStubUsersItemRoutes();
+    init_identity_overrides(&m_pm, m_locator);
+    m_ctx.permissions.clear();
+
+    auto resp = json::parse(
+        m_pm.Route(m_ctx, "GET", "/api/v1/users/user-test-001", ""));
+    ASSERT_TRUE(resp.contains("error")) << resp.dump();
+    EXPECT_EQ("FORBIDDEN", resp.at("error").at("code").get<std::string>());
+}
+
+TEST_F(AuthLoginTest, UsersList_TenantIsolation_OtherTenantHidden)
+{
+    RegisterStubUsersList();
+    init_identity_overrides(&m_pm, m_locator);
+    // A row belonging to another tenant — raw write (SeedUser stamps
+    // tenant "default" unconditionally).
+    PutRawUserRecord("user-other-tenant",
+        R"({"id":"user-other-tenant","email":"x@other.test","tenant_id":"other"})");
+
+    auto resp = json::parse(m_pm.Route(m_ctx, "GET", "/api/v1/users", ""));
+    ASSERT_FALSE(resp.contains("error")) << resp.dump();
+    for (const auto& item : resp.at("data"))
+    {
+        EXPECT_NE("user-other-tenant", item.value("id", std::string()))
+            << "another tenant's user must never be listed: " << resp.dump();
+    }
+    // The caller's own tenant rows are still served.
+    bool found = false;
+    for (const auto& item : resp.at("data"))
+    {
+        if (item.value("id", std::string()) == "user-test-001") { found = true; }
+    }
+    EXPECT_TRUE(found) << "same-tenant user must still be listed: " << resp.dump();
+}
+
+TEST_F(AuthLoginTest, UsersGet_ItemRoute_CrossTenantIsNotFound)
+{
+    RegisterStubUsersItemRoutes();
+    init_identity_overrides(&m_pm, m_locator);
+    PutRawUserRecord("user-other-tenant",
+        R"({"id":"user-other-tenant","email":"x@other.test","tenant_id":"other"})");
+
+    auto resp = json::parse(
+        m_pm.Route(m_ctx, "GET", "/api/v1/users/user-other-tenant", ""));
+    ASSERT_TRUE(resp.contains("error")) << resp.dump();
+    // Cross-tenant rows are indistinguishable from missing ones — no oracle.
+    EXPECT_EQ("NOT_FOUND", resp.at("error").at("code").get<std::string>());
+}
+
+TEST_F(AuthLoginTest, UsersUpdate_ItemRoute_CrossTenantIsNotFoundAndUntouched)
+{
+    RegisterStubUsersItemRoutes();
+    init_identity_overrides(&m_pm, m_locator);
+    PutRawUserRecord("user-other-tenant",
+        R"({"id":"user-other-tenant","email":"x@other.test","tenant_id":"other"})");
+
+    auto resp = json::parse(m_pm.Route(
+        m_ctx, "PATCH", "/api/v1/users/user-other-tenant",
+        R"({"email":"stolen@evil.test"})"));
+    ASSERT_TRUE(resp.contains("error")) << resp.dump();
+    EXPECT_EQ("NOT_FOUND", resp.at("error").at("code").get<std::string>());
+
+    // Stored row untouched by the cross-tenant attempt.
+    auto key = KeyBuilder::Build("identity", "users", "user-other-tenant");
+    ASSERT_TRUE(key.has_value());
+    std::string stored;
+    ASSERT_TRUE(m_engine->Get(key.value(), stored));
+    EXPECT_EQ("x@other.test", json::parse(stored).value("email", std::string()));
+}
+
+TEST_F(AuthLoginTest, UsersUpdate_ItemRoute_AllowlistProtectsServerOwnedFields)
+{
+    RegisterStubUsersItemRoutes();
+    init_identity_overrides(&m_pm, m_locator);
+    SeedUser("allowlist@test.com", kTestPassword, "user-allow-001");
+
+    // Attempt to rewrite identity, tenancy, roles, status, and credentials.
+    const std::string body =
+        R"({"display_name":"Legit Rename",)"
+        R"("id":"forged-id","tenant_id":"other","organization_id":"other",)"
+        R"("roles":[{"name":"admin"}],"role":"admin","status":"disabled",)"
+        R"("password_hash":"evil","password_salt":"evil","password_iterations":1,)"
+        R"("created_at":"1999-01-01T00:00:00Z"})";
+    auto resp = json::parse(
+        m_pm.Route(m_ctx, "PATCH", "/api/v1/users/user-allow-001", body));
+    ASSERT_FALSE(resp.contains("error")) << resp.dump();
+
+    // The contract field applies.
+    EXPECT_EQ("Legit Rename", resp.at("display_name").get<std::string>());
+    // Server-owned fields keep their stored values on the wire AND in
+    // storage — only UserUpdate's fields (email, display_name, person_id,
+    // role_ids) are patchable.
+    auto key = KeyBuilder::Build("identity", "users", "user-allow-001");
+    ASSERT_TRUE(key.has_value());
+    std::string stored;
+    ASSERT_TRUE(m_engine->Get(key.value(), stored));
+    json s = json::parse(stored);
+    EXPECT_EQ("user-allow-001", s.value("id", std::string()));
+    EXPECT_EQ("default", s.value("tenant_id", std::string()));
+    EXPECT_EQ("default", s.value("organization_id", std::string()));
+    EXPECT_EQ("active", s.value("status", std::string()));
+    EXPECT_NE("1999-01-01T00:00:00Z", s.value("created_at", std::string()));
+    EXPECT_NE("evil", s.value("password_hash", std::string()));
+    // Stored roles are whatever the seed wrote (absent when the seed
+    // carried none) — never the request's forged inline shape.
+    EXPECT_FALSE(
+        s.contains("roles")
+        && s.at("roles") == json::array({json{{"name", "admin"}}}))
+        << "forged roles must never be stored: " << s.dump();
+}
+
 TEST_F(AuthLoginTest, RolesSeed_Idempotent_FirstRunThenExisting)
 {
     // DB has users (SetUp seeded one) but an empty identity/roles prefix —
@@ -691,7 +1122,7 @@ TEST_F(AuthLoginTest, UsersCreate_RoleIdsResolveToEmbeddedRoles)
     m_pm.RegisterHandler("POST", "/api/v1/users", "stub_users_create",
                          stub_users_create, "Identity", 0);
     init_identity_overrides(&m_pm, m_locator); // seeds the canonical admin role
-    m_ctx.permissions = {"identity:write"};    // role assignment needs the grant
+    m_ctx.permissions = {"*:*"}; // the overrides gate on identity:users:* grants
 
     json body;
     body["email"] = "roled@test.com";
@@ -739,7 +1170,7 @@ TEST_F(AuthLoginTest, UsersUpdate_RoleIdsReplaceEmbeddedRoles)
     m_pm.RegisterHandler("PATCH", "/api/v1/users/{userId}", "stub_users_update",
                          stub_users_create, "Identity", 0); // verbatim stub baseline
     init_identity_overrides(&m_pm, m_locator);
-    m_ctx.permissions = {"identity:write"}; // role assignment needs the grant
+    m_ctx.permissions = {"*:*"}; // the overrides gate on identity:users:* grants
     // SetUp seeded user-test-001 with NO roles key — the pre-fix stored shape.
 
     json body;
@@ -777,7 +1208,7 @@ TEST_F(AuthLoginTest, UsersUpdate_RoleIdsWithoutUsersWrite_Forbidden)
     m_pm.RegisterHandler("PATCH", "/api/v1/users/{userId}", "stub_users_update",
                          stub_users_create, "Identity", 0);
     init_identity_overrides(&m_pm, m_locator);
-    // m_ctx carries NO permissions — the plain signed-in caller.
+    m_ctx.permissions.clear(); // m_ctx carries NO permissions — the plain signed-in caller
 
     json body;
     body["role_ids"] = json::array({"adminrole00000000000000000000001"});
@@ -795,20 +1226,25 @@ TEST_F(AuthLoginTest, UsersUpdate_RoleIdsWithoutUsersWrite_Forbidden)
     EXPECT_FALSE(storedJson.contains("roles")) << stored;
 }
 
-TEST_F(AuthLoginTest, UsersUpdate_UnknownFieldsRejected_RecordUntouched)
+TEST_F(AuthLoginTest, UsersUpdate_ServerOwnedFieldsDropped_RecordUntouched)
 {
     // The generated stub merged the raw body, so a PATCH could overwrite
-    // id and password_hash on the stored record. Only UserUpdate fields
-    // merge; anything else is rejected before the record is read.
+    // id and password_hash on the stored record. The allowlist drops
+    // server-owned fields — credential material and identity included —
+    // before anything merges, so even the wildcard admin cannot leave the
+    // UserUpdate schema.
     m_pm.RegisterHandler("PATCH", "/api/v1/users/{userId}", "stub_users_update",
                          stub_users_create, "Identity", 0);
     init_identity_overrides(&m_pm, m_locator);
-    m_ctx.permissions = {"*:*"}; // even the wildcard admin cannot leave the schema
+    m_ctx.permissions = {"*:*"};
 
     auto userKey = KeyBuilder::Build("identity", "users", "user-test-001");
     ASSERT_TRUE(userKey.has_value());
     std::string before;
     ASSERT_TRUE(m_engine->Get(userKey.value(), before));
+    const json beforeJson = json::parse(before);
+    ASSERT_TRUE(beforeJson.contains("password_hash"))
+        << "precondition: the seeded record carries credential material";
 
     json body;
     body["password_hash"] = "attacker-hash";
@@ -816,38 +1252,17 @@ TEST_F(AuthLoginTest, UsersUpdate_UnknownFieldsRejected_RecordUntouched)
     std::string response = m_pm.Route(
         m_ctx, "PATCH", "/api/v1/users/user-test-001", body.dump());
     auto data = json::parse(response);
-    ASSERT_TRUE(data.contains("error")) << response;
-    EXPECT_EQ("INVALID_REQUEST", data["error"]["code"].get<std::string>()) << response;
+    ASSERT_FALSE(data.contains("error")) << response;
+    EXPECT_FALSE(data.contains("password_hash")) << response;
+    EXPECT_EQ("user-test-001", data.value("id", "")) << response;
 
     std::string after;
     ASSERT_TRUE(m_engine->Get(userKey.value(), after));
-    EXPECT_EQ(before, after) << "a rejected patch must not touch the record";
-}
-
-TEST_F(AuthLoginTest, UsersUpdate_EmailChange_RepointsEmailIndex)
-{
-    // Login resolves users through users_by_email, so an email change must
-    // re-point that index atomically with the document — an index-only
-    // rename orphans the account, a document-only rename hides it.
-    m_pm.RegisterHandler("PATCH", "/api/v1/users/{userId}", "stub_users_update",
-                         stub_users_create, "Identity", 0);
-    init_identity_overrides(&m_pm, m_locator);
-
-    json body;
-    body["email"] = "renamed@test.com";
-    std::string response = m_pm.Route(
-        m_ctx, "PATCH", "/api/v1/users/user-test-001", body.dump());
-    auto data = json::parse(response);
-    ASSERT_FALSE(data.contains("error")) << response;
-
-    std::string ownerId;
-    EXPECT_TRUE(m_engine->Get("identity/users_by_email/renamed@test.com", ownerId));
-    EXPECT_EQ("user-test-001", ownerId);
-    std::string stale;
-    EXPECT_FALSE(m_engine->Get("identity/users_by_email/admin@test.com", stale))
-        << "the old index row must be gone";
-    // No role grant is needed for a plain field edit.
-    EXPECT_EQ("renamed@test.com", data.value("email", "")) << response;
+    const json afterJson = json::parse(after);
+    EXPECT_EQ(beforeJson.value("password_hash", ""),
+              afterJson.value("password_hash", ""))
+        << "a dropped field must not overwrite credential material";
+    EXPECT_EQ("user-test-001", afterJson.value("id", "")) << after;
 }
 
 TEST_F(AuthLoginTest, UsersCreate_RoleIdsWithoutUsersWrite_Forbidden)
@@ -858,6 +1273,7 @@ TEST_F(AuthLoginTest, UsersCreate_RoleIdsWithoutUsersWrite_Forbidden)
     m_pm.RegisterHandler("POST", "/api/v1/users", "stub_users_create",
                          stub_users_create, "Identity", 0);
     init_identity_overrides(&m_pm, m_locator);
+    m_ctx.permissions.clear(); // no users-write grant: the plain signed-in caller
 
     json body;
     body["email"] = "escalated@test.com";
@@ -1338,70 +1754,239 @@ TEST_F(AuthLoginTest, RealHandler_Refresh_ExpiredTokenRejected)
         << "expired refresh credentials must be rejected — no leeway path";
 }
 
-TEST_F(AuthLoginTest, RealHandler_UsersCreate_RoundtripAuthenticates)
+// ============================================================================
+// g7m-review round 2: DELETE route hardening, write-gate negatives, email
+// index maintenance, allowlist type validation, role resolution, roles
+// route guards.
+// ============================================================================
+
+TEST_F(AuthLoginTest, UsersDelete_ItemRoute_RemovesUserAndEmailIndex)
 {
     init_identity_overrides(&m_pm, m_locator);
-    m_ctx.tenantId       = "default";
-    m_ctx.organizationId = "default";
-    m_ctx.userId         = "user-test-001";
+    SeedUser("delete-me@test.com", kTestPassword, "user-del-001");
 
-    json createBody;
-    createBody["email"]        = "fresh.user@test.com";
-    createBody["password"]     = "Sup3rSecret!";
-    createBody["display_name"] = "Fresh User";
+    auto resp = json::parse(
+        m_pm.Route(m_ctx, "DELETE", "/api/v1/users/user-del-001", ""));
+    ASSERT_FALSE(resp.contains("error")) << resp.dump();
 
-    const std::string created =
-        m_pm.Route(m_ctx, "POST", "/api/v1/users", createBody.dump());
-    const json createdDoc = json::parse(created);
+    auto userKey = KeyBuilder::Build("identity", "users", "user-del-001");
+    auto emailKey = KeyBuilder::Build("identity", "users_by_email", "delete-me@test.com");
+    std::string leftover;
+    EXPECT_FALSE(m_engine->Get(userKey.value(), leftover)) << "user row must be gone";
+    EXPECT_FALSE(m_engine->Get(emailKey.value(), leftover)) << "login index row must be gone";
+}
 
-    // The plaintext and the hash material must never echo (F7).
-    EXPECT_FALSE(createdDoc.contains("password"))
-        << "plaintext password must not echo: " << created;
-    EXPECT_FALSE(createdDoc.contains("password_hash")) << created;
-    EXPECT_FALSE(createdDoc.contains("password_salt")) << created;
-    EXPECT_EQ(createdDoc.value("email", ""), "fresh.user@test.com");
-    EXPECT_EQ(createdDoc.value("status", ""), "active");
+TEST_F(AuthLoginTest, UsersDelete_ItemRoute_CrossTenantIsNotFoundAndUntouched)
+{
+    init_identity_overrides(&m_pm, m_locator);
+    PutRawUserRecord("user-other-tenant",
+        R"({"id":"user-other-tenant","email":"x@other.test","tenant_id":"other"})");
 
-    // The created user must authenticate through the real login (N1 —
-    // API-created users were locked out: no hash, no email-index row).
-    json loginBody;
-    loginBody["email"]    = "fresh.user@test.com";
-    loginBody["password"] = "Sup3rSecret!";
-    const json login = json::parse(
-        m_pm.Route(m_ctx, "POST", "/api/v1/auth/login", loginBody.dump()));
-    EXPECT_FALSE(login.contains("error"))
-        << "created user must be able to log in: " << login.dump();
-    EXPECT_FALSE(login.value("access_token", "").empty());
+    auto resp = json::parse(
+        m_pm.Route(m_ctx, "DELETE", "/api/v1/users/user-other-tenant", ""));
+    ASSERT_TRUE(resp.contains("error")) << resp.dump();
+    EXPECT_EQ("NOT_FOUND", resp.at("error").at("code").get<std::string>());
 
-    // A wrong password still rejects.
-    loginBody["password"] = "wrong";
-    const std::string rejected = m_pm.Route(
-        m_ctx, "POST", "/api/v1/auth/login", loginBody.dump());
-    EXPECT_NE(rejected.find("INVALID_CREDENTIALS"), std::string::npos)
-        << rejected;
+    auto key = KeyBuilder::Build("identity", "users", "user-other-tenant");
+    std::string stored;
+    EXPECT_TRUE(m_engine->Get(key.value(), stored)) << "cross-tenant row must survive";
+}
 
-    // A duplicate email rejects rather than re-pointing the login index.
-    createBody["password"] = "OtherPass123!";
-    const std::string duplicate =
-        m_pm.Route(m_ctx, "POST", "/api/v1/users", createBody.dump());
-    EXPECT_NE(duplicate.find("Email already registered"), std::string::npos)
-        << duplicate;
+TEST_F(AuthLoginTest, UsersDelete_ItemRoute_ForbiddenWithoutPermission)
+{
+    init_identity_overrides(&m_pm, m_locator);
+    m_ctx.permissions.clear();
+
+    auto resp = json::parse(
+        m_pm.Route(m_ctx, "DELETE", "/api/v1/users/user-test-001", ""));
+    ASSERT_TRUE(resp.contains("error")) << resp.dump();
+    EXPECT_EQ("FORBIDDEN", resp.at("error").at("code").get<std::string>());
+    // The seeded admin survives the unauthorized attempt.
+    auto key = KeyBuilder::Build("identity", "users", "user-test-001");
+    std::string stored;
+    EXPECT_TRUE(m_engine->Get(key.value(), stored));
+}
+
+TEST_F(AuthLoginTest, UsersCreate_And_Update_ForbiddenWithoutPermission)
+{
+    init_identity_overrides(&m_pm, m_locator);
+    m_ctx.permissions.clear();
+
+    auto createResp = json::parse(m_pm.Route(
+        m_ctx, "POST", "/api/v1/users", R"({"email":"nope@test.com"})"));
+    ASSERT_TRUE(createResp.contains("error")) << createResp.dump();
+    EXPECT_EQ("FORBIDDEN", createResp.at("error").at("code").get<std::string>());
+
+    auto updateResp = json::parse(m_pm.Route(
+        m_ctx, "PATCH", "/api/v1/users/user-test-001", R"({"display_name":"X"})"));
+    ASSERT_TRUE(updateResp.contains("error")) << updateResp.dump();
+    EXPECT_EQ("FORBIDDEN", updateResp.at("error").at("code").get<std::string>());
+}
+
+TEST_F(AuthLoginTest, UsersCreate_WritesEmailIndexAndRejectsDuplicates)
+{
+    init_identity_overrides(&m_pm, m_locator);
+
+    auto resp = json::parse(m_pm.Route(
+        m_ctx, "POST", "/api/v1/users",
+        R"({"email":"newuser@test.com","display_name":"New User"})"));
+    ASSERT_FALSE(resp.contains("error")) << resp.dump();
+    const std::string id = resp.at("id").get<std::string>();
+
+    auto emailKey = KeyBuilder::Build("identity", "users_by_email", "newuser@test.com");
+    std::string resolved;
+    ASSERT_TRUE(m_engine->Get(emailKey.value(), resolved))
+        << "created user must be login-resolvable";
+    EXPECT_EQ(id, resolved);
+    // Wire contract: no password material on the create response.
+    EXPECT_FALSE(resp.contains("password_hash"));
+
+    auto dup = json::parse(m_pm.Route(
+        m_ctx, "POST", "/api/v1/users", R"({"email":"newuser@test.com"})"));
+    ASSERT_TRUE(dup.contains("error")) << dup.dump();
+    EXPECT_EQ("CONFLICT", dup.at("error").at("code").get<std::string>());
+}
+
+TEST_F(AuthLoginTest, UsersCreate_DropsServerOwnedFieldsFromBody)
+{
+    init_identity_overrides(&m_pm, m_locator);
+    auto resp = json::parse(m_pm.Route(
+        m_ctx, "POST", "/api/v1/users",
+        R"({"email":"crafted@test.com","roles":[{"name":"admin"}],)"
+        R"("tenant_id":"other","status":"disabled","password_hash":"evil"})"));
+    ASSERT_FALSE(resp.contains("error")) << resp.dump();
+    EXPECT_EQ("default", resp.at("tenant_id").get<std::string>());
+    EXPECT_EQ("active", resp.at("status").get<std::string>());
+    EXPECT_FALSE(resp.contains("password_hash"));
+    // roles arrive only through role_ids resolution — never raw.
+    ASSERT_TRUE(resp.at("roles").is_array());
+    EXPECT_TRUE(resp.at("roles").empty());
+}
+
+TEST_F(AuthLoginTest, UsersUpdate_AllowlistRejectsTypeViolations)
+{
+    init_identity_overrides(&m_pm, m_locator);
+    SeedUser("types@test.com", kTestPassword, "user-types-001");
+
+    auto resp = json::parse(m_pm.Route(
+        m_ctx, "PATCH", "/api/v1/users/user-types-001", R"({"email":123})"));
+    ASSERT_TRUE(resp.contains("error")) << resp.dump();
+    EXPECT_EQ("INVALID_REQUEST", resp.at("error").at("code").get<std::string>());
+
+    // Stored record unchanged — the checked-parse-breaking value never landed.
+    auto key = KeyBuilder::Build("identity", "users", "user-types-001");
+    std::string stored;
+    ASSERT_TRUE(m_engine->Get(key.value(), stored));
+    EXPECT_EQ("types@test.com", json::parse(stored).value("email", std::string()));
+}
+
+TEST_F(AuthLoginTest, UsersUpdate_EmailChangeMovesLoginIndex)
+{
+    init_identity_overrides(&m_pm, m_locator);
+    SeedUser("moves@test.com", kTestPassword, "user-move-001");
+
+    auto resp = json::parse(m_pm.Route(
+        m_ctx, "PATCH", "/api/v1/users/user-move-001",
+        R"({"email":"moved@test.com"})"));
+    ASSERT_FALSE(resp.contains("error")) << resp.dump();
+
+    std::string resolved;
+    EXPECT_FALSE(m_engine->Get(
+        KeyBuilder::Build("identity", "users_by_email", "moves@test.com").value(),
+        resolved)) << "old email must no longer resolve";
+    ASSERT_TRUE(m_engine->Get(
+        KeyBuilder::Build("identity", "users_by_email", "moved@test.com").value(),
+        resolved)) << "new email must resolve";
+    EXPECT_EQ("user-move-001", resolved);
+}
+
+TEST_F(AuthLoginTest, UsersUpdate_EmailConflictWhenTargetTaken)
+{
+    init_identity_overrides(&m_pm, m_locator);
+    SeedUser("owner@test.com", kTestPassword, "user-owner-001");
+    SeedUser("changer@test.com", kTestPassword, "user-changer-001");
+
+    auto resp = json::parse(m_pm.Route(
+        m_ctx, "PATCH", "/api/v1/users/user-changer-001",
+        R"({"email":"owner@test.com"})"));
+    ASSERT_TRUE(resp.contains("error")) << resp.dump();
+    EXPECT_EQ("CONFLICT", resp.at("error").at("code").get<std::string>());
+    // The owner's index still resolves to the owner.
+    std::string resolved;
+    ASSERT_TRUE(m_engine->Get(
+        KeyBuilder::Build("identity", "users_by_email", "owner@test.com").value(),
+        resolved));
+    EXPECT_EQ("user-owner-001", resolved);
+}
+
+TEST_F(AuthLoginTest, UsersUpdate_ResolvesRoleIdsIntoEmbeddedRoles)
+{
+    init_identity_overrides(&m_pm, m_locator); // seeds the canonical admin role
+    SeedUser("roles@test.com", kTestPassword, "user-roles-001");
+
+    const std::string body = std::string(R"({"role_ids":[")") + kAdminRoleIdSeed
+        + R"("]})";
+    auto resp = json::parse(
+        m_pm.Route(m_ctx, "PATCH", "/api/v1/users/user-roles-001", body));
+    ASSERT_FALSE(resp.contains("error")) << resp.dump();
+    ASSERT_TRUE(resp.at("roles").is_array()) << resp.dump();
+    ASSERT_EQ(1u, resp.at("roles").size()) << resp.dump();
+    EXPECT_EQ("admin", resp.at("roles").at(0).at("name").get<std::string>());
+
+    // Unknown ids are rejected, not silently dropped.
+    auto bad = json::parse(m_pm.Route(
+        m_ctx, "PATCH", "/api/v1/users/user-roles-001",
+        R"({"role_ids":["nonexistent-role-id"]})"));
+    ASSERT_TRUE(bad.contains("error")) << bad.dump();
+    EXPECT_EQ("INVALID_REQUEST", bad.at("error").at("code").get<std::string>());
+}
+
+TEST_F(AuthLoginTest, RolesRoutes_GuardedAndTenantScoped)
+{
+    init_identity_overrides(&m_pm, m_locator); // canonical admin role seeded
+
+    m_ctx.permissions.clear();
+    auto forbidden = json::parse(m_pm.Route(m_ctx, "GET", "/api/v1/roles", ""));
+    ASSERT_TRUE(forbidden.contains("error")) << forbidden.dump();
+    EXPECT_EQ("FORBIDDEN", forbidden.at("error").at("code").get<std::string>());
+
+    m_ctx.permissions = {"*:*"};
+    auto ok = json::parse(m_pm.Route(m_ctx, "GET", "/api/v1/roles", ""));
+    ASSERT_FALSE(ok.contains("error")) << ok.dump();
+    ASSERT_TRUE(ok.at("data").is_array());
+    EXPECT_GE(ok.at("data").size(), 1u) << "seeded admin role must be listed";
+}
+
+TEST_F(AuthLoginTest, RolesDelete_RefusesCanonicalAdminRole)
+{
+    init_identity_overrides(&m_pm, m_locator);
+
+    const std::string url = std::string("/api/v1/roles/") + kAdminRoleIdSeed;
+    auto resp = json::parse(m_pm.Route(m_ctx, "DELETE", url, ""));
+    ASSERT_TRUE(resp.contains("error")) << resp.dump();
+    EXPECT_EQ("CONFLICT", resp.at("error").at("code").get<std::string>());
+
+    // The role survives.
+    auto key = KeyBuilder::Build("identity", "roles", kAdminRoleIdSeed);
+    std::string stored;
+    EXPECT_TRUE(m_engine->Get(key.value(), stored));
 }
 
 // ============================================================================
-// IN-02 — a client JSON key cannot inject envelope fields
+// IN-02 — a client-supplied string cannot inject envelope fields
 // ============================================================================
 
 ///
-/// An unknown body key reaches the error envelope only through nlohmann's
-/// escaper (IN-02). A key crafted as x","code":"UNAUTHORIZED used to be
-/// concatenated raw: the envelope carried a second code pair, still parsed
-/// as JSON, and the body mapper re-statused it 401 — a response about a
-/// mistyped field looked like a dead session. Both create and update are
-/// pinned: still-valid JSON, the original code, and a body-mapper status
-/// that never turns 401.
+/// A client-supplied string reaches the error envelope only through
+/// nlohmann's escaper (IN-02). A value crafted as x","code":"UNAUTHORIZED
+/// used to be concatenated raw: the envelope carried a second code pair,
+/// still parsed as JSON, and the body mapper re-statused it 401 — a
+/// response about a bad request field looked like a dead session. The
+/// surviving surface is the unknown-role-id path (create and update both
+/// answer "unknown role id: <id>"): both are pinned to still-valid JSON,
+/// the original code, and a body-mapper status that never turns 401.
 ///
-TEST_F(AuthLoginTest, UsersCreate_MaliciousUnknownKey_KeepsEnvelopeValid)
+TEST_F(AuthLoginTest, UsersCreate_MaliciousRoleId_KeepsEnvelopeValid)
 {
     init_identity_overrides(&m_pm, m_locator);
     m_ctx.tenantId       = "default";
@@ -1410,8 +1995,8 @@ TEST_F(AuthLoginTest, UsersCreate_MaliciousUnknownKey_KeepsEnvelopeValid)
 
     static const std::string kInjectedKey = "x\",\"code\":\"UNAUTHORIZED";
     json createBody;
-    createBody["email"]       = "escape.create@test.com";
-    createBody[kInjectedKey]  = 1;
+    createBody["email"]    = "escape.create@test.com";
+    createBody["role_ids"] = json::array({kInjectedKey});
 
     const std::string response =
         m_pm.Route(m_ctx, "POST", "/api/v1/users", createBody.dump());
@@ -1420,14 +2005,14 @@ TEST_F(AuthLoginTest, UsersCreate_MaliciousUnknownKey_KeepsEnvelopeValid)
     ASSERT_TRUE(parsed.contains("error")) << response;
     EXPECT_EQ(parsed.at("error").value("code", ""), "INVALID_REQUEST") << response;
     EXPECT_EQ(parsed.at("error").value("message", ""),
-              "Unsupported field for user create: " + kInjectedKey)
+              "unknown role id: " + kInjectedKey)
         << response;
     EXPECT_EQ(genius::os::HttpStatusForBody(response),
               boost::beast::http::status::ok)
         << "the injected second code must not re-status the response 401";
 }
 
-TEST_F(AuthLoginTest, UsersUpdate_MaliciousUnknownKey_KeepsEnvelopeValid)
+TEST_F(AuthLoginTest, UsersUpdate_MaliciousRoleId_KeepsEnvelopeValid)
 {
     init_identity_overrides(&m_pm, m_locator);
     m_ctx.tenantId       = "default";
@@ -1436,7 +2021,7 @@ TEST_F(AuthLoginTest, UsersUpdate_MaliciousUnknownKey_KeepsEnvelopeValid)
 
     static const std::string kInjectedKey = "x\",\"code\":\"UNAUTHORIZED";
     json updateBody;
-    updateBody[kInjectedKey] = 1;
+    updateBody["role_ids"] = json::array({kInjectedKey});
 
     const std::string response = m_pm.Route(
         m_ctx, "PATCH", "/api/v1/users/user-test-001", updateBody.dump());
@@ -1445,7 +2030,7 @@ TEST_F(AuthLoginTest, UsersUpdate_MaliciousUnknownKey_KeepsEnvelopeValid)
     ASSERT_TRUE(parsed.contains("error")) << response;
     EXPECT_EQ(parsed.at("error").value("code", ""), "INVALID_REQUEST") << response;
     EXPECT_EQ(parsed.at("error").value("message", ""),
-              "Unsupported field for user update: " + kInjectedKey)
+              "unknown role id: " + kInjectedKey)
         << response;
     EXPECT_EQ(genius::os::HttpStatusForBody(response),
               boost::beast::http::status::ok)
